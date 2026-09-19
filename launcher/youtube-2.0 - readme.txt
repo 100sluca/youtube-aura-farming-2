@@ -1,0 +1,16 @@
+YouTube 2.0
+
+Dossier code : C:\Users\Luca\Documents\GitHub\YouTube-2.0  (à compléter : adapter aussi ROOT dans le .bat)
+Dépôt : https://github.com/100sluca/YouTube-2.0 (branche main)  (à compléter si le nom diffère)
+Lancer : youtube-2.0 - demarrer.bat  (= uv run worker dans services\worker + npm run dev -- --port 3000 dans apps\dashboard, + ComfyUI si présent)
+
+Front : 3000 (Next.js 16 + shadcn, http://localhost:3000)
+Back : aucun serveur HTTP en local ; le worker Python (services\worker) tourne dans sa fenêtre, sans port
+Bdd : Supabase (Postgres hébergé, offre gratuite) ; identifiant du projet : à compléter
+Internet : aucun hébergement pour le moment, tout tourne sur ce PC ; plus tard Vercel ou Cloudflare pour le dashboard
+
+Projet : usine automatisée de YouTube Shorts (construction, déco, DIY) sur deux chaînes FR et EN, vidéos générées par IA en local, dashboard de pilotage
+Last update : architecture, schéma Supabase, dashboard shadcn en mode démo, worker Python, benchmark vidéo, lanceur
+Last update date : 2026_09_19
+Next update : roadmap phase 1 (brancher Supabase, OAuth YouTube, première synchro des métriques) et benchmark vidéo sur le PC (scripts\bench_video.py)
+À ne pas oublier : soumettre l'audit YouTube API (docs\05-youtube-api.md) ; créer les chaînes ; copier .env.example en apps\dashboard\.env.local et services\worker\.env

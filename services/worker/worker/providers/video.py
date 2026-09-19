@@ -54,7 +54,13 @@ class ComfyVideo:
         self.name = f"comfy_{workflow}"
         self.base = settings.comfy_base_url
         self.workflow_path = settings.comfy_workflow_dir / f"{workflow}_t2v.json"
-        self.width, self.height, self.fps = (576, 1024, 24) if workflow == "ltx" else (480, 832, 16)
+        # Résolutions natives 9:16 par famille (voir docs/08-benchmark-video.md) ; le workflow JSON reste maître.
+        if "ltx" in workflow:
+            self.width, self.height, self.fps = 576, 1024, 24
+        elif "5b" in workflow:  # Wan 2.2 TI2V-5B : 24 fps
+            self.width, self.height, self.fps = 480, 832, 24
+        else:  # Wan 2.1 / 2.2 14B : 16 fps
+            self.width, self.height, self.fps = 480, 832, 16
 
     def generate(self, *, prompt, style_preset, duration_s, out_path, on_progress, dry_run=False) -> ClipInfo:  # noqa: ANN001
         seed = random.randint(0, 2**31)

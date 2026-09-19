@@ -39,7 +39,7 @@ create table channels (
   youtube_channel_id text unique,                             -- UC…
   timezone           text not null default 'Europe/Paris',
   publish_slots      time[] not null default '{09:00,13:00,18:00}', -- 3 Shorts / jour
-  auto_publish       boolean not null default false,          -- false = validation humaine avant upload
+  auto_publish       boolean not null default true,           -- true = 100 % automatique ; false = validation humaine + mail
   gcp_project        text,                                    -- projet Google Cloud (quota API dédié)
   is_active          boolean not null default true,
   created_at         timestamptz not null default now()

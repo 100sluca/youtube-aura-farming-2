@@ -15,7 +15,7 @@ export function AutoPublishSwitch({ id, defaultChecked }: { id: string; defaultC
         <p className="text-muted-foreground text-xs">
           {checked
             ? "Les Shorts prêtes sont envoyées sur YouTube dès qu’un créneau est libre."
-            : "Chaque Short doit être validée à la main avant l’envoi sur YouTube."}
+            : "Chaque Short passe en Contrôle / revue et un e-mail est envoyé à adresse@example.com."}
         </p>
       </div>
       <Switch id={id} checked={checked} onCheckedChange={setChecked} aria-label="Publication automatique" />

@@ -6,11 +6,11 @@ Cible : CPU haut de gamme, 32 Go RAM, GPU 8 Go (RTX 4060 / 4070 / 3070).
 
 | Rôle | Outil | Remarques 8 Go VRAM |
 |---|---|---|
-| Orchestration | worker Python (`services/worker`), service au démarrage (Task Scheduler / NSSM sous Windows, systemd sous Linux) | concurrence GPU = 1 |
-| Vidéo | ComfyUI + **LTX-Video 2B** (rapide, 576×1024 OK) ou **Wan 2.1 1.3B** (480p, plus lent, meilleure cohérence) ; variantes GGUF/NF4 + offload CPU | 1-8 min / clip de 4-5 s ; benchmark en phase 3 |
+| Orchestration | worker Python (`services/worker`) lancé dans une fenêtre par `launcher/youtube-2.0 - demarrer.bat` (service Windows plus tard si besoin) | concurrence GPU = 1 |
+| Vidéo | ComfyUI + **Wan 2.2 TI2V-5B** (FP8/GGUF, principal), **Wan 2.2 I2V 14B Rapid GGUF** (plans héros, image → vidéo), **LTX-Video 2B** (brouillons) ; voir `08-benchmark-video.md` | 1-6 min / clip de 4-5 s |
 | Upscale | Real-ESRGAN (x2) ou lanczos FFmpeg | 10-20 s / clip |
 | TTS | **Kokoro-82M** (voix FR `ff_siwis`, EN `af_heart`…) ; alternative **Chatterbox multilingue** | CPU suffisant, ~temps réel |
-| LLM | Claude API (défaut) ; **Ollama** Qwen 2.5 7B Q4 en secours/hors-ligne | Ollama et ComfyUI ne cohabitent pas en VRAM : le worker décharge Ollama (`keep_alive=0`) avant un job GPU vidéo |
+| LLM | Claude API (défaut), secours Mistral API, Gemini API, puis **Ollama** Qwen 2.5 7B Q4 hors-ligne | Ollama et ComfyUI ne cohabitent pas en VRAM : le worker décharge Ollama (`keep_alive=0`) après chaque appel |
 | Montage | FFmpeg 7 (`drawtext`, `loudnorm`, `minterpolate`) | CPU |
 | SFX / ambiances | bibliothèque locale libre de droits (Freesound CC0, Pixabay) indexée par tags | format B |
 
@@ -18,11 +18,13 @@ Cible : CPU haut de gamme, 32 Go RAM, GPU 8 Go (RTX 4060 / 4070 / 3070).
 
 | Modèle | / clip | 24 clips | + 2 candidats / scène |
 |---|---|---|---|
-| LTX-Video 2B (576×1024, 97 frames) | ~1-2 min | 25-50 min | 50-100 min |
-| Wan 2.1 1.3B (480×832, 81 frames) | ~5-8 min | 2-3 h | 4-6 h |
+| LTX-Video 2B (576×1024, 97 frames) | quelques s à 1 min | 10-25 min | 20-50 min |
+| Wan 2.2 TI2V-5B FP8 (480p, 81 frames) | ~4-6 min | 1,5-2,5 h | 3-5 h |
+| Wan 2.2 I2V 14B Rapid GGUF (image → vidéo) | ~2 min | 50 min | 1,5 h |
 
-→ Commencer avec LTX pour le volume, tester Wan sur les scènes « héro » (révélation).
-Le partage du master visuel entre FR et EN (ADR-002) est ce qui rend 6 Shorts / jour tenable.
+→ Wan 2.2 5B pour le volume, la route image → vidéo pour les scènes « héro », LTX 2B pour les
+brouillons (`08-benchmark-video.md`). Le partage du master visuel entre FR et EN (ADR-002) est ce
+qui rend 6 Shorts / jour tenable.
 
 ## 3. Fenêtre de fonctionnement
 
@@ -53,12 +55,22 @@ data/
 Rétention : masters et finals conservés 90 jours après publication puis purgés (les vidéos
 sont sur YouTube) ; previews purgées de Storage 30 jours après publication.
 
-## 5. Installation (résumé, détaillé dans `services/worker/README.md`)
+## 5. Installation sur Windows (résumé, détaillé dans `services/worker/README.md`)
 
-1. Python 3.11+, `uv`, FFmpeg dans le PATH, pilotes NVIDIA + CUDA récents.
-2. ComfyUI (portable Windows ou git) + modèles LTX-Video / Wan (+ encodeurs texte) dans
-   `ComfyUI/models/…` ; lancer avec `--listen 127.0.0.1 --port 8188`.
-3. `uv sync` dans `services/worker`, copier `.env.example` → `.env`.
-4. Kokoro : `pip install kokoro-onnx` (ou `kokoro` PyTorch) + fichiers de voix.
-5. `uv run worker` : le worker se déclare (`WORKER_ID`), réclame les jobs, envoie un heartbeat.
-6. Installer en service (NSSM / Task Scheduler « au démarrage », redémarrage automatique).
+1. Outils : `winget install Python.Python.3.12 astral-sh.uv Gyan.FFmpeg OpenJS.NodeJS.LTS Git.Git`,
+   pilote NVIDIA récent (CUDA 12.x inclus).
+2. ComfyUI **portable Windows** (dossier `C:\ComfyUI_windows_portable`, `run_nvidia_gpu.bat`) +
+   ComfyUI Manager ; modèles Wan 2.2 (5B FP8, 14B I2V Rapid GGUF, encodeur T5, VAE) et LTX-Video
+   dans `ComfyUI\models\…` ; exporter les workflows en format API dans `services/worker/workflows/`.
+3. Kokoro : `uv sync --extra tts` installe `kokoro-onnx` ; déposer `kokoro-v1.0.onnx` et
+   `voices-v1.0.bin` dans `services/worker/models/`.
+4. Ollama (optionnel, secours hors-ligne) : `winget install Ollama.Ollama` puis `ollama pull qwen2.5:7b`.
+5. Copier `.env.example` → `apps/dashboard/.env.local` et `services/worker/.env`, renseigner
+   `DATABASE_URL` (pooler Supabase), clés LLM, `ALERT_EMAIL_TO`.
+6. Double-cliquer `launcher/youtube-2.0 - demarrer.bat` : il vérifie tout (env, dépendances, port
+   3000), lance ComfyUI, le worker et le dashboard, puis ouvre le navigateur.
+
+## 6. Benchmark
+
+`uv run python scripts/bench_video.py --providers comfy_ltx,comfy_wan --duration 4 --runs 2`
+mesure temps, VRAM et résolution par clip et produit un tableau à noter (voir `08-benchmark-video.md` §6).

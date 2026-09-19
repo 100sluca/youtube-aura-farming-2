@@ -31,8 +31,13 @@ export async function supabaseServer(): Promise<SupabaseClient> {
   );
 }
 
-/** Retourne l'e-mail de l'utilisateur connecté s'il figure dans `app_users`, sinon null. */
+/**
+ * Retourne l'identité autorisée, sinon null.
+ * `DASHBOARD_AUTH=none` (défaut, usage local sur le PC) : pas de connexion, tout est autorisé.
+ * `DASHBOARD_AUTH=supabase` (hébergement public) : session Supabase Auth + e-mail présent dans `app_users`.
+ */
 export async function currentAppUser(): Promise<string | null> {
+  if (process.env.DASHBOARD_AUTH !== "supabase") return "local";
   const supabase = await supabaseServer();
   const { data } = await supabase.auth.getUser();
   const email = data.user?.email;

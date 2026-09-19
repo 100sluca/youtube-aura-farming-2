@@ -21,7 +21,7 @@ class QAStep(Step):
     def run(self, ctx: Context) -> dict[str, Any]:
         vid = ctx.job.video_id
         v = ctx.db.fetch_one(
-            """select v.format, a.local_path, c.auto_publish from videos v
+            """select v.format, v.title, v.lang, a.local_path, c.auto_publish from videos v
                join assets a on a.id = v.final_asset_id join channels c on c.id = v.channel_id where v.id = %s""",
             (vid,),
         )
@@ -37,7 +37,17 @@ class QAStep(Step):
             failed = ", ".join(c.name for c in report.checks if not c.ok)
             ctx.db.set_status("videos", vid, "failed", f"QA : {failed}")
             raise RuntimeError(f"QA échoué : {failed}")
-        ctx.db.set_status("videos", vid, "ready" if v["auto_publish"] else "review")
+        if v["auto_publish"]:
+            ctx.db.set_status("videos", vid, "ready")
+        else:
+            ctx.db.set_status("videos", vid, "review")
+            if ctx.settings.notify_on_review:  # le planificateur envoie les alertes warning/error par mail
+                ctx.db.alert(
+                    "warning",
+                    f"Validation requise : {v['title'] or 'Short'} ({v['lang'].upper()})",
+                    "Ouvrir le dashboard → Production → Contrôle / revue, puis Approuver ou Refuser.",
+                    video_id=vid,
+                )
         self._maybe_mark_production_ready(ctx)
         return report.model_dump()
 

@@ -11,7 +11,8 @@
    Google affiche un avertissement au moment du consentement, c'est acceptable pour un usage
    personnel.
 4. Identifiant OAuth **Application Web**, URI de redirection
-   `https://<dashboard>/api/youtube/callback` (et `http://localhost:3000/api/youtube/callback`).
+   `http://localhost:3000/api/youtube/callback` (tout en local, ADR-006) ; ajouter
+   `https://<dashboard>/api/youtube/callback` le jour où le dashboard est hébergé.
 5. Scopes demandés :
    - `https://www.googleapis.com/auth/youtube.upload` (upload)
    - `https://www.googleapis.com/auth/youtube` (update `publishAt`, lecture des vidéos privées)
