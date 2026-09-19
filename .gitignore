@@ -28,3 +28,6 @@ services/worker/models/
 .DS_Store
 .idea/
 .vscode/
+
+# le .gitignore racine de Logements100s ignore package-lock.json partout : on le garde ici (npm ci en CI)
+!package-lock.json

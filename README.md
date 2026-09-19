@@ -10,6 +10,8 @@ sur deux chaînes (FR / EN), générés par IA en local, avec un dashboard de pi
 | [`apps/dashboard/`](apps/dashboard/) | Dashboard Next.js 16 + shadcn/ui (vue d'ensemble, vidéos publiées, production, calendrier, idées, A/B, réglages) |
 | [`services/worker/`](services/worker/) | Worker Python local : agents LLM, ComfyUI, Kokoro, FFmpeg, upload et Analytics YouTube |
 
+![Vue d'ensemble du dashboard (mode démo)](docs/dashboard-overview.png)
+
 ## Lire en premier
 1. [`docs/01-architecture.md`](docs/01-architecture.md) : les trois plans (dashboard, Supabase, PC), les principes.
 2. [`docs/03-pipeline.md`](docs/03-pipeline.md) : les étapes, le planificateur, les agents.
