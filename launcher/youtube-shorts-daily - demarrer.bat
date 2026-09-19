@@ -2,16 +2,20 @@
 setlocal
 title YouTube 2.0 - lanceur local
 
-rem Demarre YouTube 2.0 en local : le worker Python (generation + upload) dans une
-rem fenetre, le dashboard Next.js dans une autre, puis ouvre http://localhost:3000.
+rem ---------------------------------------------------------------------------
+rem Demarre YouTube 2.0 (youtube-shorts-daily) en local :
+rem   - le worker Python (generation + upload) dans une fenetre, sans port ;
+rem   - le dashboard Next.js dans une autre, sur http://localhost:3000 ;
+rem   - ComfyUI en plus si le dossier COMFY existe (generation video locale).
 rem La base de donnees est hebergee (Supabase) : rien a lancer pour elle.
-rem ComfyUI est lance en plus si le dossier COMFY existe (generation video locale).
+rem Ollama (LLM de secours) est un service Windows deja actif sur le port 11434.
+rem
+rem Copie adaptee a ce PC du fichier launcher\ du depot (ROOT corrige).
 rem Fichier volontairement sans accents : cmd.exe ne lit pas l'UTF-8 par defaut.
+rem ---------------------------------------------------------------------------
 
-rem ---- A ADAPTER : chemin du depot et de ComfyUI ---------------------------------
-set "ROOT=C:\Users\Luca\Documents\GitHub\youtube-shorts-daily"
+set "ROOT=C:\Users\Luca\Documents\GitHub\___CODE\2026_09_19-Youtube2.0"
 set "COMFY=C:\ComfyUI_windows_portable"
-rem -------------------------------------------------------------------------------
 
 set "FRONT=%ROOT%\apps\dashboard"
 set "WORKER=%ROOT%\services\worker"
@@ -32,7 +36,8 @@ if not exist "%WORKER%\pyproject.toml" (
 rem ---- Verifications du dashboard -----------------------------------------------
 if not exist "%FRONT%\.env.local" (
     echo [ERREUR] Pas de fichier .env.local dans %FRONT%
-    echo          Copier %ROOT%\.env.example en .env.local et renseigner la partie Dashboard.
+    echo          Copier %ROOT%\.env.example en apps\dashboard\.env.local
+    echo          et renseigner la partie Dashboard ^(NEXT_PUBLIC_MOCK=1 suffit pour la demo^).
     pause
     exit /b 1
 )
@@ -50,7 +55,8 @@ if not exist "%FRONT%\node_modules\" (
 rem ---- Verifications du worker --------------------------------------------------
 if not exist "%WORKER%\.env" (
     echo [ERREUR] Pas de fichier .env dans %WORKER%
-    echo          Copier %ROOT%\.env.example en .env et renseigner la partie Worker.
+    echo          Copier %ROOT%\.env.example en services\worker\.env
+    echo          et renseigner la partie Worker ^(DATABASE_URL, cles LLM, fournisseurs^).
     pause
     exit /b 1
 )
@@ -66,7 +72,7 @@ if errorlevel 1 (
     echo             Installer : winget install Gyan.FFmpeg
 )
 if not exist "%WORKER%\.venv\" (
-    echo Environnement Python absent, installation : uv sync
+    echo Environnement Python absent, installation : uv sync --extra tts
     cd /d "%WORKER%"
     call uv sync --extra tts
     if errorlevel 1 (
@@ -77,11 +83,14 @@ if not exist "%WORKER%\.venv\" (
 )
 
 rem ---- Port du dashboard : refuser de demarrer si deja pris ----------------------
-netstat -ano | findstr ":%PORT% .*LISTENING" >nul
-if not errorlevel 1 (
-    echo [ERREUR] Le port %PORT% est deja utilise. Processus concerne :
-    netstat -ano | findstr ":%PORT% .*LISTENING"
-    echo          Fermer l'autre serveur ou : taskkill /PID ^<pid^> /T /F
+rem Sans cette verification, Next.js basculerait en silence sur 3001.
+set "BUSY_PID="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:":%PORT% .*LISTENING"') do set "BUSY_PID=%%p"
+if defined BUSY_PID (
+    echo [ERREUR] Le port %PORT% est deja utilise par le processus %BUSY_PID%.
+    echo          Un autre serveur de dev tourne sans doute : fermer son autre
+    echo          fenetre, ou l'arreter avec :  taskkill /PID %BUSY_PID% /T /F
+    echo          puis relancer ce lanceur.
     pause
     exit /b 1
 )
@@ -93,6 +102,7 @@ if exist "%COMFY%\run_nvidia_gpu.bat" (
     timeout /t 5 >nul
 ) else (
     echo [INFO] ComfyUI non trouve dans %COMFY% : la generation video locale ne sera pas disponible.
+    echo        Voir docs\06-local-stack.md pour l'installer ^(portable^), puis adapter COMFY ci-dessus.
 )
 
 echo Lancement du worker
