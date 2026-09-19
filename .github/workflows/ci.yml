@@ -1,0 +1,33 @@
+# Actif une fois le projet extrait dans son propre dépôt (voir README « Déplacer ce projet »).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: apps/dashboard }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: apps/dashboard/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build
+        env: { NEXT_PUBLIC_MOCK: "1" }
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: services/worker }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra dev
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run pytest -q

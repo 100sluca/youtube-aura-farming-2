@@ -1,0 +1,30 @@
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+credentials.json
+token.json
+
+# Worker : fichiers générés localement
+services/worker/data/
+services/worker/models/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
