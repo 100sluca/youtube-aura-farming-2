@@ -9,7 +9,7 @@ rem ComfyUI est lance en plus si le dossier COMFY existe (generation video local
 rem Fichier volontairement sans accents : cmd.exe ne lit pas l'UTF-8 par defaut.
 
 rem ---- A ADAPTER : chemin du depot et de ComfyUI ---------------------------------
-set "ROOT=C:\Users\Luca\Documents\GitHub\YouTube-2.0"
+set "ROOT=C:\Users\Luca\Documents\GitHub\youtube-shorts-daily"
 set "COMFY=C:\ComfyUI_windows_portable"
 rem -------------------------------------------------------------------------------
 

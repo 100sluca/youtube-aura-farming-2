@@ -6,7 +6,7 @@ Cible : CPU haut de gamme, 32 Go RAM, GPU 8 Go (RTX 4060 / 4070 / 3070).
 
 | Rôle | Outil | Remarques 8 Go VRAM |
 |---|---|---|
-| Orchestration | worker Python (`services/worker`) lancé dans une fenêtre par `launcher/youtube-2.0 - demarrer.bat` (service Windows plus tard si besoin) | concurrence GPU = 1 |
+| Orchestration | worker Python (`services/worker`) lancé dans une fenêtre par `launcher/youtube-shorts-daily - demarrer.bat` (service Windows plus tard si besoin) | concurrence GPU = 1 |
 | Vidéo | ComfyUI + **Wan 2.2 TI2V-5B** (FP8/GGUF, principal), **Wan 2.2 I2V 14B Rapid GGUF** (plans héros, image → vidéo), **LTX-Video 2B** (brouillons) ; voir `08-benchmark-video.md` | 1-6 min / clip de 4-5 s |
 | Upscale | Real-ESRGAN (x2) ou lanczos FFmpeg | 10-20 s / clip |
 | TTS | **Kokoro-82M** (voix FR `ff_siwis`, EN `af_heart`…) ; alternative **Chatterbox multilingue** | CPU suffisant, ~temps réel |
@@ -67,7 +67,7 @@ sont sur YouTube) ; previews purgées de Storage 30 jours après publication.
 4. Ollama (optionnel, secours hors-ligne) : `winget install Ollama.Ollama` puis `ollama pull qwen2.5:7b`.
 5. Copier `.env.example` → `apps/dashboard/.env.local` et `services/worker/.env`, renseigner
    `DATABASE_URL` (pooler Supabase), clés LLM, `ALERT_EMAIL_TO`.
-6. Double-cliquer `launcher/youtube-2.0 - demarrer.bat` : il vérifie tout (env, dépendances, port
+6. Double-cliquer `launcher/youtube-shorts-daily - demarrer.bat` : il vérifie tout (env, dépendances, port
    3000), lance ComfyUI, le worker et le dashboard, puis ouvre le navigateur.
 
 ## 6. Benchmark

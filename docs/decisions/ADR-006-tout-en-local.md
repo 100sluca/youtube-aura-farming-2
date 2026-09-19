@@ -15,8 +15,8 @@ Le GPU est local de toute façon (génération vidéo). Reste la question de la 
   Realtime + Storage + sauvegardes inclus, accessible depuis n'importe où le jour où le dashboard
   est hébergé. Le code ne dépend que de `DATABASE_URL` : un Postgres local (ou `supabase start`
   via Docker) reste possible si l'on veut couper toute dépendance.
-- **Lanceur** : `launcher/youtube-2.0 - demarrer.bat` + fiche mémo, à copier dans
-  `C:\Users\Luca\Desktop\Projets_Code-start\youtube-2.0-2026_09_19\`.
+- **Lanceur** : `launcher/youtube-shorts-daily - demarrer.bat` + fiche mémo, à copier dans
+  `C:\Users\Luca\Desktop\Projets_Code-start\youtube-shorts-daily-2026_09_19\`.
 
 ## Conséquences
 - (+) Aucune infra à payer ni maintenir ; le projet démarre en un double-clic.

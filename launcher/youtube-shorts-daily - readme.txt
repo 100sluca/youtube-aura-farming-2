@@ -1,8 +1,8 @@
 YouTube 2.0
 
-Dossier code : C:\Users\Luca\Documents\GitHub\YouTube-2.0  (à compléter : adapter aussi ROOT dans le .bat)
-Dépôt : https://github.com/100sluca/YouTube-2.0 (branche main)  (à compléter si le nom diffère)
-Lancer : youtube-2.0 - demarrer.bat  (= uv run worker dans services\worker + npm run dev -- --port 3000 dans apps\dashboard, + ComfyUI si présent)
+Dossier code : C:\Users\Luca\Documents\GitHub\youtube-shorts-daily  (à compléter : adapter aussi ROOT dans le .bat)
+Dépôt : https://github.com/100sluca/youtube-shorts-daily (branche main)
+Lancer : youtube-shorts-daily - demarrer.bat  (= uv run worker dans services\worker + npm run dev -- --port 3000 dans apps\dashboard, + ComfyUI si présent)
 
 Front : 3000 (Next.js 16 + shadcn, http://localhost:3000)
 Back : aucun serveur HTTP en local ; le worker Python (services\worker) tourne dans sa fenêtre, sans port

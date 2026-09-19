@@ -22,7 +22,7 @@ sur deux chaînes (FR / EN), générés par IA en local, avec un dashboard de pi
 
 ## Démarrage rapide (tout en local, ADR-006)
 
-Windows : double-cliquer `launcher/youtube-2.0 - demarrer.bat` (après avoir adapté `ROOT` et créé
+Windows : double-cliquer `launcher/youtube-shorts-daily - demarrer.bat` (après avoir adapté `ROOT` et créé
 les deux fichiers `.env`). Il lance ComfyUI, le worker et le dashboard, puis ouvre le navigateur.
 
 À la main :
@@ -43,11 +43,6 @@ uv sync --extra tts && uv run worker
 ```
 
 ## Dépôt
-Ce dossier vit provisoirement dans `Logements100s` (branche `claude/youtube-2-0-architecture-tud7zx`)
-en attendant le dépôt dédié. Extraction avec historique, le dossier devenant la racine :
-
-```bash
-git checkout claude/youtube-2-0-architecture-tud7zx
-git subtree split --prefix=youtube-2.0 -b youtube-2.0-main
-git push https://github.com/100sluca/YouTube-2.0.git youtube-2.0-main:main
-```
+`https://github.com/100sluca/youtube-shorts-daily`, branche `main`. Le projet a été conçu dans le dépôt
+Logements100s (branche `claude/youtube-2-0-architecture-tud7zx`, dossier `youtube-2.0/`) puis extrait ici
+avec son historique ; cette branche d'origine peut être supprimée.

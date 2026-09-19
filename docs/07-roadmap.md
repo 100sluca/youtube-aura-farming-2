@@ -8,7 +8,7 @@
 - [ ] Projet Supabase (région EU, offre gratuite) : appliquer `0001_init.sql` puis `seed.sql`.
 - [ ] Clés API LLM : Anthropic (principal), Mistral et Gemini (secours) ; Ollama en local.
 - [ ] PC Windows : outils, ComfyUI portable + modèles, Kokoro (`06-local-stack.md`) ; copier
-      `launcher/` dans `C:\Users\Luca\Desktop\Projets_Code-start\youtube-2.0-2026_09_19\`.
+      `launcher/` dans `C:\Users\Luca\Desktop\Projets_Code-start\youtube-shorts-daily-2026_09_19\`.
 - [ ] Lancer le benchmark vidéo (`08-benchmark-video.md` §6) et choisir `VIDEO_PROVIDER`.
 - [x] Décisions prises : 100 % automatique par défaut (validation humaine + e-mail en option),
       tout en local (ADR-006), LLM multi-fournisseurs avec secours.
