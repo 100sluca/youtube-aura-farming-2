@@ -321,19 +321,19 @@ Write-Ok "Moteur prêt ($Venv)"
 # ---- 5. Tableau de bord ---------------------------------------------------------------------------------------------
 
 Write-Etape "5/9  Tableau de bord (modules Node.js)"
+# npm install plutôt que npm ci : le package-lock.json du dépôt n'a pas toutes les dépendances facultatives (@emnapi)
+# des autres systèmes, npm ci s'arrête dessus ; npm install garde les versions verrouillées et complète le reste.
+$lock = Join-Path $Front "package-lock.json"
 $trace = Join-Path $Front "node_modules\.installe-par-INSTALLER.txt"
-$empreinte = (Get-FileHash -LiteralPath (Join-Path $Front "package-lock.json") -Algorithm SHA256).Hash
-if ((Test-Path -LiteralPath $trace) -and "$(Get-Content -LiteralPath $trace -Raw)".Trim() -eq $empreinte) {
+if ((Test-Path -LiteralPath $trace) -and "$(Get-Content -LiteralPath $trace -Raw)".Trim() -eq (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash) {
     Write-Ok "Modules déjà installés"
 } else {
-    $npm = Find-Outil "npm.cmd"
     Push-Location $Front
-    & $npm ci --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) { Write-Attention "npm ci a échoué, nouvel essai avec npm install…"; & $npm install --no-audit --no-fund }
+    & (Find-Outil "npm.cmd") install --no-audit --no-fund
     $code = $LASTEXITCODE
     Pop-Location
     if ($code -ne 0) { Stop-Installation "L'installation des modules du tableau de bord a échoué (message ci-dessus)." }
-    Write-Texte $trace $empreinte
+    Write-Texte $trace (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash
     Write-Ok "Modules installés"
 }
 
