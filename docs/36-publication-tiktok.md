@@ -5,6 +5,9 @@ TikTok for Developers et a été bloqué parce que TikTok exige une appli publiq
 
 ## 1. En bref
 
+- **En service depuis le 29/09 (§ 6) : chaque Short programmé sur YouTube part aussi sur TikTok, à la même heure, par
+  Zernio.** Zernio ne sert qu'à TikTok ; l'envoi YouTube ne change pas. Réglages → TikTok : clé, compte relié,
+  publication automatique. Bibliothèque → fiche d'une vidéo : état TikTok, lien, « Publier sur TikTok ».
 - **L'API officielle ne publie pas en public depuis un outil perso.** La revue d'appli refuse les usages privés, et
   l'audit de la publication directe refuse les outils qui publient sur les comptes de leur auteur.
   StreamDockapp/tiktok-content-posting-api n'est qu'un client de cette API : il bute sur le même mur.
@@ -113,7 +116,40 @@ Plan d'essai :
    Bibliothèque.
 4. Essai sur une vraie vidéo, puis passage au compte principal.
 
-## 6. Sources
+## 6. Mise en place (29/09)
+
+Luca a créé son compte Zernio et y a connecté son compte TikTok **@arzakparker**, relié par l'appli TikTok for
+Business (`apiFlavor: business`). Conséquences, d'après la doc Zernio : une vidéo publiée directement est toujours
+publique, le plafond partagé des comptes « developer app » ne s'applique pas, et Zernio accepte 15 vidéos par
+24 h glissantes et par compte. Décision de Luca : **pas d'étiquette « contenu généré par IA »** pour l'instant, TikTok
+la détecte de lui-même. Elle reste activable dans les Réglages.
+
+| Pièce | Où | Rôle |
+|---|---|---|
+| Client Zernio | `worker/tiktok/zernio.py` | comptes, droits TikTok du compte, envoi du fichier (presign puis PUT vers le stockage, sans la clé), création et lecture d'une publication |
+| Réglages et clé | `worker/tiktok/config.py` | `app_settings.tiktok` (chaîne YouTube → compte TikTok, `enabled`, `enabled_at`, interactions, `ai_label`) ; clé chiffrée dans `app_secrets.zernio_api_key`, `ZERNIO_API_KEY` du .env en repli |
+| Publication | `worker/tiktok/post.py` | légende = titre + description YouTube (hashtags, sources et licence Wikipédia compris) sans `#shorts`, 2 200 caractères au plus ; visibilité publique ; clé d'idempotence par envoi |
+| Step | `worker/steps/tiktok_publish.py` | envoi, publication programmée au créneau YouTube (ou tout de suite s'il est passé), puis attente du créneau pour confirmer la sortie et récupérer le lien |
+| Planificateur | `scheduler.plan_tiktok` (toutes les 5 min) | un job par Short programmé sur YouTube d'une chaîne en publication automatique, depuis l'activation seulement (rien d'ancien en rafale), 24 h en arrière au plus |
+| Base | migrations 0023 (type de job) et 0024 (`videos.tiktok`, fonction `request_tiktok_publish`) | état de chaque publication ; bouton de la Bibliothèque |
+| CLI | `yt2 tiktok key / accounts / link / status / check / post` | réglage et essais sans le dashboard (`post --draft --here` : brouillon, dans le terminal) |
+| Dashboard | Réglages → carte TikTok ; Bibliothèque → fiche → section TikTok | clé (vérifiée auprès de Zernio avant d'être enregistrée), comptes, lien et publication automatique ; état, lien, « Publier sur TikTok » ou « Réessayer » |
+| Tests | `tests/test_tiktok.py` (14 tests) | légende, heure, corps de la requête, lecture des réponses, client sur un faux serveur (la clé ne part jamais vers le stockage), suivi par le step |
+
+Essais du 29/09 :
+
+1. `yt2 tiktok accounts` → @arzakparker ; `creator-info` : visibilité publique seulement, commentaires, duo et collage
+   possibles, `canPostMore: true`.
+2. Brouillon (`yt2 tiktok post fb227f6e --draft --here`) de « Garage sombre en atelier de menuiserie », déjà sorti
+   sur YouTube : fichier envoyé, TikTok l'accepte dans la boîte de réception (rien de public). Constat : Zernio
+   renvoie le brouillon dans `platformSpecificData.tiktokSettings.draft`, pas dans `isDraft` comme le dit sa doc.
+3. Publication automatique activée à 01 h 42 : les 6 Shorts programmés des 29 et 30/09 sont programmés sur TikTok aux
+   mêmes heures que sur YouTube (9 h, 13 h, 18 h).
+
+Limites connues : changer le créneau d'une vidéo déjà programmée ne déplace pas sa publication TikTok ; couper la
+publication automatique n'annule pas les publications déjà programmées chez Zernio (les annuler sur zernio.com).
+
+## 7. Sources
 
 - TikTok for Developers : [Content Sharing Guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines),
   [Direct Post](https://developers.tiktok.com/doc/content-posting-api-reference-direct-post),

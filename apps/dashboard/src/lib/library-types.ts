@@ -1,6 +1,7 @@
 /** Bibliothèque : types et regroupements partagés serveur / navigateur. Données : lib/library.ts. */
 import type { VideoDetail } from "@/lib/data/contract";
 import type { VideoInsight } from "@/lib/stats-types";
+import type { LibraryTikTok } from "@/lib/tiktok-types";
 import type { ProductionCard, ProductionStatus, VideoOverview } from "@/lib/types";
 
 export interface LibraryItem extends VideoOverview {
@@ -42,6 +43,8 @@ export interface LibraryDetail {
   insight?: VideoInsight | null;
   /** Clips déjà faits, pour une vidéo pas encore montée (docs/28). */
   clips?: LibraryClip[];
+  /** Publication sur TikTok par Zernio (docs/36), pour les vidéos de l'appli montées. */
+  tiktok?: LibraryTikTok | null;
 }
 
 export type LibraryGroup = "a_valider" | "en_cours" | "programmees" | "publiees" | "refusees" | "autres";

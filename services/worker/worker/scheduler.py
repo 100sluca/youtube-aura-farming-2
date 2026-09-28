@@ -11,6 +11,7 @@ from .config import Settings
 from .db import Db
 from .notify import flush_pending_alerts
 from .series import active_series, create_production, next_concepts
+from .tiktok.config import load_tiktok_config, zernio_key
 
 log = structlog.get_logger(__name__)
 
@@ -44,6 +45,31 @@ def plan_uploads(db: Db, settings: Settings) -> None:
             max_attempts=2,
         )
         log.info("planned", video=str(v["id"]), at=slot["at"].isoformat())
+
+
+def plan_tiktok(db: Db, settings: Settings) -> None:
+    """Chaque Short programmé sur YouTube d'une chaîne reliée à TikTok part aussi sur TikTok, au même créneau
+    (docs/36). Seulement les créneaux qui suivent l'activation, et 24 h en arrière au plus (PC resté éteint)."""
+    cfg = load_tiktok_config(db)
+    channels = [(cid, ch) for cid, ch in cfg.channels.items() if ch.enabled and ch.account_id]
+    if not channels or not zernio_key(settings, db):
+        return
+    for channel_id, ch in channels:
+        rows = db.fetch_all(
+            """select v.id from videos v
+               where v.channel_id = %s and v.origin = 'app' and v.tiktok is null
+                 and v.status in ('scheduled', 'published') and v.youtube_video_id is not null
+                 and v.scheduled_at > now() - interval '24 hours'
+                 and (%s::timestamptz is null or v.scheduled_at >= %s::timestamptz)
+                 and not exists (select 1 from jobs j where j.video_id = v.id and j.type = 'tiktok_publish'
+                                 and (j.status in ('queued', 'running')
+                                      or (j.status = 'failed' and j.finished_at > now() - interval '6 hours')))
+               order by v.scheduled_at limit 10""",
+            (channel_id, ch.enabled_at, ch.enabled_at),
+        )
+        for r in rows:
+            db.enqueue("tiktok_publish", video_id=r["id"], channel_id=channel_id, priority=55, max_attempts=3)
+            log.info("tiktok.planned", video=str(r["id"]), account=ch.username or ch.account_id)
 
 
 def top_up_ideas(db: Db, settings: Settings) -> None:
@@ -162,6 +188,7 @@ def weekly_strategy(db: Db, settings: Settings) -> None:
 def start_scheduler(db: Db, settings: Settings) -> BackgroundScheduler:
     s = BackgroundScheduler(timezone="Europe/Paris")
     s.add_job(plan_uploads, "interval", minutes=5, args=[db, settings], id="plan_uploads")
+    s.add_job(plan_tiktok, "interval", minutes=5, args=[db, settings], id="plan_tiktok")  # docs/36
     s.add_job(top_up_ideas, "interval", hours=1, args=[db, settings], id="top_up_ideas")
     s.add_job(start_productions, "interval", minutes=15, args=[db, settings], id="start_productions")
     s.add_job(flush_pending_alerts, "interval", seconds=20, args=[db, settings], id="alerts")  # mails, docs/32

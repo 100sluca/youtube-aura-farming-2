@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     worker_id: str = "desktop"
     worker_job_types: str = (
         "script,storyboard,render,generate_clip,tts,seo,assemble,qa,upload,ideate,improve,strategy,"
-        "sync_metrics,sync_retention,sync_comments,import_channel,voice_preview,montage_preview,analyze"
+        "sync_metrics,sync_retention,sync_comments,import_channel,voice_preview,montage_preview,analyze,tiktok_publish"
     )
     data_dir: Path = Path("./data")
     dry_run: bool = False
@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     credentials_key: str | None = None  # base64, 32 octets (AES-GCM) — même clé que le dashboard
+
+    # TikTok par Zernio (docs/36-publication-tiktok.md) : la clé se colle dans Réglages → TikTok (chiffrée en base) ;
+    # celle-ci ne sert que de repli, pour la CLI ou une base neuve
+    zernio_api_key: str | None = None
 
     # Mail « vidéo terminée » (worker/notify.py, docs/32) : Réglages → Notifications prime sur ces valeurs
     alert_email_to: str = "adresse@example.com"  # adresse qui reçoit

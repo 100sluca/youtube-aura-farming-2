@@ -1,8 +1,8 @@
 # YouTube Aura Farming
 
 Une usine à **YouTube Shorts** qui tourne sur ton PC : l'IA trouve les idées, écrit le script, dessine chaque scène,
-l'anime, ajoute la voix, la musique et les sous-titres, puis monte la vidéo. Tu pilotes tout depuis un tableau de bord
-qui s'ouvre dans ton navigateur.
+l'anime, ajoute la voix, la musique et les sous-titres, puis monte la vidéo et la publie sur **YouTube Shorts** et sur
+**TikTok**. Tu pilotes tout depuis un tableau de bord qui s'ouvre dans ton navigateur.
 
 > **Tu veux juste l'installer et t'en servir ?** Lis seulement « Installation facile » ci-dessous : 3 étapes, 2 fichiers
 > à double-cliquer. Le reste de la page est la documentation technique.
@@ -79,6 +79,8 @@ Trois fenêtres réduites apparaissent dans la barre des tâches (ComfyUI, Worke
    seuls (30 minutes à 1 heure par vidéo).
 4. **Bibliothèque** : les vidéos terminées, à regarder et à télécharger. Le bouton **Tâches**, en haut, montre ce qui
    est en cours. Les fichiers sont aussi dans `C:\YouTube2\data\videos`.
+5. **Publication** : chaque Short programmé sur YouTube part aussi sur TikTok, à la même heure, si tu as relié un
+   compte TikTok (voir « Pour aller plus loin »).
 
 Thèmes prêts avec l'installation de base : maisons de rêve, histoires vraies (Wikipédia), animaux étranges, chantiers en
 accéléré, visites de luxe. Les « histoires de karma » demandent des modèles en plus ([`docs/35`](docs/35-recette-drame.md)).
@@ -117,6 +119,11 @@ FFmpeg et uv s'installent plus simplement en tapant, dans le **Terminal** (menu 
 - **Publier automatiquement sur YouTube** : Réglages > Chaînes. Il faut des identifiants Google Cloud, demande à Luca
   ([`docs/05-youtube-api.md`](docs/05-youtube-api.md)). En attendant, télécharge la vidéo depuis la Bibliothèque et
   publie-la toi-même sur YouTube Studio.
+- **Publier aussi sur TikTok** (gratuit pour 2 comptes) : crée un compte sur [zernio.com](https://zernio.com), connecte-y
+  ton compte TikTok, crée une clé API, puis colle-la dans **Réglages > TikTok**. Choisis ton compte TikTok en face de ta
+  chaîne et coche **Automatique** : chaque Short programmé sur YouTube sort aussi sur TikTok, à la même heure. Les
+  vidéos déjà sorties se publient une par une depuis la Bibliothèque (**Publier sur TikTok**). Tout le détail :
+  [`docs/36-publication-tiktok.md`](docs/36-publication-tiktok.md).
 - **Nouvelle version du projet** : retélécharge le ZIP, extrais-le, relance `INSTALLER.bat`. C'est rapide : tes réglages
   et tout ce qui est déjà téléchargé restent dans `C:\YouTube2`.
 - **Tout désinstaller** : supprime le dossier du projet et `C:\YouTube2`, puis, si tu veux, Docker Desktop, Node.js,
@@ -131,15 +138,15 @@ Ce que font les deux fichiers, pour les curieux : [`installation/installer.ps1`]
 
 Fabrique automatisée de **YouTube Shorts** organisée en séries de contenu (maisons de rêve et passages secrets,
 histoires vraies tirées de Wikipédia, animaux étranges, chantiers en accéléré, visites de luxe…), publiés sur une ou
-plusieurs chaînes (une chaîne de test pour commencer, d'autres s'ajoutent depuis Réglages), générés par IA en local,
-avec un dashboard de pilotage.
+plusieurs chaînes (une chaîne de test pour commencer, d'autres s'ajoutent depuis Réglages) et sur TikTok par Zernio,
+générés par IA en local, avec un dashboard de pilotage.
 
 | Dossier | Contenu |
 |---|---|
 | [`docs/`](docs/) | Architecture, modèle de données, pipeline, dashboard, API YouTube, stack locale, roadmap, ADR |
 | [`supabase/migrations/`](supabase/migrations/) | Schéma Postgres (Supabase) : jobs, productions, vidéos, métriques, RLS |
 | [`apps/dashboard/`](apps/dashboard/) | Dashboard Next.js 16 + shadcn/ui (vue d'ensemble, création, bibliothèque, calendrier, réglages, panneau des tâches) |
-| [`services/worker/`](services/worker/) | Worker Python local : agents LLM (Claude, Mistral, Gemini, Ollama en secours), ComfyUI, Kokoro, FFmpeg, upload et Analytics YouTube, benchmark vidéo |
+| [`services/worker/`](services/worker/) | Worker Python local : agents LLM (Claude, Mistral, Gemini, Ollama en secours), ComfyUI, Kokoro, FFmpeg, upload et Analytics YouTube, publication TikTok (Zernio), benchmark vidéo |
 | [`launcher/`](launcher/) | Lanceur Windows `.bat` + fiche mémo (dossier Projets_Code-start) |
 
 ![Vue d'ensemble du dashboard (mode démo)](docs/dashboard-overview.png)
@@ -196,6 +203,10 @@ avec un dashboard de pilotage.
    **Drame en dialogues** (recette « drama » : histoires de karma jouées par des fruits, des humains ou des animaux ;
    une fiche par personnage donnée en référence à chaque plan, une réplique par plan dite par une voix de personnage,
    trois thèmes dans Création) : [`docs/35-recette-drame.md`](docs/35-recette-drame.md).
+   **Publication sur TikTok** (par l'API de Zernio, dont l'appli TikTok est validée : chaque Short programmé sur
+   YouTube sort aussi sur TikTok à la même heure ; clé et compte dans Réglages → TikTok, état et lien dans la
+   Bibliothèque ; pourquoi ni l'API officielle, ni Make, ni un robot de navigateur) :
+   [`docs/36-publication-tiktok.md`](docs/36-publication-tiktok.md).
 3. [`docs/03-pipeline.md`](docs/03-pipeline.md) : les étapes, le planificateur, les agents.
 4. [`docs/05-youtube-api.md`](docs/05-youtube-api.md) : OAuth, quotas, **audit de conformité à lancer tout de suite**.
 5. [`docs/08-benchmark-video.md`](docs/08-benchmark-video.md) : génération vidéo gratuite, locale et en ligne, recommandation.

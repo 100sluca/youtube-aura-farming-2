@@ -41,6 +41,7 @@ JobType = Literal[
     "voice_preview",
     "montage_preview",
     "analyze",  # agent analyste des performances (migration 0015, docs/25)
+    "tiktok_publish",  # publication sur TikTok par Zernio (migration 0023, docs/36)
 ]
 
 

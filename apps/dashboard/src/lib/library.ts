@@ -11,6 +11,7 @@ import type { LibraryClip, LibraryDetail, LibraryItem, LibraryMaking } from "@/l
 import { getVideoInsight } from "@/lib/insights";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getTaskBoard } from "@/lib/tasks";
+import { getLibraryTikTok } from "@/lib/tiktok";
 import type { ProductionStatus, VideoOverview } from "@/lib/types";
 
 /** Vidéo de l'appli dont le montage n'existe pas encore (script, storyboard, clips en cours, ou fabrication arrêtée). */
@@ -106,6 +107,10 @@ export async function getLibraryDetail(videoId: string, productionId: string | n
     productionId ? favoriteProductions([productionId]) : Promise.resolve([]),
     withClips && productionId ? productionClips(productionId) : Promise.resolve(undefined),
   ]);
-  const insight = detail?.video.youtube_video_id ? await getVideoInsight(videoId, detail.video.channel_id) : null;
-  return { detail, production, favorite: favorites.length > 0, insight, clips };
+  const video = detail?.video;
+  const [insight, tiktok] = await Promise.all([
+    video?.youtube_video_id ? getVideoInsight(videoId, video.channel_id) : Promise.resolve(null),
+    video && video.origin !== "imported" && video.final_asset_id ? getLibraryTikTok(videoId, video.channel_id) : Promise.resolve(null),
+  ]);
+  return { detail, production, favorite: favorites.length > 0, insight, clips, tiktok };
 }

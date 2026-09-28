@@ -38,6 +38,7 @@ Les statuts `concept`, `production` et `video` sont détaillés dans `02-data-mo
 | `assemble` | vidéo | clips + narration + SFX + textes | final 1080×1920 mp4, preview 480p, poster | FFmpeg | 1-2 min |
 | `qa` | vidéo | final | `qa_report` (durée, loudness, résolution, frames noires, boucle) ; `ready` si `auto_publish`, sinon `review` ; mail « vidéo terminée » (docs/32) | ffprobe / ffmpeg | 10 s |
 | `upload` | vidéo | final + métadonnées + créneau | `youtube_video_id`, `scheduled` | Data API v3 | 30-90 s |
+| `tiktok_publish` | vidéo | final + titre et description YouTube + créneau | `videos.tiktok` : publication TikTok programmée au même créneau, puis son lien (docs/36) | API Zernio | 30 s à 2 min, puis attente du créneau |
 | `sync_metrics` | chaîne | J-2..J | `video_metrics_daily`, `video_stats`, `channel_metrics_daily` | Analytics + Data API | 30 s |
 | `sync_retention` | vidéo | J+3 / J+14 | `video_retention` | Analytics API | 5 s |
 | `sync_comments` | vidéo | — | `video_comments` | Data API | 5 s |
@@ -67,6 +68,7 @@ Le worker :
 |---|---|
 | toutes les 20 s | envoi des mails en attente : « vidéo terminée » et mail d'essai des Réglages (docs/32) ; les autres alertes (échecs, quota, tampon) restent en base, sans mail |
 | toutes les 5 min | `requeue_stale_jobs()` ; pour chaque vidéo `ready` sans créneau : `scheduled_at = next_free_slot(channel)` puis job `upload` (uniquement si créneau < 72 h : ne pas immobiliser des uploads trop tôt, le quota est journalier) |
+| toutes les 5 min | `plan_tiktok` : pour chaque chaîne reliée à TikTok en publication automatique, chaque Short programmé sur YouTube depuis l'activation (et 24 h en arrière au plus) reçoit un job `tiktok_publish` (docs/36) |
 | toutes les heures | si backlog de concepts `approved` + productions en cours < 3 jours de créneaux → job `ideate` (10 idées) et, si `auto_approve_ideas`, création automatique des productions |
 | 03:00 | `sync_metrics` par chaîne ; `sync_retention` pour les vidéos publiées J+3 et J+14 ; `sync_comments` pour les 10 dernières |
 | 06:00 | contrôle des créneaux : alerte si un créneau < 24 h est vide ; alerte si quota J-1 > 80 % |
@@ -137,6 +139,10 @@ Ollama en local) : un appel qui échoue passe au suivant, un fournisseur sans cl
   `api_quota_usage += 1` (compteur d'envois à part, 100 par jour : `05-youtube-api.md` §3).
 - Le lendemain, `sync_metrics` confirme `published` (privacyStatus public) et détecte un upload
   resté `private` (projet API non audité → alerte `error`, voir `05-youtube-api.md`).
+- **TikTok** (docs/36) : `tiktok_publish` envoie le même fichier à Zernio (presign + PUT), crée la publication
+  TikTok au même créneau (`scheduledFor`), puis se remet en file jusqu'à l'heure prévue pour confirmer la sortie et
+  récupérer le lien. Zernio publie à l'heure même si le PC est éteint. Légende : titre + description YouTube, sans
+  `#shorts`. Une clé d'idempotence par envoi : un job relancé ne publie jamais deux fois.
 
 ## 9. Reprise et idempotence
 

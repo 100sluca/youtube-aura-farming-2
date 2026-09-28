@@ -12,6 +12,7 @@ import { resumeProduction, stopProduction } from "@/app/tasks/actions";
 import { ChannelBadge } from "@/components/channel-badge";
 import { ConfirmButton } from "@/components/confirm-button";
 import { FavoriteStar } from "@/components/favorites/favorite-star";
+import { TikTokPanel } from "@/components/library/tiktok-panel";
 import { VideoStats } from "@/components/library/video-stats";
 import { VideoDecision, isDecidable } from "@/components/production/video-panel";
 import { PRODUCTION_STATUS_TONES, ToneBadge, VideoStatusBadge } from "@/components/status-badge";
@@ -268,6 +269,13 @@ export function LibrarySheet({ item, onClose }: { item: LibraryItem | null; onCl
                     <h3 className="text-sm font-semibold">Publier cette vidéo ?</h3>
                     <VideoDecision videoId={item.id} />
                   </section>
+                ) : null}
+
+                {!making && item.origin !== "imported" && data?.tiktok ? (
+                  <>
+                    <Separator />
+                    <TikTokPanel key={item.id} videoId={item.id} initial={data.tiktok} canPublish={Boolean(item.final_asset_id) && !item.files_deleted_at} />
+                  </>
                 ) : null}
 
                 {onYouTube ? (

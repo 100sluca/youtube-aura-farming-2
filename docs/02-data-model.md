@@ -36,7 +36,13 @@ et le projet GCP utilisé (quota API dédié par chaîne, voir `05-youtube-api.m
 |---|---|---|---|
 | **concept** | 1 | idée : titre, hook, catégorie, beats visuels, score | proposed → approved → used / rejected |
 | **production** | 1 par concept retenu | format A/B, script (`ScriptV1`), clips, master silencieux | draft → scripting → generating → assembling → ready / failed |
-| **video** | 1 par chaîne | narration, titre/description/tags localisés, final, créneau, id YouTube | pending → rendering → qa → review → ready → uploading → scheduled → published / failed |
+| **video** | 1 par chaîne | narration, titre/description/tags localisés, final, créneau, id YouTube, publication TikTok (`tiktok`) | pending → rendering → qa → review → ready → uploading → scheduled → published / failed |
+
+`videos.tiktok` (jsonb, migration 0024, docs/36) : état de la publication de la vidéo sur TikTok par Zernio, `null` tant
+qu'elle n'est pas demandée : `status` (sending, scheduled, publishing…, published, failed, cancelled), `post_id`
+(Zernio), `url`, `scheduled_for`, `published_at`, `account_id`, `username`, `error`, `round`, `draft`. Les réglages
+(lien chaîne YouTube → compte TikTok, publication automatique, interactions, étiquette IA) sont dans
+`app_settings.tiktok`, la clé API chiffrée dans `app_secrets.zernio_api_key`.
 
 `ScriptV1` (JSON dans `productions.script`) :
 ```json

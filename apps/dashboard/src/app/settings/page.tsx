@@ -9,6 +9,7 @@ import { GeminiSettingsCard } from "@/components/settings/gemini-settings";
 import { GenerationSettingsCard } from "@/components/settings/generation-settings";
 import { LlmSettingsCard } from "@/components/settings/llm-settings";
 import { NotificationsSettingsCard } from "@/components/settings/notifications-settings";
+import { TikTokSettingsCard } from "@/components/settings/tiktok-settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -19,6 +20,7 @@ import { getGeminiBrowserInfo, getGeminiSettings, getGeminiStatus } from "@/lib/
 import { getGenerationCatalog, getGenerationSettings } from "@/lib/generation-data";
 import { getNotificationSettings, getNotifyStatus } from "@/lib/notify";
 import { PRESET_MODELS, getChannelVideoCounts, getLlmSettings, getQuotaToday, getSecretHints } from "@/lib/settings-data";
+import { getTikTokSettings, getZernioKeyHint } from "@/lib/tiktok";
 
 export const metadata: Metadata = { title: "Réglages" };
 
@@ -27,7 +29,7 @@ const UPLOADS_PER_DAY = 100; // videos.insert : compteur séparé, 100 appels pa
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
-  const [channels, llm, hints, prompts, quota, generation, catalog, gemini, geminiStatus, geminiBrowser, notifications, notifyStatus] = await Promise.all([
+  const [channels, llm, hints, prompts, quota, generation, catalog, gemini, geminiStatus, geminiBrowser, notifications, notifyStatus, tiktok, zernioHint] = await Promise.all([
     getChannels(),
     getLlmSettings(),
     getSecretHints(),
@@ -40,6 +42,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     getGeminiBrowserInfo(),
     getNotificationSettings(),
     getNotifyStatus(),
+    getTikTokSettings(),
+    getZernioKeyHint(),
   ]);
   const connected = typeof params.connected === "string" ? params.connected : null;
   const oauthError = typeof params.oauth_error === "string" ? params.oauth_error : null;
@@ -50,7 +54,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader description="Chaînes YouTube (ajout, connexion, historique), modèles de génération (images, vidéo, voix), Gemini en ligne, intelligence artificielle (clés et modèles), notifications par e-mail, prompts des agents et quota de l’API YouTube Data." />
+      <PageHeader description="Chaînes YouTube (ajout, connexion, historique), publication sur TikTok (Zernio), modèles de génération (images, vidéo, voix), Gemini en ligne, intelligence artificielle (clés et modèles), notifications par e-mail, prompts des agents et quota de l’API YouTube Data." />
 
       {connected ? (
         <p className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm" role="status">
@@ -66,6 +70,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       <ChannelsSettings channels={channels} counts={counts} openAdd={params.add_channel === "1"} />
+
+      <TikTokSettingsCard initial={tiktok} keyHint={zernioHint} channels={channels} />
 
       <GenerationSettingsCard initial={generation} catalog={catalog} />
 

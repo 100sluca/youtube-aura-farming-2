@@ -13,11 +13,11 @@ Code : `apps/dashboard`. Démarrage : `npm install && NEXT_PUBLIC_MOCK=1 npm run
 | `/` | Vue d'ensemble | « où en est la chaîne aujourd'hui ? », ce qui attend une décision, ce qui marche le mieux |
 | `/dashboard` | Dashboard | les chiffres de chaque vidéo publiée (tableau triable, graphiques, Actualiser) et l'agent analyste : ce qui marche et pourquoi, leçons à valider ([`25-dashboard-statistiques.md`](25-dashboard-statistiques.md)) |
 | `/create` | Création | chaîne → thème → idées notées → ✓ / ✗ ; storyboards à regarder avant la fabrication |
-| `/library` | Bibliothèque | toutes les vidéos (produites ici et importées de YouTube) : lecture, publication, stats, suppression |
+| `/library` | Bibliothèque | toutes les vidéos (produites ici et importées de YouTube) : lecture, publication (YouTube, et TikTok par Zernio : état, lien, « Publier sur TikTok »), stats, suppression |
 | `/calendar` | Calendrier | « qu'est-ce qui sort quand, et quels créneaux sont vides ? » |
 | `/agents` | Agents | les agents et leurs prompts (modifiables, versionnés), la chaîne de production en direct ([`22-agents.md`](22-agents.md)) |
 | `/montage` | Montage | le modèle de montage de toutes les vidéos : titre d'accroche, sous-titres, textes à l'écran placés sur un aperçu 9:16, rendu exact ([`23-montage.md`](23-montage.md)) |
-| `/settings` | Réglages | chaînes (ajout, OAuth, historique), modèles, IA, notifications, quota |
+| `/settings` | Réglages | chaînes (ajout, OAuth, historique), TikTok (clé Zernio, compte relié, publication automatique), modèles, IA, notifications, quota |
 
 En-tête : sélecteur de chaîne (liste des chaînes par leur nom, « Toutes », « Ajouter une chaîne », mémorisé dans un
 cookie), bouton **Tâches** (panneau de droite : ce qui se fabrique, file d'attente, échecs, arrêt), thème clair / sombre.
@@ -76,7 +76,9 @@ groupé ; tableau par catégorie. Base pour décider de la répartition des form
 Chaînes (connexion OAuth, id YouTube, créneaux, `auto_publish`), prompts des agents (versions,
 actif, diff, activation d'une proposition de l'agent d'amélioration), fournisseurs (LLM /
 vidéo / TTS actifs), notifications par e-mail (mail « vidéo terminée », compte Gmail qui envoie, mail
-d'essai : docs/32), jauge de quota API par chaîne.
+d'essai : docs/32), jauge de quota API par chaîne. Carte **TikTok (par Zernio)** : clé API (chiffrée, vérifiée avant
+d'être enregistrée), comptes TikTok connectés à Zernio, compte relié à chaque chaîne et publication automatique,
+commentaires / duo / collage, étiquette « contenu généré par IA » (coupée par défaut) : docs/36.
 
 ## 9. Implémentation
 
