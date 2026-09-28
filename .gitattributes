@@ -1,0 +1,4 @@
+# Les fichiers batch doivent être en CRLF : avec des fins de ligne Unix, cmd.exe retrouve mal
+# les étiquettes (goto, call :…) et le lanceur échoue de façon aléatoire.
+*.bat text eol=crlf
+*.cmd text eol=crlf

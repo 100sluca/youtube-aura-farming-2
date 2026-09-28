@@ -1,8 +1,11 @@
 """Benchmark local des fournisseurs vidéo : mêmes prompts, temps par clip, VRAM, sorties à comparer.
 
 Usage (depuis services/worker, ComfyUI lancé sur COMFY_BASE_URL) :
-    uv run python scripts/bench_video.py --providers comfy_ltx,comfy_wan --duration 4 --runs 1
-    uv run python scripts/bench_video.py --providers comfy_ltx --prompts 1 --dry-run   # test du script
+    uv run python scripts/bench_video.py --providers comfy_wan22_i2v_4step,comfy_wan22_t2v_4step --duration 5
+    uv run python scripts/bench_video.py --providers comfy_wan22_i2v_4step --prompts 1 --dry-run   # test du script
+
+Un workflow image → vidéo (nœud IMAGE) passe d'abord par l'image de storyboard (COMFY_IMAGE_WORKFLOW,
+Flux schnell GGUF par défaut) : son temps est mesuré à part (colonne image_seconds).
 
 Sorties dans bench/<horodatage>/ : les clips (<provider>_<prompt>_<run>.mp4), results.csv et README.md
 (tableau à compléter avec une note qualité 1-5 par clip après visionnage).
@@ -20,24 +23,30 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from worker.config import Settings
-from worker.providers.video import get_video_provider
+from worker.config import Settings, utf8_console
+from worker.providers.video import ComfyImage, get_video_provider
 
+# (clé, prompt de l'image de départ, prompt de mouvement pour l'animation) : comme dans le pipeline, l'image
+# décrit une photo, le mouvement décrit UNE action lente et lisible (docs/12 §4).
 PROMPTS = [
     (
         "bookshelf_door",
-        "A modern living room, a tall oak bookshelf slowly swings open like a door revealing a hidden "
-        "staircase with warm LED lighting, slow push-in camera, photorealistic, cinematic, 9:16",
+        "A modern living room, a tall oak slatted bookshelf standing slightly ajar, revealing the first steps of a "
+        "hidden staircase lit by warm LED strips, wide shot, photorealistic, cinematic",
+        "The camera slowly pushes in toward the bookshelf while it swings open like a door on hinges, revealing "
+        "the hidden staircase with warm LED light; smooth rigid motion, everything else stays still",
     ),
     (
         "pool_reveal",
-        "Backyard timelapse: an old cracked concrete pool transforms into a luxury infinity pool with "
-        "a wooden deck and underwater lights at dusk, static wide shot, photorealistic, 9:16",
+        "Backyard at dusk, a luxury infinity pool with a wooden deck and underwater lights, wide static shot, "
+        "photorealistic",
+        "Slow rising crane shot over the pool at dusk, water gently rippling, underwater lights glowing, steady motion",
     ),
     (
         "slat_wall_led",
-        "Close-up sliding along a walnut acoustic slat wall with diffused LED strips glowing between "
-        "the slats, minimalist interior, soft evening light, photorealistic, 9:16",
+        "Close-up of a walnut acoustic slat wall with diffused LED strips glowing between the slats, minimalist "
+        "interior, soft evening light, photorealistic",
+        "Slow lateral tracking shot sliding along the slat wall, LED glow softly pulsing, shallow depth of field",
     ),
 ]
 
@@ -92,28 +101,42 @@ def probe(path: Path) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--providers", default="comfy_ltx,comfy_wan", help="liste séparée par des virgules")
+    ap.add_argument("--providers", default="comfy_wan22_i2v_4step,comfy_wan22_t2v_4step", help="liste séparée par des virgules")
     ap.add_argument("--duration", type=float, default=4.0, help="durée cible du clip (s)")
     ap.add_argument("--prompts", type=int, default=len(PROMPTS), help="nombre de prompts (1-3)")
     ap.add_argument("--runs", type=int, default=1, help="répétitions par prompt (seed différente)")
     ap.add_argument("--dry-run", action="store_true", help="ne génère rien, valide le script")
+    ap.add_argument("--size", help="résolution des clips, ex. 704x1280 (défaut : VIDEO_SIZE ou la valeur native du modèle)")
+    ap.add_argument("--out", help="dossier des sorties (défaut : bench/ dans le dossier courant)")
     args = ap.parse_args()
+    utf8_console()
 
     settings = Settings()
-    out_dir = Path("bench") / datetime.now().strftime("%Y%m%d-%H%M%S")
+    if args.size:
+        settings.video_size = args.size
+    out_dir = Path(args.out or "bench") / datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
 
     for name in [p.strip() for p in args.providers.split(",") if p.strip()]:
         provider = get_video_provider(settings, name)
-        for key, prompt in PROMPTS[: args.prompts]:
+        for key, image_prompt, motion_prompt in PROMPTS[: args.prompts]:
             for run in range(1, args.runs + 1):
                 out = out_dir / f"{name}_{key}_{run}.mp4"
-                print(f"→ {name} · {key} · run {run}", flush=True)
+                print(f"→ {name} · {key} · run {run} · {provider.width}×{provider.height}", flush=True)
+                error, image, image_s = "", None, ""
+                prompt = image_prompt
                 t0 = time.perf_counter()
-                error = ""
                 with VramSampler() as vram:
                     try:
+                        if provider.image_to_video:  # route image → vidéo : l'image d'abord, chronométrée à part
+                            image = ComfyImage(settings).generate(
+                                prompt=image_prompt, style_preset="modern_minimal", out_path=out.with_suffix(".png"),
+                                seed=run * 1000 + len(key), dry_run=args.dry_run,
+                            )
+                            image_s = round(time.perf_counter() - t0, 1)
+                            t0 = time.perf_counter()
+                            prompt = motion_prompt
                         info = provider.generate(
                             prompt=prompt,
                             style_preset="modern_minimal",
@@ -121,6 +144,7 @@ def main() -> None:
                             out_path=out,
                             on_progress=lambda p: None,
                             dry_run=args.dry_run,
+                            image_path=image,
                         )
                     except Exception as exc:  # noqa: BLE001
                         info, error = None, f"{type(exc).__name__}: {exc}"[:300]
@@ -131,6 +155,7 @@ def main() -> None:
                         "provider": name,
                         "prompt": key,
                         "run": run,
+                        "image_seconds": image_s,
                         "seconds": elapsed,
                         "vram_peak_mb": vram.peak or "",
                         "width": meta.get("width", getattr(info, "width", "")),

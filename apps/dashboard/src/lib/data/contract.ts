@@ -1,6 +1,5 @@
-/** Interface commune des sources de données (mock aujourd'hui, Supabase demain). */
+/** Interface commune des sources de données (Supabase, ou démo factice avec NEXT_PUBLIC_MOCK=1). */
 import type {
-  Alert,
   Channel,
   Concept,
   DailyViewsPoint,
@@ -9,12 +8,14 @@ import type {
   RetentionPoint,
   ScheduleSlot,
   ScriptV1,
+  Series,
   VideoFormat,
   VideoMetricsDaily,
   VideoOverview,
 } from "@/lib/types";
 
-export type ChannelFilter = "fr" | "en";
+/** Slug d'une chaîne (en-tête du dashboard) ; absent = toutes les chaînes. */
+export type ChannelFilter = string;
 
 export interface VideoComment {
   id: string;
@@ -55,12 +56,15 @@ export interface ExperimentSummary {
 export interface DataSource {
   getChannels(): Promise<Channel[]>;
   getOverviewKpis(channel?: ChannelFilter): Promise<OverviewKpis>;
+  /** Vues par jour, une clé par slug de chaîne. */
   getDailyViews(days: number): Promise<DailyViewsPoint[]>;
-  listPublishedVideos(): Promise<VideoOverview[]>;
   getVideoDetail(id: string): Promise<VideoDetail | null>;
   listProductions(): Promise<ProductionCard[]>;
+  /** Une production (panneau de détail du gestionnaire de tâches). */
+  getProductionCard(id: string): Promise<ProductionCard | null>;
   getSchedule(fromISO: string, days: number): Promise<ScheduleSlot[]>;
   listConcepts(): Promise<Concept[]>;
-  listAlerts(): Promise<Alert[]>;
   getExperimentSummary(): Promise<ExperimentSummary>;
+  /** Séries de contenu (absentes du mock : facultatif). */
+  listSeries?(): Promise<Series[]>;
 }

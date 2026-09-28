@@ -10,11 +10,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from .config import Settings
 from .db import Db
 from .notify import flush_pending_alerts
+from .series import active_series, create_production, next_concepts
 
 log = structlog.get_logger(__name__)
 
 MIN_SCHEDULED_BUFFER = 6  # vidéos programmées par chaîne (≈ 2 jours)
-MIN_IDEA_BACKLOG = 10
 
 
 def plan_uploads(db: Db, settings: Settings) -> None:
@@ -24,6 +24,9 @@ def plan_uploads(db: Db, settings: Settings) -> None:
         """select v.id, v.channel_id from videos v
            where v.status = 'ready' and v.scheduled_at is null
              and not exists (select 1 from jobs j where j.video_id = v.id and j.type = 'upload'
+                             and j.status in ('queued', 'running'))
+             -- titre, description et tags définitifs avant tout envoi (agent SEO)
+             and not exists (select 1 from jobs j where j.video_id = v.id and j.type = 'seo'
                              and j.status in ('queued', 'running'))
            order by v.created_at limit 20"""
     )
@@ -44,13 +47,34 @@ def plan_uploads(db: Db, settings: Settings) -> None:
 
 
 def top_up_ideas(db: Db, settings: Settings) -> None:
-    row = db.fetch_one("select count(*) as n from concepts where status in ('proposed', 'approved')")
-    if (
-        row
-        and row["n"] < MIN_IDEA_BACKLOG
-        and not db.fetch_one("select 1 from jobs where type = 'ideate' and status in ('queued', 'running')")
-    ):
-        db.enqueue("ideate", payload={"count": 10}, priority=120)
+    """Chaque série active garde au moins `ideas_per_series` concepts en attente (proposés ou approuvés)."""
+    for s in active_series(db):
+        row = db.fetch_one(
+            "select count(*) as n from concepts where series_id = %s and status in ('proposed', 'approved')", (s.id,)
+        )
+        pending = db.fetch_one(
+            "select 1 from jobs where type = 'ideate' and status in ('queued', 'running') and payload->>'series' = %s", (s.slug,)
+        )
+        if row and row["n"] < settings.ideas_per_series and not pending:
+            db.enqueue("ideate", payload={"series": s.slug, "count": settings.ideas_per_series}, priority=120)
+            log.info("ideate.enqueued", series=s.slug, pending=row["n"])
+
+
+def start_productions(db: Db, settings: Settings) -> None:
+    """Le lien concept approuvé → production : au plus `productions_per_day` par jour et
+    `max_productions_in_flight` en cours, réparties entre séries selon leurs poids."""
+    if not settings.auto_produce:
+        return
+    today = db.fetch_one("select count(*) as n from productions where created_at::date = current_date")
+    in_flight = db.fetch_one("select count(*) as n from productions where status not in ('ready', 'failed', 'archived')")
+    room = min(settings.productions_per_day - int(today["n"] if today else 0),
+               settings.max_productions_in_flight - int(in_flight["n"] if in_flight else 0))
+    if room <= 0:
+        return
+    for c in next_concepts(db, room):
+        pid, created = create_production(db, c["id"])
+        if created:
+            log.info("production.created", concept=c["title"], production=str(pid))
 
 
 def check_buffers(db: Db, settings: Settings) -> None:
@@ -69,6 +93,8 @@ def check_buffers(db: Db, settings: Settings) -> None:
     quota = db.fetch_all(
         """select c.slug, coalesce(sum(u.units), 0) as units from channels c
            left join api_quota_usage u on u.channel_id = c.id and u.day = current_date
+             -- envois et recherches : compteurs à part (100 appels par jour), hors des 10 000 unités
+             and u.endpoint not in ('videos.insert', 'search.list')
            group by c.slug"""
     )
     for q in quota:
@@ -76,29 +102,75 @@ def check_buffers(db: Db, settings: Settings) -> None:
             db.alert("warning", f"Quota YouTube à {q['units']} / 10 000 ({q['slug']})")
 
 
-def nightly_sync(db: Db, settings: Settings) -> None:
-    for c in db.fetch_all("select id from channels where is_active and youtube_channel_id is not null"):
-        db.enqueue("sync_metrics", channel_id=c["id"], priority=80)
-    for v in db.fetch_all(
-        """select id from videos where status = 'published'
-           and (published_at::date = current_date - 3 or published_at::date = current_date - 14)"""
+def enqueue_sync(db: Db, channel_id: object, payload: dict, priority: int) -> bool:
+    """Met en file une synchro YouTube de la chaîne, sauf si une autre attend déjà (ou tourne, pour les compteurs)."""
+    busy = ("queued", "running") if payload.get("scope") == "counters" else ("queued",)
+    if db.fetch_one(
+        "select 1 from jobs where type = 'sync_metrics' and channel_id = %s and status::text = any(%s) limit 1",
+        (channel_id, list(busy)),
     ):
-        db.enqueue("sync_retention", video_id=v["id"], priority=90)
+        return False
+    db.enqueue("sync_metrics", channel_id=channel_id, payload=payload, priority=priority)
+    return True
+
+
+def connected_channels(db: Db) -> list[dict]:
+    return db.fetch_all(
+        """select c.id from channels c where c.is_active and c.youtube_channel_id is not null
+           and exists (select 1 from channel_credentials cc where cc.channel_id = c.id)"""
+    )
+
+
+def hourly_counters(db: Db, settings: Settings) -> None:
+    """Toutes les heures : abonnés, vues, j'aime et commentaires (Data API, 1 unité pour 50 vidéos), docs/25."""
+    for c in connected_channels(db):
+        enqueue_sync(db, c["id"], {"scope": "counters"}, priority=85)
+
+
+def analytics_sync(db: Db, settings: Settings) -> None:
+    """Toutes les 6 h : YouTube Analytics, publié une fois par jour avec 2 à 3 jours de retard, à une heure inconnue."""
+    for c in connected_channels(db):
+        enqueue_sync(db, c["id"], {"days": 7}, priority=80)
+
+
+def nightly_sync(db: Db, settings: Settings) -> None:
+    """Chaque nuit : Analytics (courbes de rétention comprises, worker/steps/sync.py) et commentaires récents."""
+    analytics_sync(db, settings)
     for v in db.fetch_all("select id from videos where status = 'published' order by published_at desc limit 10"):
         db.enqueue("sync_comments", video_id=v["id"], priority=95)
+
+
+def weekly_analysis(db: Db, settings: Settings) -> None:
+    """Chaque dimanche : l'agent analyste compare les vidéos qui marchent et les autres, et propose des leçons (docs/25)."""
+    for c in connected_channels(db):
+        if not db.fetch_one(
+            "select 1 from jobs where type = 'analyze' and channel_id = %s and status in ('queued', 'running')", (c["id"],)
+        ):
+            db.enqueue("analyze", channel_id=c["id"], payload={"source": "hebdomadaire"}, priority=140)
 
 
 def weekly_improve(db: Db, settings: Settings) -> None:
     db.enqueue("improve", payload={"window_days": 14}, priority=150)
 
 
+def weekly_strategy(db: Db, settings: Settings) -> None:
+    """Une proposition de stratégie par chaîne active, à valider avec `yt2 strategy accept`."""
+    for c in db.fetch_all("select id from channels where is_active"):
+        db.enqueue("strategy", channel_id=c["id"], payload={"window_days": settings.strategy_window_days}, priority=150)
+
+
 def start_scheduler(db: Db, settings: Settings) -> BackgroundScheduler:
     s = BackgroundScheduler(timezone="Europe/Paris")
     s.add_job(plan_uploads, "interval", minutes=5, args=[db, settings], id="plan_uploads")
     s.add_job(top_up_ideas, "interval", hours=1, args=[db, settings], id="top_up_ideas")
-    s.add_job(flush_pending_alerts, "interval", minutes=2, args=[db, settings], id="alerts")
+    s.add_job(start_productions, "interval", minutes=15, args=[db, settings], id="start_productions")
+    s.add_job(flush_pending_alerts, "interval", seconds=20, args=[db, settings], id="alerts")  # mails, docs/32
     s.add_job(check_buffers, "cron", hour=6, args=[db, settings], id="check_buffers")
-    s.add_job(nightly_sync, "cron", hour=3, args=[db, settings], id="nightly_sync")
+    s.add_job(hourly_counters, "cron", minute=5, args=[db, settings], id="hourly_counters")
+    s.add_job(nightly_sync, "cron", hour=3, minute=20, args=[db, settings], id="nightly_sync")
+    s.add_job(analytics_sync, "cron", hour="9,15,21", minute=20, args=[db, settings], id="analytics_sync")
     s.add_job(weekly_improve, "cron", day_of_week="sun", hour=4, args=[db, settings], id="improve")
+    s.add_job(weekly_strategy, "cron", day_of_week="sun", hour=4, minute=30, args=[db, settings], id="strategy")
+    s.add_job(weekly_analysis, "cron", day_of_week="sun", hour=5, args=[db, settings], id="analysis")
     s.start()
     return s

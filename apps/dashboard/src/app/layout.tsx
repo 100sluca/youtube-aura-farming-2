@@ -6,7 +6,6 @@ import { AppHeader } from "@/components/app-header";
 import { AppSidebar } from "@/components/app-sidebar";
 import { THEME_INIT_SCRIPT } from "@/components/theme-toggle";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { listAlerts } from "@/lib/data";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,10 +25,7 @@ export const metadata: Metadata = {
   description: "Pilotage de l’usine à Shorts : production, calendrier, métriques.",
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const alerts = await listAlerts();
-  const openAlerts = alerts.filter((a) => !a.acknowledged_at).length;
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="fr"
@@ -42,9 +38,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-full font-sans">
         <TooltipProvider>
           <div className="flex min-h-svh">
-            <AppSidebar openAlerts={openAlerts} />
+            <AppSidebar />
             <div className="flex min-w-0 flex-1 flex-col">
-              <AppHeader openAlerts={openAlerts} />
+              <AppHeader />
               <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 md:px-6 lg:px-8">{children}</main>
             </div>
           </div>

@@ -4,18 +4,23 @@ Code : `apps/dashboard`. Démarrage : `npm install && NEXT_PUBLIC_MOCK=1 npm run
 
 ## 1. Navigation
 
+> Refonte du 2026-09-25 : [`16-creation-bibliotheque-taches.md`](16-creation-bibliotheque-taches.md). Les sections
+> 3, 4, 6, 7 ci-dessous décrivent les anciennes pages (Vidéos publiées, Production, Idées, Expériences), remplacées
+> par la Bibliothèque, le panneau Tâches, Création et la section « Ce qui marche le mieux ».
+
 | Route | Vue | Répond à |
 |---|---|---|
-| `/` | Vue d'ensemble | « où en est la chaîne aujourd'hui ? » |
-| `/videos` | Vidéos publiées | vues, likes, commentaires, abonnés gagnés, rétention par vidéo |
-| `/production` | Production | « où en sont les vidéos en cours de fabrication ? » |
+| `/` | Vue d'ensemble | « où en est la chaîne aujourd'hui ? », ce qui attend une décision, ce qui marche le mieux |
+| `/dashboard` | Dashboard | les chiffres de chaque vidéo publiée (tableau triable, graphiques, Actualiser) et l'agent analyste : ce qui marche et pourquoi, leçons à valider ([`25-dashboard-statistiques.md`](25-dashboard-statistiques.md)) |
+| `/create` | Création | chaîne → thème → idées notées → ✓ / ✗ ; storyboards à regarder avant la fabrication |
+| `/library` | Bibliothèque | toutes les vidéos (produites ici et importées de YouTube) : lecture, publication, stats, suppression |
 | `/calendar` | Calendrier | « qu'est-ce qui sort quand, et quels créneaux sont vides ? » |
-| `/ideas` | Idées | backlog de concepts, validation, génération |
-| `/experiments` | Expériences | format A vs B, catégories |
-| `/alerts` | Alertes | échecs, quota, créneaux vides |
-| `/settings` | Réglages | chaînes (OAuth), créneaux, prompts, fournisseurs, notifications |
+| `/agents` | Agents | les agents et leurs prompts (modifiables, versionnés), la chaîne de production en direct ([`22-agents.md`](22-agents.md)) |
+| `/montage` | Montage | le modèle de montage de toutes les vidéos : titre d'accroche, sous-titres, textes à l'écran placés sur un aperçu 9:16, rendu exact ([`23-montage.md`](23-montage.md)) |
+| `/settings` | Réglages | chaînes (ajout, OAuth, historique), modèles, IA, notifications, quota |
 
-Sélecteur de chaîne (Toutes / FR / EN) dans l'en-tête, propagé par `?channel=`.
+En-tête : sélecteur de chaîne (liste des chaînes par leur nom, « Toutes », « Ajouter une chaîne », mémorisé dans un
+cookie), bouton **Tâches** (panneau de droite : ce qui se fabrique, file d'attente, échecs, arrêt), thème clair / sombre.
 
 ## 2. Vue d'ensemble `/`
 
@@ -70,7 +75,8 @@ groupé ; tableau par catégorie. Base pour décider de la répartition des form
 
 Chaînes (connexion OAuth, id YouTube, créneaux, `auto_publish`), prompts des agents (versions,
 actif, diff, activation d'une proposition de l'agent d'amélioration), fournisseurs (LLM /
-vidéo / TTS actifs), e-mail d'alerte, jauge de quota API par chaîne.
+vidéo / TTS actifs), notifications par e-mail (mail « vidéo terminée », compte Gmail qui envoie, mail
+d'essai : docs/32), jauge de quota API par chaîne.
 
 ## 9. Implémentation
 

@@ -13,6 +13,11 @@ import { fr } from "date-fns/locale";
 export const ANCHOR_ISO = "2026-09-19T12:00:00Z";
 /** Date d'ancrage du tableau de bord (remplacée par `new Date()` une fois branché). */
 export const NOW = new Date(ANCHOR_ISO);
+
+/** L'instant courant : figé sur l'ancre en mode démo, l'heure réelle sinon (données Supabase). */
+export function now(): Date {
+  return process.env.NEXT_PUBLIC_MOCK === "1" || !process.env.NEXT_PUBLIC_SUPABASE_URL ? NOW : new Date();
+}
 export const TIMEZONE = "Europe/Paris";
 
 const NBSP = " ";
@@ -147,7 +152,7 @@ export function formatTime(value: string | Date): string {
 }
 
 /** « il y a 3 heures » / « dans 2 jours » (relatif à la date d'ancrage). */
-export function formatRelative(value: string | Date, base: Date = NOW): string {
+export function formatRelative(value: string | Date, base: Date = now()): string {
   return formatDistanceStrict(toDate(value), base, { addSuffix: true, locale: fr });
 }
 
@@ -225,6 +230,14 @@ export function formatSigned(n: number | null | undefined): string {
 export function formatHours(hours: number | null | undefined): string {
   if (hours == null || Number.isNaN(hours)) return "—";
   return `${formatNumber(Math.round(hours))}${NBSP}h`;
+}
+
+/** Taille de fichier : « 850 Ko », « 48 Mo », « 1,2 Go ». */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || Number.isNaN(bytes)) return "—";
+  if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))}${NBSP}Ko`;
+  if (bytes < 1024 ** 3) return `${Math.round(bytes / 1024 ** 2)}${NBSP}Mo`;
+  return `${trimZeros((bytes / 1024 ** 3).toFixed(1))}${NBSP}Go`;
 }
 
 /** Pourcentage borné 0-100 pour une barre de progression. */

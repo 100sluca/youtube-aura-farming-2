@@ -76,10 +76,51 @@ class YouTubeClient:
         r = self.api.videos().list(part="statistics,status,snippet", id=",".join(ids)).execute()
         return r.get("items", [])
 
-    def channel_subscribers(self) -> int | None:
+    def videos_details(self, ids: list[str]) -> list[dict[str, Any]]:
+        """Titre, description, durée, statistiques et statut de ≤ 50 vidéos (1 unité)."""
+        r = self.api.videos().list(part="snippet,contentDetails,statistics,status", id=",".join(ids[:50])).execute()
+        return r.get("items", [])
+
+    def channel_uploads(self, max_items: int = 500) -> tuple[dict[str, Any] | None, list[str], int]:
+        """Identité de la chaîne (snippet) et identifiants de ses vidéos, les plus récentes d'abord (playlist
+        « uploads »). Renvoie aussi le nombre d'appels, à compter dans le quota (1 unité chacun)."""
+        r = self.api.channels().list(part="snippet,contentDetails", mine=True).execute()
+        calls = 1
+        items = r.get("items", [])
+        if not items:
+            return None, [], calls
+        playlist = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        ids: list[str] = []
+        token: str | None = None
+        while len(ids) < max_items:
+            page = (
+                self.api.playlistItems()
+                .list(part="contentDetails", playlistId=playlist, maxResults=50, pageToken=token)
+                .execute()
+            )
+            calls += 1
+            ids.extend(it["contentDetails"]["videoId"] for it in page.get("items", []))
+            token = page.get("nextPageToken")
+            if not token:
+                break
+        return items[0].get("snippet", {}), ids[:max_items], calls
+
+    def channel_statistics(self) -> dict[str, int | None] | None:
+        """Compteurs publics de la chaîne (1 unité) : abonnés (None s'ils sont masqués), vues, vidéos publiques."""
         r = self.api.channels().list(part="statistics", mine=True).execute()
         items = r.get("items", [])
-        return int(items[0]["statistics"]["subscriberCount"]) if items else None
+        if not items:
+            return None
+        st = items[0]["statistics"]
+        return {
+            "subscribers": None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount", 0)),
+            "views": int(st.get("viewCount", 0)),
+            "videos": int(st.get("videoCount", 0)),
+        }
+
+    def channel_subscribers(self) -> int | None:
+        stats = self.channel_statistics()
+        return stats["subscribers"] if stats else None
 
     def comment_threads(self, video_id: str, max_results: int = 20) -> Iterator[dict[str, Any]]:
         r = (
@@ -95,21 +136,40 @@ class YouTubeClient:
         "estimatedMinutesWatched,averageViewDuration,averageViewPercentage"
     )
 
-    def analytics_video_metrics(self, day: date, video_ids: list[str]) -> list[dict[str, Any]]:
-        """Rapport « Top videos » sur un jour : une ligne par vidéo (≤ 200 id par appel)."""
+    def analytics_video_metrics(self, start: date, video_ids: list[str], end: date | None = None) -> list[dict[str, Any]]:
+        """Rapport « Top videos » sur un jour (ou de `start` à `end`) : une ligne par vidéo (≤ 200 id par appel)."""
+        end = end or start
         filters = f"video=={','.join(video_ids[:200])}"
         try:
             return self.analytics(
-                day, day, metrics=self.VIDEO_METRICS, dimensions="video", filters=filters, sort="-views", max_results=200
+                start, end, metrics=self.VIDEO_METRICS, dimensions="video", filters=filters, sort="-views", max_results=200
             )
         except AnalyticsBadRequest as exc:  # metrics récentes (engagedViews) parfois refusées : on les retire
             metrics = self.VIDEO_METRICS.replace("engagedViews,", "")
             if "engagedViews" not in str(exc):
                 raise
-            return self.analytics(day, day, metrics=metrics, dimensions="video", filters=filters, sort="-views", max_results=200)
+            return self.analytics(start, end, metrics=metrics, dimensions="video", filters=filters, sort="-views", max_results=200)
+
+    def analytics_retention(self, video_id: str, start: date, end: date) -> list[dict[str, Any]]:
+        """Courbe de rétention d'une vidéo : 100 points (avancement 0,01 → 1), part de l'audience encore là."""
+        return self.analytics(
+            start,
+            end,
+            dimensions="elapsedVideoTimeRatio",
+            filters=f"video=={video_id}",
+            metrics="audienceWatchRatio,relativeRetentionPerformance",
+        )
 
     def analytics(
-        self, start: date, end: date, *, metrics: str, dimensions: str, filters: str | None = None, sort: str | None = None
+        self,
+        start: date,
+        end: date,
+        *,
+        metrics: str,
+        dimensions: str,
+        filters: str | None = None,
+        sort: str | None = None,
+        max_results: int = 10000,
     ) -> list[dict[str, Any]]:
         params = {
             "ids": "channel==MINE",
@@ -117,7 +177,7 @@ class YouTubeClient:
             "endDate": end.isoformat(),
             "metrics": metrics,
             "dimensions": dimensions,
-            "maxResults": 10000,
+            "maxResults": max_results,
         }
         if filters:
             params["filters"] = filters

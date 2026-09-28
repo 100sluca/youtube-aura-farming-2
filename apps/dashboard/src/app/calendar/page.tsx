@@ -8,10 +8,10 @@ import { PageHeader } from "@/components/page-header";
 import { ToneBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { parseChannel, withChannel } from "@/lib/channel";
-import { getChannels, getSchedule } from "@/lib/data";
-import { NOW, formatDate, parisAddDays, parisDateTime, parisDayKey, parisSlot, parisStartOfWeek } from "@/lib/format";
-import type { ChannelLang, ScheduleSlot } from "@/lib/types";
+import { getChannelContext } from "@/lib/channel-server";
+import { getSchedule } from "@/lib/data";
+import { now, formatDate, parisAddDays, parisDateTime, parisDayKey, parisSlot, parisStartOfWeek } from "@/lib/format";
+import type { ScheduleSlot } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Calendrier" };
@@ -21,9 +21,9 @@ const WEEK_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 function resolveWeekAnchor(value: string | string[] | undefined): Date {
   const raw = Array.isArray(value) ? value[0] : value;
   const match = raw ? WEEK_RE.exec(raw) : null;
-  if (!match) return NOW;
+  if (!match) return now();
   const candidate = parisDateTime(Number(match[1]), Number(match[2]), Number(match[3]), 12);
-  return Number.isNaN(candidate.getTime()) ? NOW : candidate;
+  return Number.isNaN(candidate.getTime()) ? now() : candidate;
 }
 
 const LEGEND: { label: string; tone: React.ComponentProps<typeof ToneBadge>["tone"]; hint: string }[] = [
@@ -40,19 +40,20 @@ export default async function CalendarPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const channel = parseChannel(sp.channel);
+  const { channels, selected } = await getChannelContext();
+  const channel = selected?.slug;
   const weekStart = parisStartOfWeek(resolveWeekAnchor(sp.week));
-  const [schedule, channels] = await Promise.all([getSchedule(weekStart.toISOString(), 7), getChannels()]);
+  const schedule = await getSchedule(weekStart.toISOString(), 7);
 
   const days = Array.from({ length: 7 }, (_, i) => parisAddDays(weekStart, i));
-  const todayKey = parisDayKey(NOW);
+  const todayKey = parisDayKey(now());
   const prevWeek = parisDayKey(parisAddDays(weekStart, -7));
   const nextWeek = parisDayKey(parisAddDays(weekStart, 7));
-  const visibleChannels = channel ? channels.filter((c) => c.slug === channel) : channels;
+  const visibleChannels = selected ? [selected] : channels.filter((c) => c.is_active);
   const bySlot = new Map<string, ScheduleSlot>(schedule.map((s) => [`${s.channel_slug}|${s.at}`, s]));
   const emptySoon = schedule.filter((s) => {
     const at = new Date(s.at).getTime();
-    return !s.video && at > NOW.getTime() && at - NOW.getTime() < 48 * 3_600_000 && (!channel || s.channel_slug === channel);
+    return !s.video && at > now().getTime() && at - now().getTime() < 48 * 3_600_000 && (!channel || s.channel_slug === channel);
   }).length;
 
   return (
@@ -62,16 +63,16 @@ export default async function CalendarPage({
         actions={
           <>
             <Button variant="outline" size="sm" asChild>
-              <Link href={withChannel(`/calendar?week=${prevWeek}`, channel)} aria-label="Semaine précédente">
+              <Link href={`/calendar?week=${prevWeek}`} aria-label="Semaine précédente">
                 <ChevronLeft />
                 Semaine précédente
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link href={withChannel("/calendar", channel)}>Aujourd’hui</Link>
+              <Link href="/calendar">Aujourd’hui</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link href={withChannel(`/calendar?week=${nextWeek}`, channel)} aria-label="Semaine suivante">
+              <Link href={`/calendar?week=${nextWeek}`} aria-label="Semaine suivante">
                 Semaine suivante
                 <ChevronRight />
               </Link>
@@ -119,7 +120,7 @@ export default async function CalendarPage({
                   <tr key={`${ch.slug}-${slot}`} className={cn("border-b last:border-b-0", slotIndex === 0 && "border-t-2")}>
                     <th scope="row" className="bg-card sticky left-0 z-10 p-3 text-left font-normal">
                       <div className="flex items-center gap-2">
-                        <ChannelBadge lang={ch.lang as ChannelLang} />
+                        <ChannelBadge channel={ch} className="max-w-28" />
                         <span className="tabular-nums">{slot}</span>
                       </div>
                     </th>

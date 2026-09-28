@@ -2,9 +2,9 @@
 
 ## 1. Projet Google Cloud et OAuth
 
-1. Créer **un projet GCP par chaîne** (`yt2-fr`, `yt2-en`) : chaque projet a son propre
-   quota Data API (10 000 unités / jour). Avec un seul projet, 6 uploads / jour = 9 600 unités,
-   il ne reste rien pour les métriques.
+1. **Un seul projet GCP** suffit pour toutes les chaînes : les envois ont leur propre compteur
+   de 100 par jour et le reste consomme moins de 2 % des 10 000 unités (§3). Un projet par
+   chaîne reste possible (quotas séparés) mais n'est plus nécessaire.
 2. Activer **YouTube Data API v3** et **YouTube Analytics API** dans chaque projet.
 3. Écran de consentement OAuth : type *Externe*, statut **En production** (pas « Test » : en
    test, les refresh tokens expirent au bout de 7 jours). L'appli reste « non validée » :
@@ -17,6 +17,12 @@
    - `https://www.googleapis.com/auth/youtube.upload` (upload)
    - `https://www.googleapis.com/auth/youtube` (update `publishAt`, lecture des vidéos privées)
    - `https://www.googleapis.com/auth/yt-analytics.readonly` (métriques et rétention)
+   - `https://www.googleapis.com/auth/youtube.force-ssl` (commentaires : `commentThreads.list`
+     n'accepte que ce scope, sinon 403 « insufficient authentication scopes » ; ajouté le 28/09,
+     une chaîne connectée avant doit être reconnectée : Réglages → Chaînes → Reconnecter)
+
+   Le worker rafraîchit le jeton avec les scopes enregistrés à la connexion
+   (`channel_credentials.scopes`) : un scope ajouté ici ne casse donc rien avant la reconnexion.
 6. Flux : `/settings` → « Connecter YouTube » → `GET /api/youtube/connect?channel=fr`
    (state signé, `access_type=offline`, `prompt=consent`) → callback → échange du code →
    `channel_credentials.refresh_token_encrypted` (AES-GCM) + `channels.youtube_channel_id`
@@ -34,22 +40,37 @@
   chaînes), captures du dashboard, politique de confidentialité (une page statique suffit).
 - En attendant l'audit, le pipeline fonctionne en bout en bout mais les vidéos restent privées ;
   le worker le détecte au `sync_metrics` du lendemain et lève une alerte.
-- Profiter du même formulaire pour demander une **extension de quota** si un seul projet est
-  conservé.
+- Aucune **extension de quota** à demander : le quota par défaut suffit largement (§3).
 
-## 3. Coût en unités (Data API v3, 10 000 / jour / projet)
+## 3. Quota par projet GCP : trois compteurs
 
-| Appel | Unités | Usage / jour / chaîne |
-|---|---|---|
-| `videos.insert` | 1 600 | 3 → 4 800 |
-| `videos.update` (re-programmation) | 50 | 0-2 |
-| `videos.list` (statistics, 50 id / appel) | 1 | 4-8 |
-| `channels.list` | 1 | 1 |
-| `commentThreads.list` | 1 | 10 |
-| `search.list` | 100 | **jamais** (utiliser `playlistItems.list` sur la playlist uploads, 1 unité) |
+Page Google [coûts du quota](https://developers.google.com/youtube/v3/determine_quota_cost),
+vérifiée le 2026-09-21 et le 2026-09-28 : `videos.insert` et `search.list` ont chacun **leur
+propre compteur de 100 appels par jour**, à 1 unité l'appel ; les **10 000 unités par jour**
+servent à tout le reste. L'ancien coût de 1 600 unités par envoi n'existe plus.
 
-Le worker inscrit chaque appel dans `api_quota_usage` ; `/settings` affiche la jauge ; alerte à
-80 %. Le compteur Google se remet à zéro à minuit heure du Pacifique (09:00 Paris en été).
+| Appel | Compteur | Unités | Usage / jour / chaîne |
+|---|---|---|---|
+| `videos.insert` | envois (100 / jour) | 1 | 3 (21 un jour de production hebdo) |
+| `search.list` | recherches (100 / jour) | 1 | **jamais** (`playlistItems.list` sur la playlist uploads) |
+| `videos.update` (re-programmation) | 10 000 unités | 50 | 0-2 |
+| `videos.list` (statistics, 50 id / appel) | 10 000 unités | 1 | ≈ 28 par tranche de 50 vidéos |
+| `channels.list` | 10 000 unités | 1 | ≈ 28 (relevé horaire + synchros Analytics) |
+| `commentThreads.list` | 10 000 unités | 1 | 10 |
+| `playlistItems.list` (import d'historique) | 10 000 unités | 1 | 1 par page de 50 vidéos, à l'import |
+
+Total : de l'ordre de 60 à 150 unités par jour et par chaîne, soit 1 à 2 % des 10 000.
+
+Le worker inscrit chaque appel dans `api_quota_usage` (`videos.insert` à 1 unité depuis le
+2026-09-28 ; les lignes antérieures, à 1 600, ont été ramenées à 1). `/settings` affiche la
+jauge des 10 000 unités sans les envois, et les envois du jour à part (« N envois aujourd'hui,
+100 − N encore possibles ») ; le planificateur alerte au-delà de 8 000 unités. Le compteur Google
+se remet à zéro à minuit heure du Pacifique (09:00 Paris en été), la jauge de l'appli à minuit UTC.
+
+Quota dépassé : Google refuse les appels suivants (erreur `quotaExceeded`, ou
+`uploadLimitExceeded` pour les envois) jusqu'à la remise à zéro, sans pénalité ni suspension
+de la chaîne. Le job échoue, les vidéos déjà programmées sur YouTube sortent quand même à
+l'heure prévue (la publication est faite par YouTube, pas par le worker).
 
 ## 4. Analytics API v2 (quota séparé, largement suffisant)
 

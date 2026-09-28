@@ -49,11 +49,13 @@ export const VIDEO_STATUS_TONES: Record<VideoStatus, Tone> = {
 export const PRODUCTION_STATUS_TONES: Record<ProductionStatus, Tone> = {
   draft: "neutral",
   scripting: "running",
+  storyboard_review: "warning",
   generating: "running",
   assembling: "running",
   ready: "success",
   failed: "danger",
   archived: "neutral",
+  cancelled: "warning",
 };
 
 export const JOB_STATUS_TONES: Record<JobStatus, Tone> = {

@@ -1,4 +1,5 @@
-"""Boucle d'amélioration : propose une nouvelle version de prompt (inactive, à valider dans le dashboard)."""
+"""Boucle d'amélioration : propose une nouvelle version de prompt (inactive, à choisir dans l'onglet Agents du
+dashboard)."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from ..prompts import prompt_text
 from ..providers.llm import get_llm
 from .base import Context, Step
 
@@ -46,13 +48,17 @@ class ImproveStep(Step):
             "and published_at > now() - make_interval(days => %s) order by average_view_pct asc nulls last limit 10",
             (days,),
         )
-        active = ctx.db.fetch_all("select agent, version, content from prompt_templates where is_active")
+        # les agents dont les vidéos mesurent l'effet du prompt (prompt_templates contient aussi les autres agents et les
+        # consignes communes depuis la migration 0012)
+        active = ctx.db.fetch_all(
+            "select agent, version, content from prompt_templates where is_active and agent in ('idea', 'script')"
+        )
         if not perf:
             ctx.log("improve.skip", reason="pas assez de données")
             return {"proposals": 0}
         ctx.progress(30, "Appel LLM")
-        out = get_llm(ctx.settings).complete_json(
-            IMPROVE_PROMPT,
+        out = get_llm(ctx.settings, ctx.db).complete_json(
+            prompt_text(ctx.db, "improve", IMPROVE_PROMPT),
             f"Performance par prompt : {perf}\nMeilleures : {best}\nPires : {worst}\nPrompts actifs : {active}",
             Proposals,
         )
@@ -69,7 +75,7 @@ class ImproveStep(Step):
             )
             created += 1
         if created:
-            ctx.db.alert("info", f"{created} proposition(s) de prompt à valider", "Voir Réglages → Prompts des agents")
+            ctx.db.alert("info", f"{created} proposition(s) de prompt à valider", "Voir l'onglet Agents du dashboard")
         return {"proposals": created}
 
 

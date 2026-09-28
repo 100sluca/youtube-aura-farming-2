@@ -36,7 +36,7 @@ Les statuts `concept`, `production` et `video` sont détaillés dans `02-data-mo
 | `generate_clip` | production, `scene_index` | `visual_prompt`, style preset, durée | clip 9:16 (mp4, 480-576p) | ComfyUI | 1-8 min |
 | `tts` | vidéo | `narration_text` (langue) | wav narration | Kokoro (CPU/GPU) | 10 s |
 | `assemble` | vidéo | clips + narration + SFX + textes | final 1080×1920 mp4, preview 480p, poster | FFmpeg | 1-2 min |
-| `qa` | vidéo | final | `qa_report` (durée, loudness, résolution, frames noires, boucle) ; `ready` si `auto_publish`, sinon `review` + e-mail | ffprobe / ffmpeg | 10 s |
+| `qa` | vidéo | final | `qa_report` (durée, loudness, résolution, frames noires, boucle) ; `ready` si `auto_publish`, sinon `review` ; mail « vidéo terminée » (docs/32) | ffprobe / ffmpeg | 10 s |
 | `upload` | vidéo | final + métadonnées + créneau | `youtube_video_id`, `scheduled` | Data API v3 | 30-90 s |
 | `sync_metrics` | chaîne | J-2..J | `video_metrics_daily`, `video_stats`, `channel_metrics_daily` | Analytics + Data API | 30 s |
 | `sync_retention` | vidéo | J+3 / J+14 | `video_retention` | Analytics API | 5 s |
@@ -65,7 +65,7 @@ Le worker :
 
 | Quand | Action |
 |---|---|
-| toutes les 2 min | envoi par e-mail des alertes `warning`/`error` non encore envoyées (échecs, quota, tampon, **validation humaine requise**) |
+| toutes les 20 s | envoi des mails en attente : « vidéo terminée » et mail d'essai des Réglages (docs/32) ; les autres alertes (échecs, quota, tampon) restent en base, sans mail |
 | toutes les 5 min | `requeue_stale_jobs()` ; pour chaque vidéo `ready` sans créneau : `scheduled_at = next_free_slot(channel)` puis job `upload` (uniquement si créneau < 72 h : ne pas immobiliser des uploads trop tôt, le quota est journalier) |
 | toutes les heures | si backlog de concepts `approved` + productions en cours < 3 jours de créneaux → job `ideate` (10 idées) et, si `auto_approve_ideas`, création automatique des productions |
 | 03:00 | `sync_metrics` par chaîne ; `sync_retention` pour les vidéos publiées J+3 et J+14 ; `sync_comments` pour les 10 dernières |
@@ -134,7 +134,7 @@ Ollama en local) : un appel qui échoue passe au suivant, un fournisseur sans cl
   `status.privacyStatus=private`, `status.publishAt=<créneau ISO>`,
   `status.selfDeclaredMadeForKids=false`, `status.containsSyntheticMedia=true` si rendu réaliste.
 - Après succès : `youtube_video_id`, `youtube_publish_at`, statut `scheduled`,
-  `api_quota_usage += 1600`.
+  `api_quota_usage += 1` (compteur d'envois à part, 100 par jour : `05-youtube-api.md` §3).
 - Le lendemain, `sync_metrics` confirme `published` (privacyStatus public) et détecte un upload
   resté `private` (projet API non audité → alerte `error`, voir `05-youtube-api.md`).
 

@@ -1139,7 +1139,7 @@ function buildAlerts(rng: Rng, pipeline: PipelineEntry[]): Alert[] {
     {
       severity: "warning",
       title: "Quota YouTube Data API à 82 % (Chaîne FR)",
-      body: "8 200 / 10 000 unités consommées. 1 upload (1 600 unités) reste possible aujourd’hui.",
+      body: "8 200 / 10 000 unités consommées (hors envois, qui ont leur propre compteur de 100 par jour).",
       job_id: null,
       video_id: null,
       acknowledged_at: null,
@@ -1205,7 +1205,7 @@ function buildWorld(): World {
       id: v.id,
       title: v.title,
       status: v.status,
-      format: v.format,
+      format: v.format ?? "A_voiceover",
       youtube_video_id: v.youtube_video_id,
     });
   }
@@ -1296,10 +1296,6 @@ export const mockSource: DataSource = {
     return fr.map((row, i): DailyViewsPoint => ({ day: row.day, fr: row.views, en: en[i]?.views ?? 0 }));
   },
 
-  async listPublishedVideos() {
-    return WORLD.published.map((e) => ({ ...e.overview }));
-  },
-
   async getVideoDetail(id) {
     const entry = WORLD.published.find((e) => e.overview.id === id);
     if (!entry) return null;
@@ -1315,6 +1311,10 @@ export const mockSource: DataSource = {
 
   async listProductions() {
     return WORLD.pipeline.map((p) => p.card);
+  },
+
+  async getProductionCard(id) {
+    return WORLD.pipeline.find((p) => p.card.production.id === id)?.card ?? null;
   },
 
   async getSchedule(fromISO, days) {
@@ -1334,10 +1334,6 @@ export const mockSource: DataSource = {
 
   async listConcepts() {
     return [...WORLD.concepts].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-  },
-
-  async listAlerts() {
-    return [...WORLD.alerts].sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
 
   async getExperimentSummary() {

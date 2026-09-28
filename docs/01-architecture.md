@@ -110,7 +110,7 @@ sequenceDiagram
 | Dashboard local (`DASHBOARD_AUTH=none`) | service role côté serveur Next | tout, machine de confiance |
 | Dashboard hébergé (`DASHBOARD_AUTH=supabase`) | anon key + session Supabase Auth | RLS : e-mails de `app_users` |
 | Worker local | service role (`DATABASE_URL` pooler + clé Storage) | tout, contourne la RLS |
-| Google OAuth | client « application Web », redirection `http://localhost:3000/api/youtube/callback` | scopes `youtube.upload`, `youtube`, `yt-analytics.readonly` |
+| Google OAuth | client « application Web », redirection `http://localhost:3000/api/youtube/callback` | scopes `youtube.upload`, `youtube`, `yt-analytics.readonly`, `youtube.force-ssl` (commentaires) |
 
 - Les refresh tokens sont chiffrés (AES-GCM, clé `CREDENTIALS_KEY`) avant insertion ;
   le worker les déchiffre localement.

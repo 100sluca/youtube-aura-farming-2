@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
   url.searchParams.set("state", state);
 
   const res = NextResponse.redirect(url);
-  res.cookies.set("yt_oauth_nonce", nonce, { httpOnly: true, sameSite: "lax", secure: true, maxAge: 600, path: "/" });
+  // secure seulement en https : sur http://localhost, un cookie « secure » ne serait jamais posé et le retour OAuth échouerait
+  res.cookies.set("yt_oauth_nonce", nonce, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 600, path: "/" });
   return res;
 }

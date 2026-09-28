@@ -1,0 +1,28 @@
+# Supabase en local pour YouTube 2.0 (100 % local, jamais hébergé).
+# Démarré par le lanceur : `npx supabase --workdir C:\YouTube2\supabase-workdir start`, sur une copie
+# de ce dossier (Windows interdit aux programmes non autorisés d'écrire dans Documents).
+# Au premier démarrage, les migrations puis seed.sql sont appliqués automatiquement.
+project_id = "youtube-shorts-daily"
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+# Interface d'administration de la base : http://127.0.0.1:54323
+enabled = true
+port = 54323
+
+# Services inutiles ici : désactivés pour alléger le téléchargement et la mémoire
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

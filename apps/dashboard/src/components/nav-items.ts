@@ -1,12 +1,13 @@
 import {
-  Bell,
+  Bot,
   CalendarDays,
-  Factory,
-  Film,
-  FlaskConical,
+  ChartColumnBig,
+  Clapperboard,
   LayoutDashboard,
-  Lightbulb,
+  LibraryBig,
   Settings,
+  Sparkles,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,14 +17,17 @@ export interface NavItem {
   icon: LucideIcon;
 }
 
+/** Menu de gauche (docs/16, docs/19, docs/22, docs/23) : on crée, on retrouve, on garde ce qu'on aime, on planifie, on
+ * règle les agents et leurs prompts, et le modèle de montage. La fabrication se suit dans le panneau « Tâches ». */
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Vue d’ensemble", icon: LayoutDashboard },
-  { href: "/videos", label: "Vidéos publiées", icon: Film },
-  { href: "/production", label: "Production", icon: Factory },
+  { href: "/dashboard", label: "Dashboard", icon: ChartColumnBig }, // stats de chaque vidéo + agent analyste (docs/25)
+  { href: "/create", label: "Création", icon: Sparkles },
+  { href: "/library", label: "Bibliothèque", icon: LibraryBig },
+  { href: "/favorites", label: "Favoris", icon: Star },
   { href: "/calendar", label: "Calendrier", icon: CalendarDays },
-  { href: "/ideas", label: "Idées", icon: Lightbulb },
-  { href: "/experiments", label: "Expériences", icon: FlaskConical },
-  { href: "/alerts", label: "Alertes", icon: Bell },
+  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/montage", label: "Montage", icon: Clapperboard },
   { href: "/settings", label: "Réglages", icon: Settings },
 ];
 

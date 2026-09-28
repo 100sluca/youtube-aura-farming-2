@@ -4,9 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Clapperboard } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { NAV_ITEMS, isNavActive } from "@/components/nav-items";
+import { SystemPanel } from "@/components/system/system-panel";
 import { cn } from "@/lib/utils";
+
+export const IS_MOCK = process.env.NEXT_PUBLIC_MOCK === "1" || !process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 export function SidebarBrand() {
   return (
@@ -16,19 +18,13 @@ export function SidebarBrand() {
       </span>
       <span className="flex flex-col leading-tight">
         <span className="text-sm font-semibold">YouTube 2.0</span>
-        <span className="text-muted-foreground text-[11px]">Usine à Shorts · FR + EN</span>
+        <span className="text-muted-foreground text-[11px]">Usine à Shorts</span>
       </span>
     </Link>
   );
 }
 
-export function SidebarNav({
-  openAlerts,
-  onNavigate,
-}: {
-  openAlerts: number;
-  onNavigate?: () => void;
-}) {
+export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Navigation principale" className="flex flex-col gap-1 p-3">
@@ -48,11 +44,6 @@ export function SidebarNav({
           >
             <Icon className="size-4 shrink-0" />
             <span className="truncate">{item.label}</span>
-            {item.href === "/alerts" && openAlerts > 0 ? (
-              <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1.5 tabular-nums">
-                {openAlerts}
-              </Badge>
-            ) : null}
           </Link>
         );
       })}
@@ -60,15 +51,19 @@ export function SidebarNav({
   );
 }
 
-export function AppSidebar({ openAlerts }: { openAlerts: number }) {
+export function AppSidebar() {
   return (
     <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r md:flex">
       <SidebarBrand />
-      <SidebarNav openAlerts={openAlerts} />
-      <div className="text-muted-foreground mt-auto border-t p-4 text-xs leading-relaxed">
-        <p className="font-medium">Mode démo</p>
-        <p>Données factices, ancrées au 19 sept. 2026.</p>
-      </div>
+      <SidebarNav />
+      {IS_MOCK ? (
+        <div className="text-muted-foreground mt-auto border-t p-4 text-xs leading-relaxed">
+          <p className="font-medium">Mode démo</p>
+          <p>Données factices, ancrées au 19 sept. 2026.</p>
+        </div>
+      ) : (
+        <SystemPanel /> // mémoire du PC, ComfyUI, worker, bouton « Redémarrer… » (docs/28)
+      )}
     </aside>
   );
 }

@@ -5,9 +5,10 @@ import { Menu } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { SidebarBrand, SidebarNav } from "@/components/app-sidebar";
+import { IS_MOCK, SidebarBrand, SidebarNav } from "@/components/app-sidebar";
+import { SystemPanel } from "@/components/system/system-panel";
 
-export function MobileNav({ openAlerts }: { openAlerts: number }) {
+export function MobileNav() {
   const [open, setOpen] = React.useState(false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -22,7 +23,8 @@ export function MobileNav({ openAlerts }: { openAlerts: number }) {
           <SheetDescription>Sections du tableau de bord</SheetDescription>
         </SheetHeader>
         <SidebarBrand />
-        <SidebarNav openAlerts={openAlerts} onNavigate={() => setOpen(false)} />
+        <SidebarNav onNavigate={() => setOpen(false)} />
+        {IS_MOCK ? null : <SystemPanel />}
       </SheetContent>
     </Sheet>
   );

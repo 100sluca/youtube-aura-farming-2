@@ -1,5 +1,8 @@
 # 08 · Benchmark génération vidéo (gratuit, local et en ligne)
 
+> Mise à jour du 2026-09-25 : Qwen-Image 2.1, LTX-2.5, Blender + Higgsfield, budget d'une journée de production
+> par semaine et règle de gratuité : voir `14-modeles-de-generation-et-gratuite.md` et `decisions/ADR-007-gratuite.md`.
+
 État au 19 septembre 2026, pour un PC Windows avec GPU **8 Go de VRAM** (RTX 4060 / 4070 / 3070),
 32 Go de RAM, et un besoin de **~24 clips de 4-5 s par jour** (3 productions × 8 scènes, master
 partagé FR/EN, ADR-002). Les chiffres viennent de tests publiés (sources en bas) : ils donnent

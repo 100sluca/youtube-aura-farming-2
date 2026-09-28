@@ -55,36 +55,44 @@ export const FORMAT_LABELS: Record<VideoFormat, { short: string; long: string; d
   },
 };
 
-export const CHANNEL_LABELS: Record<ChannelLang, string> = { fr: "FR", en: "EN" };
+/** Langue d'une chaîne : voix, sous-titres et métadonnées de ses vidéos. */
+export const LANG_LABELS: Record<ChannelLang, string> = { fr: "Français", en: "Anglais" };
 
 export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
   pending: "En attente",
   rendering: "Rendu",
   qa: "Contrôle qualité",
-  review: "Revue",
+  review: "À valider",
   ready: "Prête",
   uploading: "Envoi",
   scheduled: "Programmée",
   published: "Publiée",
   failed: "Échec",
-  unpublished: "Dépubliée",
+  unpublished: "Privée",
 };
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
   draft: "Brouillon",
   scripting: "Script",
+  storyboard_review: "Storyboard à valider",
   generating: "Génération",
   assembling: "Assemblage",
   ready: "Prête",
   failed: "En échec",
   archived: "Archivée",
+  cancelled: "Arrêtée",
 };
 
 export const JOB_TYPE_LABELS: Record<JobType, string> = {
+  import_channel: "Import de l’historique YouTube",
   ideate: "Idéation",
   script: "Écriture du script",
+  storyboard: "Images du storyboard",
+  render: "Lancement du rendu",
   generate_clip: "Génération de clip",
   tts: "Voix off (TTS)",
+  seo: "Titre et description (SEO)",
+  strategy: "Stratégie",
   assemble: "Assemblage",
   qa: "Contrôle qualité",
   upload: "Envoi YouTube",
@@ -92,6 +100,9 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   sync_retention: "Synchro rétention",
   sync_comments: "Synchro commentaires",
   improve: "Amélioration",
+  voice_preview: "Essai de voix",
+  montage_preview: "Rendu exact du montage",
+  analyze: "Analyse des vidéos",
 };
 
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -120,3 +131,8 @@ export const SEVERITY_LABELS: Record<AlertSeverity, string> = {
   warning: "Avertissement",
   error: "Erreur",
 };
+
+/** Modèle vidéo d'une production (productions.video_provider) : workflow ComfyUI local, ou Gemini en ligne (docs/17). */
+export function videoProviderLabel(provider: string): string {
+  return provider === "gemini_web" ? "Gemini en ligne" : provider.replace(/^comfy_/, "");
+}

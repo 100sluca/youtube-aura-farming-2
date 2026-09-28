@@ -45,5 +45,6 @@ class UploadStep(Step):
                where id = %s""",
             (yt_id, vid),
         )
-        ctx.db.record_quota(v["channel_id"], "videos.insert", 1600)
+        # compteur à part chez Google : 100 envois par jour à 1 unité, hors des 10 000 unités (docs/05 §3)
+        ctx.db.record_quota(v["channel_id"], "videos.insert", 1)
         return {"youtube_video_id": yt_id}

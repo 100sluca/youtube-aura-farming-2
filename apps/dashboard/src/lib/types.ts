@@ -10,11 +10,13 @@ export type ConceptStatus = "proposed" | "approved" | "rejected" | "used";
 export type ProductionStatus =
   | "draft"
   | "scripting"
+  | "storyboard_review"
   | "generating"
   | "assembling"
   | "ready"
   | "failed"
-  | "archived";
+  | "archived"
+  | "cancelled"; // arrêtée depuis le gestionnaire de tâches (migration 0007)
 export type VideoStatus =
   | "pending"
   | "rendering"
@@ -29,18 +31,74 @@ export type VideoStatus =
 export type JobType =
   | "ideate"
   | "script"
+  | "storyboard"
+  | "render"
   | "generate_clip"
   | "tts"
+  | "seo"
   | "assemble"
   | "qa"
   | "upload"
   | "sync_metrics"
   | "sync_retention"
   | "sync_comments"
-  | "improve";
+  | "improve"
+  | "strategy"
+  | "import_channel"
+  | "voice_preview"
+  | "montage_preview"
+  | "analyze";
+
+/** Série de contenu (table series, migration 0003) : un « thème » dans l'interface. */
+export interface Series {
+  id: string;
+  slug: string;
+  name: string;
+  source: "llm" | "wikipedia";
+  is_active: boolean;
+  weight: number;
+  style_preset: string | null;
+  recipe?: string; // story | timelapse | tour (migration 0006) | drama (migration 0021)
+}
+
+/** Image candidate d'une scène du storyboard (assets kind = storyboard). */
+export interface StoryboardCandidate {
+  asset_id: string;
+  selected: boolean;
+  seed: number | null;
+  /** Contrôle par vision (formats visuels, worker/keyframe_qc.py) : absent si le contrôle n'a pas tourné. */
+  qc?: { ok: boolean; problems: string[] } | null;
+}
+
+export interface StoryboardScene {
+  index: number;
+  role: string | null;
+  visual_prompt: string;
+  /** Ce que dit la voix pendant la scène, dans la langue de la vidéo (récits) ; absent pour une vidéo sans voix. */
+  narration?: string | null;
+  continues_previous: boolean;
+  /** i2v (depuis l'image) ou flf (première + dernière image, chantier en accéléré : impossible avec Gemini). */
+  clip_mode?: string;
+  /** Passage d'une pièce à la suivante (visites) : jamais d'image, le clip relie la fin de la précédente à la suivante. */
+  passage?: boolean;
+  /** En cours sur la scène : nouvelles images (Refaire) ou scène réécrite puis illustrée (Réinventer, docs/27). */
+  busy?: "redo" | "reinvent" | null;
+  /** Ce travail attend la carte graphique (en file) ou tourne (en cours). */
+  busy_state?: "queued" | "running" | null;
+  /** Pourquoi la scène est refaite quand Luca ne l'a pas demandé (payload.reason), la fiche refaite ou sa remarque. */
+  busy_reason?: string | null;
+  /** Le job à arrêter (« Arrêter » : les images affichées restent, docs/16 §3) ; null si l'arrêter viderait la scène. */
+  busy_job?: string | null;
+  /** Scène réinventée (docs/27) : elle a toujours sa propre image, à retenir avant de valider. */
+  reinvented?: boolean;
+  /** Son nouveau plan en une phrase, écrit par le scénariste pour Luca. */
+  idea?: string | null;
+  candidates: StoryboardCandidate[];
+}
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 export type AlertSeverity = "info" | "warning" | "error";
 
+/** Chaîne YouTube : un nom, une langue (voix, sous-titres, métadonnées), une connexion (migration 0008). */
 export interface Channel {
   id: string;
   slug: string;
@@ -51,6 +109,11 @@ export interface Channel {
   publish_slots: string[]; // "09:00"
   auto_publish: boolean;
   is_active: boolean;
+  youtube_title?: string | null; // nom côté YouTube (retour OAuth)
+  youtube_thumbnail_url?: string | null;
+  history_imported_at?: string | null;
+  last_series_id?: string | null; // dernier thème utilisé, présélectionné dans Création
+  created_at?: string;
 }
 
 export interface Concept {
@@ -64,6 +127,13 @@ export interface Concept {
   score: number | null;
   status: ConceptStatus;
   created_at: string;
+  // Séries et sources (migration 0003) — absents du mock
+  angle?: string | null;
+  series_slug?: string | null;
+  series_name?: string | null;
+  facts_count?: number;
+  production_id?: string | null;
+  channel_id?: string | null; // chaîne pour laquelle l'idée a été demandée (migration 0008)
 }
 
 /** Script produit par l'agent script (productions.script, version 1). */
@@ -71,15 +141,44 @@ export interface ScriptScene {
   index: number;
   duration_s: number;
   visual_prompt: string;
+  role?: string | null; // hook | setup | reveal | escalation | payoff | loop
+  motion_prompt?: string | null;
+  continues_previous?: boolean; // le clip part de la dernière image du précédent
+  clip_mode?: string; // i2v | flf (première + dernière image, formats visuels)
+  passage?: boolean; // visites : scène de passage entre deux pièces, insérée par le code, sans image de storyboard
   narration: Partial<Record<ChannelLang, string>>;
   on_screen_text?: Partial<Record<ChannelLang, string>>;
   sfx?: string;
+  /** Drame (recette drama, docs/35) : personnages à l'image (clés du cast) et la réplique du plan. */
+  characters?: string[];
+  lines?: { who: string; text: string; tone?: string }[];
+}
+/** Personnage d'un drame : sa fiche (image) sert de référence à chaque plan où il apparaît. */
+export interface CastMember {
+  key: string;
+  name: string;
+  look: string;
+  voice?: string;
+  tts_voice?: string;
+  role?: string;
 }
 export interface ScriptV1 {
   version: 1;
   scenes: ScriptScene[];
   loop_note?: string;
   metadata: Record<ChannelLang, { title: string; description: string; tags: string[] }>;
+  cast?: CastMember[];
+}
+
+/** Fiche d'un personnage de drame dans Création (assets kind = character, retenue). */
+export interface CharacterSheet {
+  key: string;
+  name: string;
+  role: string | null;
+  look: string;
+  asset_id: string | null;
+  /** Fiche ou plans en cours de refaçon (job storyboard payload.characters). */
+  busy: boolean;
 }
 
 export interface Production {
@@ -91,9 +190,15 @@ export interface Production {
   target_duration_s: number;
   style_preset: string | null;
   video_provider: string | null;
+  image_workflow?: string | null; // modèle d'image du storyboard, figé au script (migration 0005)
   error: string | null;
   created_at: string;
   updated_at: string;
+  series_slug?: string | null;
+  series_name?: string | null;
+  lint?: string[]; // problèmes de storytelling restants (worker/storytelling.py)
+  channel_id?: string | null; // chaîne visée (migration 0008)
+  channel_name?: string | null;
 }
 
 export interface Video {
@@ -114,6 +219,8 @@ export interface Video {
   error: string | null;
   created_at: string;
   updated_at: string;
+  final_asset_id?: string | null; // lu par /api/media/[id]
+  preview_asset_id?: string | null;
 }
 
 export interface Job {
@@ -176,14 +283,14 @@ export interface Alert {
   created_at: string;
 }
 
-/** Ligne de la vue v_video_overview (liste des vidéos publiées). */
+/** Ligne de la vue v_video_overview (bibliothèque : vidéos produites par l'appli et vidéos importées). */
 export interface VideoOverview {
   id: string;
-  production_id: string;
+  production_id: string | null; // null : vidéo importée de YouTube (migration 0008)
   channel_id: string;
   channel_slug: string;
   lang: ChannelLang;
-  format: VideoFormat;
+  format: VideoFormat | null;
   status: VideoStatus;
   title: string | null;
   category: string | null;
@@ -199,6 +306,38 @@ export interface VideoOverview {
   subscribers_gained: number | null;
   average_view_pct: number | null;
   poster_url?: string | null;
+  // Bibliothèque (migration 0008)
+  channel_name?: string;
+  origin?: "app" | "imported";
+  created_at?: string;
+  error?: string | null;
+  description?: string | null;
+  final_asset_id?: string | null;
+  preview_asset_id?: string | null;
+  poster_asset_id?: string | null;
+  thumbnail_url?: string | null; // vignette YouTube
+  files_deleted_at?: string | null;
+  series_slug?: string | null;
+  series_name?: string | null;
+  hook?: string | null;
+  production_status?: string | null;
+  // Dashboard (migration 0016, docs/25) : totaux YouTube Analytics de toute la vie de la vidéo, relevés horaires
+  engaged_views?: number | null;
+  average_view_duration_s?: number | null;
+  hook_retention_pct?: number | null; // audience encore là à 3 s
+  end_retention_pct?: number | null; // audience encore là à la fin
+  views_24h?: number | null;
+  views_7d?: number | null;
+  subscribers_lost?: number | null;
+  estimated_minutes_watched?: number | null;
+  stats_fetched_at?: string | null;
+  analytics_through?: string | null; // dernier jour publié par YouTube Analytics
+  recipe?: "story" | "timelapse" | "tour" | null;
+  video_provider?: string | null;
+  image_workflow?: string | null;
+  tags?: string[];
+  music_track?: string | null; // piste posée au montage (migration 0018)
+  music_title?: string | null;
 }
 
 /** Carte "en production" : une production + ses vidéos + l'agrégat des jobs. */
@@ -210,6 +349,8 @@ export interface ProductionCard {
   progress_pct: number;
   current_step: string | null; // ex. "Clips 5/8"
   eta_minutes: number | null;
+  storyboard?: StoryboardScene[]; // images à valider (route image → vidéo)
+  characters?: CharacterSheet[]; // drame : fiches des personnages, avant les plans
 }
 
 /** Créneau du calendrier : rempli (vidéo) ou vide (à combler). */
@@ -229,10 +370,13 @@ export interface OverviewKpis {
   published_7d: number;
   pipeline: { generating: number; ready: number; scheduled: number; failed: number };
   ypp: { subs_target: number; views_90d: number; views_90d_target: number };
+  // docs/25 : abonnés et vues à jour (relevés horaires + YouTube Analytics, publié 2 à 3 jours après)
+  subscribers_delta_known?: boolean; // false : évolution sur 7 jours pas encore mesurable
+  views_7d_estimated?: boolean; // les derniers jours viennent des compteurs, pas encore d'Analytics
+  analytics_through?: string | null; // dernier jour publié par YouTube Analytics
+  counters_at?: string | null; // dernier relevé des compteurs
+  unattributed_views?: number; // vues comptées mais pas encore réparties par jour
 }
 
-export interface DailyViewsPoint {
-  day: string;
-  fr: number;
-  en: number;
-}
+/** Vues d'un jour, une clé par chaîne (slug → vues). */
+export type DailyViewsPoint = { day: string } & Record<string, string | number>;

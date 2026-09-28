@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 
 import {
   ChartContainer,
@@ -10,20 +10,25 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { channelColor } from "@/lib/channel";
 import { formatCompact, formatDate, formatNumber } from "@/lib/format";
-import type { ChannelLang, DailyViewsPoint } from "@/lib/types";
-
-const config = {
-  fr: { label: "Chaîne FR", color: "var(--chart-1)" },
-  en: { label: "Channel EN", color: "var(--chart-2)" },
-} satisfies ChartConfig;
+import type { DailyViewsPoint } from "@/lib/types";
 
 /** `day` est une clé « YYYY-MM-DD » ; midi UTC tombe le même jour à Paris. */
 const dayToDate = (day: unknown) => `${String(day)}T12:00:00Z`;
 
-export function DailyViewsChart({ data, channel }: { data: DailyViewsPoint[]; channel?: ChannelLang }) {
-  const showFr = !channel || channel === "fr";
-  const showEn = !channel || channel === "en";
+/** Vues par jour, une barre empilée par chaîne affichée (couleur de la chaîne). Un jour estimé d'après les relevés
+ * horaires (`estimated` = 1, YouTube Analytics pas encore publié : docs/25) est plus clair. */
+export function DailyViewsChart({ data, channels }: { data: DailyViewsPoint[]; channels: { slug: string; name: string }[] }) {
+  const config = Object.fromEntries(channels.map((c) => [c.slug, { label: c.name, color: channelColor(c.slug) }])) satisfies ChartConfig;
+  if (!data.some((point) => channels.some((c) => Number(point[c.slug] ?? 0) > 0)) && data.some((point) => point.missing)) {
+    return (
+      <div className="text-muted-foreground flex h-[260px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 text-center text-sm">
+        <p className="text-foreground font-medium">Pas encore de vues datées jour par jour</p>
+        <p>YouTube Analytics les publie avec 2 à 3 jours de retard ; en attendant, les derniers jours sont estimés d’après les compteurs relevés chaque heure.</p>
+      </div>
+    );
+  }
   return (
     <ChartContainer config={config} className="aspect-auto h-[260px] w-full">
       <BarChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
@@ -45,18 +50,21 @@ export function DailyViewsChart({ data, channel }: { data: DailyViewsPoint[]; ch
               formatter={(value, name, item) => (
                 <div className="flex w-full items-center gap-2">
                   <span className="size-2.5 shrink-0 rounded-[2px]" style={{ background: item.color }} />
-                  <span className="text-muted-foreground">{config[name as keyof typeof config]?.label ?? String(name)}</span>
-                  <span className="text-foreground ml-auto font-mono font-medium tabular-nums">
-                    {formatNumber(Number(value))}
-                  </span>
+                  <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
+                  <span className="text-foreground ml-auto font-mono font-medium tabular-nums">{formatNumber(Number(value))}</span>
                 </div>
               )}
             />
           }
         />
-        <ChartLegend content={<ChartLegendContent />} />
-        {showFr ? <Bar dataKey="fr" stackId="views" fill="var(--color-fr)" radius={showEn ? [0, 0, 0, 0] : [4, 4, 0, 0]} /> : null}
-        {showEn ? <Bar dataKey="en" stackId="views" fill="var(--color-en)" radius={[4, 4, 0, 0]} /> : null}
+        {channels.length > 1 ? <ChartLegend content={<ChartLegendContent />} /> : null}
+        {channels.map((c, i) => (
+          <Bar key={c.slug} dataKey={c.slug} stackId="views" fill={`var(--color-${c.slug})`} radius={i === channels.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}>
+            {data.map((point) => (
+              <Cell key={point.day} fillOpacity={point.estimated ? 0.45 : 1} />
+            ))}
+          </Bar>
+        ))}
       </BarChart>
     </ChartContainer>
   );

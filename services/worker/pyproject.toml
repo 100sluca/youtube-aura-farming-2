@@ -14,14 +14,17 @@ dependencies = [
   "anthropic>=0.40",
   "cryptography>=43",
   "structlog>=24",
+  "pillow>=10",  # titre d'accroche gravé (worker/hooktitle.py, repris de MJClipIt)
 ]
 
 [project.optional-dependencies]
 tts = ["kokoro-onnx>=0.4", "soundfile>=0.12"]
+web = ["playwright>=1.55"]  # clips par l'appli Gemini, Chrome piloté (docs/17) ; pas de navigateur à télécharger
 dev = ["ruff>=0.6", "pytest>=8"]
 
 [project.scripts]
 worker = "worker.main:main"
+yt2 = "worker.cli:main"
 
 [build-system]
 requires = ["hatchling"]

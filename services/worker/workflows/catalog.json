@@ -1,0 +1,475 @@
+{
+  "_doc": "Modèles proposés dans Réglages → Modèles de génération (dashboard) et acceptés par `yt2 settings generation`. Clé = nom du workflow (<nom>.json dans ce dossier). publishable = licence compatible avec une chaîne monétisée (docs/14, ADR-007).",
+  "image": {
+    "zimage_turbo": {
+      "label": "Z-Image Turbo",
+      "detail": "Photoréaliste, 8 passes, ≈ 17 s par image (int8, tient dans la carte)",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "qwen_image_21": {
+      "label": "Qwen-Image 2.1",
+      "detail": "Suit le mieux la scène, 25 passes, ≈ 44 s par image (int8)",
+      "license": "Qwen Research : tests seulement",
+      "publishable": false
+    },
+    "qwen_image_2512": {
+      "label": "Qwen-Image 2512",
+      "detail": "Le Qwen-Image publiable : 998 contre 940 pour Z-Image aux votes à l'aveugle (docs/20) ; 8 passes (LoRA Lightning), GGUF Q4",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "wan22_5b_t2i": {
+      "label": "Wan 2.2 5B (une image)",
+      "detail": "Le modèle vidéo 5B en une seule image, 20 passes, ≈ 30 s",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "flux1_schnell_gguf": {
+      "label": "Flux.1 schnell GGUF",
+      "detail": "4 passes, Q8 (≈ l'original) ; 45 s pour la 1re image, chargement compris ; T5 fp8 scaled",
+      "license": "Apache 2.0",
+      "publishable": true
+    }
+  },
+  "video": {
+    "wan22_i2v_4step": {
+      "label": "Wan 2.2 14B · 4 passes",
+      "detail": "≈ 4 min 30 par clip de 5 s ; le négatif est ignoré (CFG 1)",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "wan22_i2v_hybrid": {
+      "label": "Wan 2.2 14B · mixte 8 passes",
+      "detail": "2 passes avec négatif actif (CFG 3,5) puis la LoRA : plus de passants inventés ; ≈ 10 min par clip. Imposé aux visites (docs/15 §10)",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "wan22_i2v_20step": {
+      "label": "Wan 2.2 14B · 20 passes (qualité max)",
+      "detail": "Mouvement plus ample, négatif actif (CFG 3,5) ; ≈ 10 fois plus long",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "wan22_5b_i2v": {
+      "label": "Wan 2.2 5B",
+      "detail": "≈ 4 min par clip, géométrie instable (premier essai refusé)",
+      "license": "Apache 2.0",
+      "publishable": true
+    },
+    "ltxv_2b_i2v": {
+      "label": "LTX-Video 2B distillé (rapide)",
+      "detail": "≈ 30 s par clip de 5 s (mesuré), 576 × 1024 à 24 i/s ; à l'essai : sur 2 scènes, pas de passants inventés (docs/14)",
+      "license": "LTX Open Weights (gratuit sous 10 M$ de CA)",
+      "publishable": true
+    },
+    "minimax_h3_i2v": {
+      "label": "MiniMax H3 · 8 passes (essai)",
+      "detail": "N° 1 des modèles vidéo ouverts (juillet 2026) : 480 × 832 sur 8 Go (768 × 1344 natif à partir de 12 Go), 24 i/s, 5,2 s, son généré mais ignoré au montage ; GGUF Q4 + LoRA 8 passes (docs/20)",
+      "license": "MiniMax H3 Community (exclut l'UE) : tests seulement",
+      "publishable": false
+    },
+    "minimax_h3_i2v_20step": {
+      "label": "MiniMax H3 · 20 passes (qualité max)",
+      "detail": "Réglage officiel du gabarit ComfyUI : sans la LoRA Turbo, 20 passes au lieu de 8, ≈ 2 à 2,5 fois plus long ; même modèle GGUF Q4 et même image que la version 8 passes (docs/21)",
+      "license": "MiniMax H3 Community (exclut l'UE) : tests seulement",
+      "publishable": false
+    }
+  },
+  "_doc_tts": "Moteurs de voix (docs/18-voix.md). runtime venv = modèle PyTorch dans <YT2_HOME>/<dir>/venv, lancé avec tts_runners/<runner> ; check = chemins relatifs à YT2_HOME qui doivent exister (état « installé » du dashboard) ; gpu = vider ComfyUI avant ; options = passées telles quelles au script.",
+  "tts": {
+    "kokoro": {
+      "label": "Kokoro 82M",
+      "detail": "Léger, sur le processeur, ≈ 9 s pour 30 s de voix",
+      "license": "Apache 2.0",
+      "publishable": true,
+      "check": [
+        "models/kokoro-v1.0.onnx",
+        "models/voices-v1.0.bin"
+      ]
+    },
+    "pocket": {
+      "label": "Kyutai Pocket TTS",
+      "detail": "Modèle français de Kyutai (23/09/2026), sur le processeur ; une voix française native",
+      "license": "CC BY 4.0 (créditer Kyutai)",
+      "publishable": true,
+      "runtime": "venv",
+      "gpu": false,
+      "check": [
+        "tts/pocket/venv/Scripts/python.exe",
+        "tts/hf-cache/hub/models--kyutai--pocket-tts-without-voice-cloning"
+      ]
+    },
+    "supertonic": {
+      "label": "Supertonic 3",
+      "detail": "10 voix prêtes, sur le processeur, 44,1 kHz ; voix non natives, accent à juger à l'écoute",
+      "license": "OpenRAIL-M (indiquer « voix générée par IA »)",
+      "publishable": true,
+      "runtime": "venv",
+      "runner": "supertonic_tts.py",
+      "gpu": false,
+      "check": [
+        "tts/supertonic/venv/Scripts/python.exe",
+        "tts/supertonic/models/supertonic-3/onnx"
+      ],
+      "options": {
+        "steps": 16
+      }
+    },
+    "qwen3": {
+      "label": "Qwen3-TTS",
+      "detail": "Meilleur français des modèles ouverts ; voix créées d'après une description (personne n'est imité) ; carte graphique, après les clips",
+      "license": "Apache 2.0",
+      "publishable": true,
+      "runtime": "venv",
+      "gpu": true,
+      "check": [
+        "tts/qwen3/venv/Scripts/python.exe",
+        "tts/qwen3/models/Qwen3-TTS-12Hz-0.6B-Base/model.safetensors"
+      ],
+      "options": {
+        "model": "Qwen3-TTS-12Hz-0.6B-Base",
+        "max_chars": 140
+      }
+    }
+  },
+  "_doc_voices": "Voix proposées par langue : id = « moteur:voix » ; params = réglages propres au moteur (fichier de référence, locuteur…), passés au script du moteur.",
+  "voices": {
+    "fr": [
+      {
+        "id": "kokoro:ff_siwis",
+        "label": "Siwis · femme"
+      },
+      {
+        "id": "qwen3:narrateur",
+        "label": "Narrateur grave · homme",
+        "params": {
+          "ref": "voices/narrateur.wav",
+          "ref_text": "Au cœur de la forêt, une maison oubliée attendait depuis des décennies. Personne ne savait ce qu'elle cachait derrière ses murs de pierre.",
+          "design": {
+            "seed": 101,
+            "cps": 16,
+            "instruct": "A deep, warm male voice in his forties, native French speaker from France with a standard Parisian accent. Calm, confident documentary narrator, measured pace, clear articulation."
+          }
+        }
+      },
+      {
+        "id": "qwen3:narratrice",
+        "label": "Conteuse chaleureuse · femme",
+        "params": {
+          "ref": "voices/narratrice.wav",
+          "ref_text": "Imaginez une cuisine baignée de lumière, où chaque détail a été pensé pour le plaisir. Et maintenant, regardez bien ce qui se cache derrière.",
+          "design": {
+            "seed": 201,
+            "cps": 17,
+            "instruct": "A warm, clear female voice in her thirties, native French speaker from France with a standard accent. Engaging storyteller for short videos, lively but natural, medium pace."
+          }
+        }
+      },
+      {
+        "id": "qwen3:mystere",
+        "label": "Récit mystérieux · homme",
+        "params": {
+          "ref": "voices/mystere.wav",
+          "ref_text": "Cette nuit-là, le vieux phare s'est rallumé tout seul. Les habitants du village n'ont jamais su qui avait gravi ses trois cents marches.",
+          "design": {
+            "seed": 301,
+            "cps": 14,
+            "instruct": "A low, slightly husky male voice, native French speaker from France. Mysterious, suspenseful storytelling tone, slow and deliberate delivery with dramatic pauses."
+          }
+        }
+      },
+      {
+        "id": "qwen3:energique_f",
+        "label": "Présentatrice énergique · femme",
+        "params": {
+          "ref": "voices/energique_f.wav",
+          "ref_text": "Vous n'allez pas croire ce qu'on a trouvé dans cette maison ! Une pièce secrète, un escalier caché, et ce n'est que le début.",
+          "design": {
+            "seed": 401,
+            "cps": 20,
+            "instruct": "A young, bright and energetic female voice in her twenties, native French speaker from France. Enthusiastic YouTube presenter, fast and punchy delivery, smiling tone."
+          }
+        }
+      },
+      {
+        "id": "qwen3:energique_h",
+        "label": "Présentateur dynamique · homme",
+        "params": {
+          "ref": "voices/energique_h.wav",
+          "ref_text": "Cet animal est capable de survivre sans eau pendant des mois. Et ce n'est même pas son pouvoir le plus incroyable. Regardez la suite !",
+          "design": {
+            "seed": 501,
+            "cps": 20,
+            "instruct": "A young, dynamic male voice in his twenties, native French speaker from France. Energetic YouTube Shorts narrator, punchy and fast-paced, expressive and friendly."
+          }
+        }
+      },
+      {
+        "id": "qwen3:elegante",
+        "label": "Voix élégante (luxe) · femme",
+        "params": {
+          "ref": "voices/elegante.wav",
+          "ref_text": "Bienvenue dans cette villa d'exception, entre mer et collines. Des volumes généreux, des matériaux nobles, et une vue à couper le souffle.",
+          "design": {
+            "seed": 601,
+            "cps": 15,
+            "instruct": "A soft, elegant and sophisticated female voice, native French speaker from France. Luxury real-estate presenter, calm, refined and warm, medium-slow pace."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_patron",
+        "label": "Personnage · patron autoritaire (homme 55 ans)",
+        "params": {
+          "ref": "voices/perso_patron.wav",
+          "ref_text": "Le jour de paie est arrivé. Personne ne ment au patron, tu m'entends ? Rends-moi ce que tu me dois, et disparais.",
+          "design": {
+            "seed": 701,
+            "cps": 15,
+            "instruct": "A deep, powerful and authoritative male voice of a rich boss in his fifties, native French speaker from France. Cold, commanding and slow, with contempt in the voice, able to burst into anger."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_humble",
+        "label": "Personnage · jeune homme humble",
+        "params": {
+          "ref": "voices/perso_humble.wav",
+          "ref_text": "Monsieur, une dame a oublié cette valise dans mon taxi. Je sais que ce n'est pas à moi. Je suis venu la rendre.",
+          "design": {
+            "seed": 711,
+            "cps": 15,
+            "instruct": "A soft, gentle young male voice in his early twenties, native French speaker from France. Humble, shy and honest, slightly trembling with emotion, speaks quietly."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_mielleuse",
+        "label": "Personnage · femme mielleuse, puis cassante",
+        "params": {
+          "ref": "voices/perso_mielleuse.wav",
+          "ref_text": "Mais bien sûr, mon chéri, donne-moi ça, je vais lui remettre. Ne t'inquiète pas, je lui dirai que c'est toi.",
+          "design": {
+            "seed": 721,
+            "cps": 16,
+            "instruct": "A sweet but fake female voice in her forties, native French speaker from France. Honeyed, manipulative and falsely kind, with a haughty, cold edge underneath."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_mamie",
+        "label": "Personnage · vieille dame",
+        "params": {
+          "ref": "voices/perso_mamie.wav",
+          "ref_text": "J'ai vendu mon verger pour payer tes études, mon petit. Je ne regrette rien. Mais tu ne m'appelles plus jamais.",
+          "design": {
+            "seed": 731,
+            "cps": 13,
+            "instruct": "A warm, fragile elderly female voice in her seventies, native French speaker from France. Tender, slow and slightly shaky, full of love and quiet sadness."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_papi",
+        "label": "Personnage · vieil homme bienveillant",
+        "params": {
+          "ref": "voices/perso_papi.wav",
+          "ref_text": "Non, ma fille. Ce n'est pas à cause de toi. C'est à cause de ce que tu vaux, et ça leur fait peur.",
+          "design": {
+            "seed": 741,
+            "cps": 14,
+            "instruct": "A calm, kind and deep elderly male voice in his sixties, native French speaker from France. Gentle, wise and slow, a loving father who comforts."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_fillette",
+        "label": "Personnage · fillette",
+        "params": {
+          "ref": "voices/perso_fillette.wav",
+          "ref_text": "Papa, regarde ! Je suis première ! Tu vois, je te l'avais dit, j'ai travaillé tous les soirs.",
+          "design": {
+            "seed": 751,
+            "cps": 16,
+            "instruct": "A clear, bright and sincere voice of a ten-year-old girl, native French speaker from France. Expressive and lively, a child's high-pitched voice."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_garcon",
+        "label": "Personnage · garçon timide",
+        "params": {
+          "ref": "voices/perso_garcon.wav",
+          "ref_text": "Personne ne s'est jamais assis avec moi. Tu es sûre ? Moi aussi, on me trouve bizarre, tu sais.",
+          "design": {
+            "seed": 761,
+            "cps": 15,
+            "instruct": "A shy, soft voice of a twelve-year-old boy, native French speaker from France. Hesitant and quiet, a child's voice before it breaks."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_ado",
+        "label": "Personnage · ado moqueur",
+        "params": {
+          "ref": "voices/perso_ado.wav",
+          "ref_text": "Attention, l'égout est arrivé ! Elle préfère le puant ? T'inquiète, il va le payer, crois-moi.",
+          "design": {
+            "seed": 771,
+            "cps": 17,
+            "instruct": "A mocking, arrogant voice of a fourteen-year-old teenage boy, native French speaker from France. Cocky, sarcastic and loud, a teenager's voice."
+          }
+        }
+      },
+      {
+        "id": "qwen3:perso_jeune_femme",
+        "label": "Personnage · jeune femme douce",
+        "params": {
+          "ref": "voices/perso_jeune_femme.wav",
+          "ref_text": "Je peux m'asseoir ? Tu n'as pas à avoir honte. Moi, je trouve ça courageux, tout ce que tu supportes.",
+          "design": {
+            "seed": 781,
+            "cps": 16,
+            "instruct": "A soft, warm and kind young female voice in her twenties, native French speaker from France. Gentle and emotional, sincere, medium pace."
+          }
+        }
+      },
+      {
+        "id": "pocket:estelle",
+        "label": "Estelle · femme",
+        "params": {
+          "name": "estelle"
+        }
+      },
+      {
+        "id": "supertonic:F1",
+        "label": "F1 · femme",
+        "params": {
+          "name": "F1"
+        }
+      },
+      {
+        "id": "supertonic:F2",
+        "label": "F2 · femme",
+        "params": {
+          "name": "F2"
+        }
+      },
+      {
+        "id": "supertonic:F3",
+        "label": "F3 · femme",
+        "params": {
+          "name": "F3"
+        }
+      },
+      {
+        "id": "supertonic:F4",
+        "label": "F4 · femme",
+        "params": {
+          "name": "F4"
+        }
+      },
+      {
+        "id": "supertonic:F5",
+        "label": "F5 · femme",
+        "params": {
+          "name": "F5"
+        }
+      },
+      {
+        "id": "supertonic:M1",
+        "label": "M1 · homme",
+        "params": {
+          "name": "M1"
+        }
+      },
+      {
+        "id": "supertonic:M2",
+        "label": "M2 · homme",
+        "params": {
+          "name": "M2"
+        }
+      },
+      {
+        "id": "supertonic:M3",
+        "label": "M3 · homme",
+        "params": {
+          "name": "M3"
+        }
+      },
+      {
+        "id": "supertonic:M4",
+        "label": "M4 · homme",
+        "params": {
+          "name": "M4"
+        }
+      },
+      {
+        "id": "supertonic:M5",
+        "label": "M5 · homme",
+        "params": {
+          "name": "M5"
+        }
+      }
+    ],
+    "en": [
+      {
+        "id": "kokoro:af_heart",
+        "label": "Heart · femme (US)"
+      },
+      {
+        "id": "kokoro:af_bella",
+        "label": "Bella · femme (US)"
+      },
+      {
+        "id": "kokoro:af_nicole",
+        "label": "Nicole · femme (US, chuchotée)"
+      },
+      {
+        "id": "kokoro:af_sarah",
+        "label": "Sarah · femme (US)"
+      },
+      {
+        "id": "kokoro:af_sky",
+        "label": "Sky · femme (US)"
+      },
+      {
+        "id": "kokoro:am_adam",
+        "label": "Adam · homme (US)"
+      },
+      {
+        "id": "kokoro:am_michael",
+        "label": "Michael · homme (US)"
+      },
+      {
+        "id": "kokoro:am_eric",
+        "label": "Eric · homme (US)"
+      },
+      {
+        "id": "kokoro:am_liam",
+        "label": "Liam · homme (US)"
+      },
+      {
+        "id": "kokoro:am_onyx",
+        "label": "Onyx · homme (US)"
+      },
+      {
+        "id": "kokoro:bf_emma",
+        "label": "Emma · femme (UK)"
+      },
+      {
+        "id": "kokoro:bf_isabella",
+        "label": "Isabella · femme (UK)"
+      },
+      {
+        "id": "kokoro:bm_george",
+        "label": "George · homme (UK)"
+      },
+      {
+        "id": "kokoro:bm_lewis",
+        "label": "Lewis · homme (UK)"
+      }
+    ]
+  }
+}

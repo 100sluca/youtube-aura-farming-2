@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
+from .. import cancel
 from ..config import Settings
 from ..db import Db
 from ..models import Job
@@ -19,6 +20,7 @@ class Context:
     settings: Settings
 
     def progress(self, pct: int, label: str | None = None) -> None:
+        cancel.check()  # arrêt demandé depuis le dashboard : le step s'arrête ici (worker/cancel.py)
         self.db.heartbeat(self.job.id, max(0, min(100, pct)), label)
 
     def log(self, message: str, level: str = "info", **data: Any) -> None:
@@ -42,7 +44,9 @@ class Step:
     """Classe de base. Un step est idempotent : il vérifie sa sortie avant de recalculer."""
 
     type: ClassVar[str]
-    lane: ClassVar[Literal["gpu", "io"]] = "io"
+    # gpu : un job à la fois ; io : plusieurs en parallèle ; preview : aperçus de quelques secondes demandés depuis le
+    # dashboard, pris tout de suite par leur propre fil, même pendant un long job GPU (worker/main.py : preview_lane)
+    lane: ClassVar[Literal["gpu", "io", "preview"]] = "io"
 
     def run(self, ctx: Context) -> dict[str, Any]:
         raise NotImplementedError

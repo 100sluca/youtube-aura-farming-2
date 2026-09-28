@@ -5,6 +5,8 @@ export const YOUTUBE_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube",
   "https://www.googleapis.com/auth/yt-analytics.readonly",
+  // commentThreads.list n'accepte que ce scope (ni `youtube` ni `youtube.readonly`)
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 
 export function redirectUri(req: NextRequest): string {

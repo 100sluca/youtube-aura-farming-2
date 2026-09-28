@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 
 import { ToneBadge, type Tone } from "@/components/status-badge";
-import { NOW } from "@/lib/format";
+import { now } from "@/lib/format";
 import type { ScheduleSlot, VideoStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -23,8 +23,8 @@ const H48 = 48 * 3_600_000;
 export function SlotCell({ slot }: { slot: ScheduleSlot | undefined }) {
   if (!slot) return null;
   const at = new Date(slot.at).getTime();
-  const isPast = at <= NOW.getTime();
-  const soon = !isPast && at - NOW.getTime() < H48;
+  const isPast = at <= now().getTime();
+  const soon = !isPast && at - now().getTime() < H48;
 
   if (!slot.video) {
     if (isPast) {

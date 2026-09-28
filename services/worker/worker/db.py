@@ -38,24 +38,51 @@ class Db:
         rows = self.fetch_all("select * from claim_jobs(%s, %s::job_type[], %s)", (worker, types, max_jobs))
         return [Job.model_validate(r) for r in rows]
 
-    def heartbeat(self, job_id: UUID, progress: int | None = None, label: str | None = None) -> None:
-        self.execute(
-            """update jobs set locked_at = now(),
-                 progress = coalesce(%s, progress), progress_label = coalesce(%s, progress_label)
-               where id = %s and status = 'running'""",
-            (progress, label, job_id),
+    def heartbeat(self, job_id: UUID, progress: int | None = None, label: str | None = None) -> bool:
+        """Renvoie False si le job ne tourne plus (arrêté depuis le dashboard : status = 'cancelled')."""
+        return (
+            self.execute(
+                """update jobs set locked_at = now(),
+                     progress = coalesce(%s, progress), progress_label = coalesce(%s, progress_label)
+                   where id = %s and status = 'running'""",
+                (progress, label, job_id),
+            )
+            > 0
         )
 
-    def complete(self, job_id: UUID, result: dict[str, Any] | None = None) -> None:
-        self.execute(
-            """update jobs set status = 'done', progress = 100, result = %s, finished_at = now(),
-                 locked_by = null, locked_at = null, error = null
-               where id = %s""",
-            (Jsonb(result or {}), job_id),
+    def job_status(self, job_id: UUID) -> str | None:
+        row = self.fetch_one("select status::text as status from jobs where id = %s", (job_id,))
+        return row["status"] if row else None
+
+    def complete(self, job_id: UUID, result: dict[str, Any] | None = None) -> bool:
+        """Un job arrêté pendant qu'il tournait reste « cancelled » (renvoie False)."""
+        return (
+            self.execute(
+                """update jobs set status = 'done', progress = 100, result = %s, finished_at = now(),
+                     locked_by = null, locked_at = null, error = null
+                   where id = %s and status = 'running'""",
+                (Jsonb(result or {}), job_id),
+            )
+            > 0
         )
 
     def fail(self, job_id: UUID, error: str) -> None:
         self.execute("select fail_job(%s, %s)", (job_id, error[:4000]))
+
+    def postpone(self, job_id: UUID, delay_s: float, *, label: str | None = None, error: str | None = None) -> bool:
+        """Remet en file, dans `delay_s` secondes, un job qui attend un service extérieur (vidéo Gemini en cours,
+        quota atteint) sans consommer de tentative (worker/postpone.py). False si le job ne tourne plus (arrêté
+        depuis le dashboard entre-temps)."""
+        return (
+            self.execute(
+                """update jobs set status = 'queued', run_after = now() + make_interval(secs => %s),
+                     attempts = greatest(attempts - 1, 0), locked_by = null, locked_at = null,
+                     progress_label = coalesce(%s, progress_label), error = %s
+                   where id = %s and status = 'running'""",
+                (float(delay_s), label, error[:4000] if error else None, job_id),
+            )
+            > 0
+        )
 
     def log(self, job_id: UUID, level: str, message: str, data: dict[str, Any] | None = None) -> None:
         self.execute(

@@ -11,6 +11,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from ..models import QACheck, QAReport
+from ..notify import queue_video_ready
 from .base import Context, Step
 
 
@@ -37,17 +38,10 @@ class QAStep(Step):
             failed = ", ".join(c.name for c in report.checks if not c.ok)
             ctx.db.set_status("videos", vid, "failed", f"QA : {failed}")
             raise RuntimeError(f"QA échoué : {failed}")
-        if v["auto_publish"]:
-            ctx.db.set_status("videos", vid, "ready")
-        else:
-            ctx.db.set_status("videos", vid, "review")
-            if ctx.settings.notify_on_review:  # le planificateur envoie les alertes warning/error par mail
-                ctx.db.alert(
-                    "warning",
-                    f"Validation requise : {v['title'] or 'Short'} ({v['lang'].upper()})",
-                    "Ouvrir le dashboard → Production → Contrôle / revue, puis Approuver ou Refuser.",
-                    video_id=vid,
-                )
+        ctx.db.set_status("videos", vid, "ready" if v["auto_publish"] else "review")
+        # Mail « vidéo terminée » (Réglages → Notifications, docs/32) : une fois par vidéo, envoyé dans les 20 s
+        if queue_video_ready(ctx.db, ctx.settings, vid, v["title"]):
+            ctx.log("qa.mail_prevu")
         self._maybe_mark_production_ready(ctx)
         return report.model_dump()
 

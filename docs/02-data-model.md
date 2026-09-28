@@ -78,10 +78,12 @@ silencieux), `final` (par vidéo), `preview` (480p dans Storage), `poster` (jpg 
 ### Métriques
 | Table | Source | Fréquence |
 |---|---|---|
-| `video_stats` | Data API `videos.list(part=statistics)` — 1 unité / 50 vidéos | toutes les 6 h |
-| `video_metrics_daily` | Analytics API `reports.query` (rapport « Top videos », une requête par jour, filtre `video==…`) | 1 fois / jour (J-3 à J) |
-| `video_retention` | Analytics `audienceRetention` (`elapsedVideoTimeRatio`) | J+3 puis J+14 après publication |
-| `channel_metrics_daily` | Analytics niveau chaîne + `channels.list(statistics)` | 1 fois / jour |
+| `video_stats` | compteurs publics (Data API `videos.list`, 1 unité / 50 vidéos) + totaux Analytics de toute la vie de la vidéo, audience à 3 s, vues 24 h / 7 j (0016) | compteurs chaque heure, Analytics toutes les 6 h |
+| `video_snapshots`, `channel_snapshots` | relevés horaires des compteurs (vues, j'aime, commentaires ; abonnés de la chaîne) ; gardés 10 jours puis un par jour (0016) | chaque heure |
+| `video_metrics_daily` | Analytics API `reports.query` (rapport « Top videos », une requête par jour, filtre `video==…`) | toutes les 6 h (7 derniers jours) |
+| `video_retention` | Analytics `audienceRetention` (`elapsedVideoTimeRatio`), la plus récente seulement | une par jour, vidéos de moins de 45 jours |
+| `channel_metrics_daily` | Analytics niveau chaîne (le nombre d'abonnés vient de `channel_snapshots`) | toutes les 6 h (7 derniers jours) |
+| `performance_reports`, `performance_lessons` | agent analyste : rapport, leçons à valider ou en service (0016, [`25-dashboard-statistiques.md`](25-dashboard-statistiques.md)) | chaque dimanche et à la demande |
 | `video_comments` | Data API `commentThreads.list` | 1 fois / jour, 20 derniers |
 | `api_quota_usage` | comptabilité interne des unités consommées | à chaque appel |
 
@@ -89,10 +91,19 @@ silencieux), `final` (par vidéo), `preview` (480p dans Storage), `poster` (jpg 
 calcule l'avancement d'une production à partir de ses jobs.
 
 ### `prompt_templates`
-Prompts versionnés par agent (`idea`, `script`, `visual`, `improve`), un seul actif par agent.
-La boucle d'amélioration crée une nouvelle version (`created_by = improve_agent`,
-`parent_id`) ; chaque concept/production référence la version utilisée → on peut mesurer
-la performance par version de prompt.
+Prompts versionnés par clé (`agent`) : le prompt système de chaque agent (`idea`, `script`, `script_timelapse`,
+`seo`, `keyframe_qc`…) et les consignes communes (`rules_storytelling`, `guide_tour`…), une seule version active par
+clé, lue par le worker à chaque appel. `created_by` : `code` (texte du code, enregistré par le worker à son démarrage),
+`human` (écrite dans l'onglet Agents), `improve_agent` (proposition de la boucle d'amélioration, `parent_id`).
+Chaque concept/production référence la version utilisée → on peut mesurer la performance par version de prompt.
+Voir [`22-agents.md`](22-agents.md) (migration 0012 : `sync_code_prompt`, `save_prompt`, `activate_prompt`).
+
+### `montage_templates`
+Modèles de montage (onglet Montage) : `name`, `template` (JSON de `MontageTemplate`, worker/montage.py : titre
+d'accroche, sous-titres, textes à l'écran, positions en px du final), `is_default` (un seul : celui que le step
+`assemble` lit à chaque montage ; aucun = modèle d'origine du code). SQL `set_default_montage_template`,
+`remount_video` (refaire le montage d'une vidéo pas encore envoyée). Voir [`23-montage.md`](23-montage.md)
+(migrations 0013 et 0014 : type de job `montage_preview`, rendu exact).
 
 ### `alerts`
 Créées par `fail_job` et par le worker (quota, créneau vide, upload restreint). `emailed_at`
