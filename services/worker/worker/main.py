@@ -108,9 +108,10 @@ def preview_lane(
             busy.clear()
 
 
-# « Actualiser » et « Analyser maintenant » du Dashboard (docs/25) : pris dans la seconde, même pendant un clip GPU de
-# 10 min, par leur propre fil (la voie io les prend aussi entre deux jobs GPU ; claim_jobs ne donne un job qu'une fois)
-STATS_TYPES = ("sync_metrics", "analyze")
+# « Actualiser » et « Analyser maintenant » du Dashboard (docs/25), « Actualiser » de l'onglet TikTok (docs/39) : pris dans
+# la seconde, même pendant un clip GPU de 10 min, par leur propre fil (la voie io les prend aussi entre deux jobs GPU ;
+# claim_jobs ne donne un job qu'une fois)
+STATS_TYPES = ("sync_metrics", "analyze", "sync_tiktok")
 
 RESTART_CODE = 3  # sortie de l'enfant quand son code a changé : le superviseur le relance
 CODE_CHECK_S = 30.0  # intervalle de vérification du code source

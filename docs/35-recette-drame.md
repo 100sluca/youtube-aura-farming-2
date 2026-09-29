@@ -14,7 +14,15 @@ d'animation) qui se parlent, une réplique par plan. Migration **0021**.
   (`guide_drama`), modifiables et versionnés comme les autres.
 - **Storyboard** : en haut, la bande **Personnages**, avec la fiche de chacun (lui seul, en pied, sur fond gris) ;
   « Refaire » refait sa fiche puis tous les plans où il apparaît, puisqu'ils la prennent en référence. Dessous, un plan
-  par réplique ; la narration affichée est la réplique précédée de son personnage (« Kiwi : … »).
+  par réplique : la pastille 💬 dit qui parle, dessous la réplique seule entre guillemets.
+- **Règle de Luca (29/09)** : le nom de qui parle n'est **jamais dit ni écrit** dans la vidéo. La narration d'une scène
+  est la réplique seule (« Mon fils se marie demain… », pas « Mamie Pomme : Mon fils… ») : c'est ce que dit la voix,
+  même une voix choisie dans Retoucher, et ce qu'écrivent les sous-titres. Qui parle reste dans `lines` ;
+  `drama.speaker_line` redonne « Nom : réplique » aux seuls agents qui relisent le script (relecteur, SEO). Avant le
+  29/09, la narration gardait « Nom : » devant : une retouche de la voix l'aurait fait dire. Les 6 drames d'essai ont
+  été nettoyés en base. Filet : si le scénariste recopie l'étiquette dans la réplique (« MAMIE (off) : « … » », façon
+  docs/31), `drama.unlabel` la retire à la normalisation ; « Maman a dit : sois gentil » reste (« Maman a dit » n'est
+  pas un personnage).
 - **Validation (✓)** : clips MiniMax H3, où le personnage dit sa réplique et sa bouche bouge ; voix des personnages ;
   montage avec les sous-titres des répliques, la musique qui baisse sous les voix et le titre d'accroche.
 

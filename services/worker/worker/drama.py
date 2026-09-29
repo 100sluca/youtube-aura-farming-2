@@ -94,6 +94,23 @@ def _clamp(value: float, bounds: tuple[float, float]) -> float:
     return round(min(bounds[1], max(bounds[0], value)), 2)
 
 
+# Étiquette de qui parle recopiée dans la réplique (« Mamie Pomme : … », « MAMIE (off) : « … » » comme dans les scripts
+# de docs/31) : tout le texte d'une réplique est dit et écrit, l'étiquette est donc retirée (règle de Luca, 29/09)
+_LABEL = re.compile(r"^\s*([^:«»\"“”]{1,40}?)\s*(?:\([^)]{0,30}\))?\s*:\s*(.+)$", re.S)
+_QUOTED = re.compile(r"^[«\"“]\s*(.+?)\s*[»\"”]$", re.S)
+
+
+def unlabel(text: str, cast: Sequence[CastMember]) -> str:
+    """La réplique sans l'étiquette d'un personnage devant (son nom, sa clé ou le premier mot de son nom, puis « : »),
+    ni les guillemets qui l'entourent ; « Maman a dit : sois gentil » reste tel quel (« Maman a dit » n'est personne)."""
+    m = _LABEL.match(text)
+    names = {slug(c.name) for c in cast} | {c.key for c in cast} | {slug(c.name.split()[0]) for c in cast if c.name.split()}
+    if not m or slug(m.group(1)) not in names:
+        return text
+    rest = m.group(2).strip()
+    return q.group(1).strip() if (q := _QUOTED.match(rest)) else rest
+
+
 def line_duration(text: str) -> float:
     """Durée d'une scène qui porte cette réplique : son débit dit par H3, plus l'entrée et la respiration."""
     n = len(words(text))
@@ -108,8 +125,9 @@ def line_duration(text: str) -> float:
 def normalize(script: ScriptV1) -> ScriptV1:
     """Ce que le code impose à un drame, sans repasser par le LLM : clés des personnages, personnages qui parlent à
     l'image (3 au plus, eux d'abord), répliques d'un même personnage réunies, durée tirée de la réplique (dans la
-    longueur d'un clip), coupe franche entre plans, et la réplique recopiée dans `narration` avec son personnage, pour
-    l'affichage (Création, Bibliothèque, agent SEO) : aucune voix de synthèse ne la lit."""
+    longueur d'un clip), coupe franche entre plans, et la réplique recopiée dans `narration`, SEULE : c'est ce que la
+    voix dit et ce que les sous-titres écrivent, jamais le nom de qui parle (règle de Luca, 29/09 : une retouche de la
+    voix lisait « Mamie Pomme : … ») ; qui parle reste dans `lines` (speaker_line pour les agents qui relisent)."""
     s = script.model_copy(deep=True)
     cast: list[CastMember] = []
     for m in s.cast:
@@ -130,7 +148,7 @@ def normalize(script: ScriptV1) -> ScriptV1:
         sc.continues_previous, sc.clip_mode, sc.transition, sc.passage = False, "i2v", "cut", False
         sc.edit_prompt, sc.edit_from, sc.map = None, None, None
         # nombres en chiffres à l'écran (sous-titres, docs/33) ; le prompt du clip les redonne en lettres à la voix
-        lines = [ln.model_copy(update={"who": resolve(ln.who), "text": to_digits(ln.text.strip(), lang), "tone": ln.tone.strip()})
+        lines = [ln.model_copy(update={"who": resolve(ln.who), "text": to_digits(unlabel(ln.text.strip(), cast), lang), "tone": ln.tone.strip()})
                  for ln in sc.lines if ln.text.strip() and ln.who.strip()]
         if len(lines) > 1 and len({ln.who for ln in lines}) == 1:  # un même personnage : une seule réplique
             lines = [lines[0].model_copy(update={"text": " ".join(ln.text for ln in lines)})]
@@ -140,11 +158,7 @@ def normalize(script: ScriptV1) -> ScriptV1:
         sc.characters = [k for k in chars if k][:CHARACTERS_MAX]
         text = " ".join(ln.text for ln in lines)
         sc.duration_s = line_duration(text) if text else _clamp(sc.duration_s, SCENE_S)
-        if lines:
-            names = {m.key: m.name for m in cast}
-            sc.narration = {lang: " ".join(f"{names.get(ln.who, ln.who)} : {ln.text}" for ln in lines)}  # type: ignore[dict-item]
-        else:
-            sc.narration = {}
+        sc.narration = {lang: text} if text else {}  # type: ignore[dict-item]
     s.hook_title = {k: clean_hook(v) for k, v in s.hook_title.items() if clean_hook(v)}  # type: ignore[misc]
     return script_to_digits(s)
 
@@ -266,6 +280,12 @@ def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None 
 
 def line_text(scene: ScriptScene) -> str:
     return " ".join(ln.text for ln in scene.lines).strip()
+
+
+def speaker_line(script: ScriptV1, scene: ScriptScene) -> str:
+    """« Mamie Pomme : Mon fils se marie demain… » : la réplique avec qui la dit, pour les agents qui relisent le script
+    (relecteur, SEO) ; "" pour un plan sans réplique. Jamais dit ni écrit dans la vidéo (narration = la réplique seule)."""
+    return " ".join(f"{m.name if (m := script.member(ln.who)) else ln.who} : {ln.text}" for ln in scene.lines).strip()
 
 
 # ---------------------------------------------------------------------------

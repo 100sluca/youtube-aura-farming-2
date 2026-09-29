@@ -14,13 +14,15 @@ from worker.prompts import active_prompt, code_prompts, prompt_text, sync_code_p
 from worker.recipes import HOOK_RULES, IDEA_GUIDES, SCRIPT_PROMPTS, script_context
 from worker.steps.ideate import DEFAULT_PROMPT as IDEA
 from worker.steps.script import CONTINUITY_HINT
-from worker.storytelling import RULES
+from worker.storycraft import REVIEW_PROMPT, SHOTS_PROMPT, STORY_PROMPT
+from worker.storytelling import IMAGE_RULES, RULES
 
 # Clés affichées par le dashboard (apps/dashboard/src/lib/agent-catalog.ts) : les renommer casse l'onglet Agents
 DASHBOARD_KEYS = {
     "idea",
     "script",
     "script_review",
+    "script_shots",
     "script_timelapse",
     "script_tour",
     "scene_rewrite",
@@ -31,6 +33,7 @@ DASHBOARD_KEYS = {
     "keyframe_qc",
     "clip_qc",
     "rules_storytelling",
+    "rules_images",
     "guide_timelapse",
     "guide_tour",
     "rules_hook_title",
@@ -61,6 +64,9 @@ def test_every_prompt_of_the_code_has_a_key_the_dashboard_knows():
     assert prompts["idea"] == IDEA and prompts["rules_storytelling"] == RULES and prompts["hint_continuity"] == CONTINUITY_HINT
     assert prompts["script_tour"] == SCRIPT_PROMPTS["tour"] and prompts["guide_timelapse"] == IDEA_GUIDES["timelapse"]
     assert prompts["keyframe_qc"] == QC_SYSTEM and prompts["clip_qc"] == CLIP_SYSTEM and prompts["rules_hook_title"] == HOOK_RULES
+    # récits (docs/37) : le conteur, son relecteur, le réalisateur et les règles de l'image
+    assert prompts["script"] == STORY_PROMPT and prompts["script_review"] == REVIEW_PROMPT
+    assert prompts["script_shots"] == SHOTS_PROMPT and prompts["rules_images"] == IMAGE_RULES
 
 
 def test_the_active_version_wins_over_the_code():

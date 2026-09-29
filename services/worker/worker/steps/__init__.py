@@ -17,6 +17,7 @@ from .seo import SeoStep
 from .storyboard import StoryboardStep
 from .strategy import StrategyStep
 from .sync import SyncCommentsStep, SyncMetricsStep, SyncRetentionStep
+from .sync_tiktok import SyncTikTokStep
 from .tiktok_publish import TikTokPublishStep
 from .tts import TTSStep
 from .upload import UploadStep
@@ -45,6 +46,7 @@ REGISTRY: dict[str, Step] = {
         MontagePreviewStep(),
         AnalyzeStep(),
         TikTokPublishStep(),
+        SyncTikTokStep(),
     )
 }
 

@@ -9,7 +9,19 @@
  */
 import type { JobType } from "@/lib/types";
 
-export type AgentIcon = "idea" | "story" | "review" | "timelapse" | "tour" | "seo" | "strategy" | "improve" | "analyst" | "keyframe" | "clip";
+export type AgentIcon =
+  | "idea"
+  | "story"
+  | "shots"
+  | "review"
+  | "timelapse"
+  | "tour"
+  | "seo"
+  | "strategy"
+  | "improve"
+  | "analyst"
+  | "keyframe"
+  | "clip";
 
 export interface AgentDef {
   key: string;
@@ -59,46 +71,67 @@ export const AGENTS: AgentDef[] = [
       "Le nombre d’idées à produire",
     ],
     consignes: ["rules_storytelling", "guide_timelapse", "guide_tour", "guide_drama"],
-    output: "Des idées : titre, accroche, prémisse, angle, catégorie, temps visuels, score sur 100 et, pour les thèmes documentaires, 6 à 10 faits sourcés qui couvrent l’enjeu, le conflit, les personnes et une échelle.",
+    output: "Des idées qui sont des histoires : titre, accroche (le sujet et un contraste), prémisse (le héros, ce qu’il veut, ce qui l’en empêche, ce qu’il risque, le renversement), angle (le moteur : enquête, ironie dramatique…), catégorie, temps visuels, score sur 100 et, pour les thèmes documentaires, 8 à 12 faits sourcés qui couvrent le contexte, l’enjeu, le conflit, les rebondissements et la fin.",
     then: "Une idée de thème documentaire n’est gardée que si au moins deux faits citent une source fournie. Les idées arrivent dans Création, où tu choisis ✓ ou ✗.",
   },
   {
     key: "script",
-    name: "Scénariste · histoires",
-    summary: "Écrit le script scène par scène des vidéos racontées en voix off.",
+    name: "Conteur · histoires",
+    summary:
+      "Écrit l’histoire en entier, comme un conteur : l’idée unique, l’accroche et sa promesse, le contexte, les « mais » et les « donc », la chute écrite en premier.",
     icon: "story",
-    scope: "Thèmes racontés : maisons de rêve, histoires vraies, animaux étranges…",
+    scope: "Thèmes racontés : histoires vraies, animaux étranges, maisons de rêve…",
     job: "script",
     when: "Dès que tu valides une idée (✓ dans Création).",
     inputs: [
-      "Le thème : brief et ambiances musicales conseillées",
+      "Le thème : brief (ligne éditoriale)",
       "L’idée : titre, accroche, angle, prémisse, catégorie, temps visuels",
       "Les faits sourcés et leurs sources (thèmes documentaires)",
       "Le dossier : les pages Wikipédia des sources relues en entier, version anglaise comprise (thèmes documentaires)",
-      "Le format, la durée cible, le style visuel et la langue de la chaîne",
-      "La stratégie validée, les leçons validées de l’agent analyste et trois scripts de vidéos qui ont bien marché",
+      "La durée visée et son budget de mots dits (75 s ≈ 218 mots), la langue de la chaîne",
+      "La stratégie validée, les leçons validées de l’agent analyste et le texte de trois vidéos qui ont bien marché",
     ],
-    consignes: ["rules_storytelling", "hint_continuity", "rules_hook_title"],
+    consignes: ["rules_storytelling", "rules_hook_title"],
     output:
-      "Le script : une scène par tranche de 5 s (8 pour 40 s), chacune avec son rôle, l’image de départ et le mouvement (en anglais), la narration et le texte à l’écran ; une scène carte pour un lieu réel (vue de l’espace, zoom, tracé, rendue par le code) ; le titre d’accroche, l’ambiance musicale et des métadonnées brouillon.",
-    then: "Le correcteur vérifie les règles mesurables (accroche de 14 mots au plus, révélation avant 12 s, pas d’appel à l’action, phrases courtes, narration qui remplit la vidéo, durée), puis le relecteur juge le fond ; s’il y a des problèmes, le script repart une fois au scénariste avec la liste, puis une dernière reprise corrige les écarts mesurables restants.",
+      "L’histoire : l’idée centrale, le moteur (enquête, ironie dramatique…), le héros et son enjeu, la dernière phrase écrite avant le reste, puis les temps du récit (accroche, promesse, contexte, conflit, renversement, réponse, chute), chacun avec ce qu’on doit y voir ; le titre d’accroche.",
+    then: "Le correcteur mesure l’histoire (mots pour la durée, accroche et promesse courtes, contexte avant 12 s, phrases courtes et longues mêlées, pas de « et ensuite », chute courte) et le relecteur la juge ; s’il la refuse, elle repart au conteur (deux fois au plus, la première réécriture est relue), puis une passe corrige la forme (rythme, longueurs) sans toucher au fond. Le conteur et le relecteur n’écrivent qu’avec les modèles forts de la chaîne d’écriture : si leurs quotas sont épuisés, la tâche attend (12 h au plus). Le code découpe ensuite l’histoire en scènes, phrase par phrase, sans changer un mot, et le réalisateur fait les plans.",
   },
   {
     key: "script_review",
     name: "Relecteur · histoires",
-    summary: "Relit le script d’une histoire comme un spectateur qui ne connaît rien au sujet, avant les images.",
+    summary: "Relit l’histoire avant le découpage, comme un spectateur qui ne connaît rien au sujet, avec la checklist du storytelling.",
     icon: "review",
     scope: "Thèmes racontés",
     job: "script",
-    when: "Juste après le scénariste, une fois par script.",
+    when: "Juste après le conteur, une fois par histoire.",
     inputs: [
       "L’idée : titre, accroche, prémisse",
-      "Le script scène par scène : rôle, durée, narration, scène carte, titre d’accroche et boucle",
+      "L’histoire temps par temps, avec l’idée centrale, le moteur, le héros, l’enjeu, la dernière phrase et le titre d’accroche",
       "Les faits de l’idée et le dossier des sources (thèmes documentaires)",
     ],
-    consignes: [],
-    output: "Un verdict : bon, ou jusqu’à 6 problèmes précis (scène visée et correction), par exemple un « controversé » jamais expliqué.",
-    then: "Des problèmes : le script repart une fois au scénariste avec la liste. S’il ne répond pas (quota), le script continue sans relecture.",
+    consignes: ["rules_storytelling"],
+    output:
+      "Un verdict : bonne, ou jusqu’à 8 problèmes précis (temps visé et correction), par exemple des faits posés les uns après les autres sans « mais » ni « donc », un contexte qui manque, une promesse non tenue.",
+    then: "Des problèmes : l’histoire repart une fois au conteur avec la liste. S’il ne répond pas (quota), l’histoire continue sans relecture.",
+  },
+  {
+    key: "script_shots",
+    name: "Réalisateur · histoires",
+    summary: "Découpe l’histoire en plans : l’image de départ et le mouvement de chaque scène, la carte d’un lieu réel, la musique.",
+    icon: "shots",
+    scope: "Thèmes racontés",
+    job: "script",
+    when: "Après la relecture, une fois l’histoire découpée en scènes par le code (phrase par phrase, sans changer un mot).",
+    inputs: [
+      "Le thème : brief et ambiances musicales disponibles",
+      "L’histoire (idée centrale, moteur, héros) et ses scènes : rôle, durée, narration mot pour mot, ce que le conteur veut y montrer",
+      "L’idée, ses temps visuels, le style visuel et la langue de la chaîne",
+      "Les faits et le dossier des sources, pour l’exactitude des images (époque, lieux, objets)",
+    ],
+    consignes: ["rules_images", "hint_continuity"],
+    output:
+      "Un plan par scène : l’image de départ et le mouvement (en anglais), un texte à l’écran facultatif, la continuité, la scène carte d’un lieu réel ; ce qui est commun à toutes les images (époque, lieu, lumière), la boucle, l’ambiance musicale et des métadonnées brouillon.",
+    then: "Le code assemble le script (la narration du conteur, mot pour mot, et ces plans) puis le correcteur le vérifie ; une scène oubliée est redemandée une fois. Le storyboard suit.",
   },
   {
     key: "scene_rewrite",
@@ -109,11 +142,11 @@ export const AGENTS: AgentDef[] = [
     when: "Quand tu cliques « Réinventer » sur une scène du storyboard (Création → Regarder et choisir).",
     inputs: [
       "Le thème, l’idée et, pour les thèmes documentaires, les faits sourcés et le dossier des sources",
-      "Les consignes du scénariste du format (version active de son prompt) et, pour les histoires, les règles du storytelling",
+      "Les consignes de qui a fait les plans (le réalisateur des histoires, ou le scénariste du format) et, pour les histoires, les règles du récit et de l’image",
       "Le script scène par scène (image, mouvement, narration, texte à l’écran) et la scène visée, son rôle et sa durée",
       "Ce que tu en dis (facultatif) et les versions de la scène déjà écartées, pour ne pas y revenir",
     ],
-    consignes: ["rules_storytelling"],
+    consignes: ["rules_storytelling", "rules_images"],
     output: "La scène réécrite : son nouveau plan en une phrase (en français, pour toi), l’image de départ et le mouvement (en anglais), la narration et le texte à l’écran ; rôle et durée ne changent pas.",
     then: "Le correcteur vérifie le script ; un écart nouveau renvoie la scène une fois au scénariste. Le script est enregistré, les anciennes images de la scène sont retirées, de nouvelles sont faites et le storyboard revient à valider.",
   },
@@ -172,7 +205,7 @@ export const AGENTS: AgentDef[] = [
       "Les voix de synthèse des personnages (patron, jeune homme humble, femme mielleuse, vieille dame…)",
       "La stratégie validée, les leçons validées de l’agent analyste et deux scripts de la série qui ont bien marché",
     ],
-    consignes: ["rules_hook_title"],
+    consignes: ["rules_storytelling", "rules_hook_title"],
     output:
       "La distribution (nom, apparence en anglais, voix de chaque personnage) puis 14 à 20 plans : les personnages à l’image, une réplique de 12 mots au plus dite par un seul personnage, l’image de départ et le mouvement (en anglais) ; le titre d’accroche, l’ambiance musicale et des métadonnées brouillon.",
     then: "Le code relie chaque réplique à son personnage, cale la durée du plan sur la réplique, puis vérifie le format (une voix par plan, 60 % de plans dialogués, personnages décrits) ; une reprise en cas d’écart. Au storyboard, chaque personnage reçoit sa fiche, donnée en référence à chaque plan où il apparaît.",
@@ -285,10 +318,18 @@ export const AGENTS: AgentDef[] = [
 export const CONSIGNES: ConsigneDef[] = [
   {
     key: "rules_storytelling",
-    name: "Règles du storytelling",
-    summary: "Structure (accroche, mise en place, révélation, montée, chute, boucle), enjeu et émotion, règles de la voix et de l’image.",
-    usedBy: ["idea", "script", "scene_rewrite"],
-    note: "Le correcteur vérifie aussi, avec ses propres valeurs : accroche de 14 mots au plus, 15 mots par scène de 5 s (3 mots par seconde), une narration qui couvre au moins 70 % de la durée, révélation avant 12 s, une seule scène carte, pas d’appel à l’action, pas de superlatif vide. Si tu changes ces chiffres ici, le correcteur garde les siens. Les nombres s’écrivent en chiffres (« 852 morts », « en 1994 ») : la voix les lit en toutes lettres, le correcteur compte les mots qu’elle dit (« 1994 » = 4 mots) et un nombre resté en lettres passe en chiffres.",
+    name: "Règles du récit",
+    summary:
+      "L’art de raconter, pour toute histoire : une seule idée, les 3 C, l’enjeu, « mais » et « donc », montrer plutôt que dire, l’accroche sans délai et sa promesse, les boucles ouvertes, l’ironie dramatique, des mots simples et un rythme varié, la fin écrite en premier, la checklist.",
+    usedBy: ["idea", "script", "script_review", "scene_rewrite", "script_drama"],
+    note: "Le correcteur vérifie aussi, avec ses propres valeurs. L’histoire : environ 2,9 mots dits par seconde de vidéo (75 s ≈ 218 mots, de 185 à 244), accroche de 14 mots au plus, accroche et promesse de 22 mots à elles deux, contexte avant 12 s, phrases de 18 mots au plus, au moins 15 % de phrases courtes (5 mots ou moins) et 15 % de longues (12 ou plus), ni « et ensuite » ni « puis », chute de 12 mots au plus, un nombre par tranche de 10 s. Le script découpé : 16 mots par scène au plus, une narration qui couvre au moins 70 % de la durée, révélation avant 12 s, une seule scène carte, pas d’appel à l’action ni de superlatif vide. Si tu changes ces chiffres ici, le correcteur garde les siens. Les nombres s’écrivent en chiffres (« 852 morts », « en 1994 ») : la voix les lit en toutes lettres, le correcteur compte les mots qu’elle dit (« 1994 » = 4 mots) et un nombre resté en lettres passe en chiffres.",
+  },
+  {
+    key: "rules_images",
+    name: "Règles de l’image · histoires",
+    summary:
+      "La première image montre l’accroche, chaque image montre ce que dit la narration, les mêmes mots pour ce qui revient, un seul mouvement lent, un changement de plan à chaque scène, l’époque qui se voit, la carte d’un lieu réel, aucun visage reconnaissable.",
+    usedBy: ["script_shots", "scene_rewrite"],
   },
   {
     key: "guide_timelapse",
@@ -319,7 +360,7 @@ export const CONSIGNES: ConsigneDef[] = [
     key: "hint_continuity",
     name: "Continuité entre clips",
     summary: "Quand un clip prolonge le précédent (il part de sa dernière image) et quand il coupe.",
-    usedBy: ["script"],
+    usedBy: ["script_shots"],
   },
 ];
 
@@ -404,18 +445,35 @@ export const PIPELINE: PipelineStage[] = [
         id: "script",
         kind: "agent",
         title: "Scénariste",
-        detail: "Selon le format du thème : histoire racontée, chantier en accéléré, visite de luxe ou drame en dialogues.",
+        detail:
+          "Selon le format du thème : le conteur écrit l’histoire racontée en entier, ou le scénariste du chantier en accéléré, de la visite de luxe ou du drame en dialogues écrit ses plans.",
         agents: ["script", "script_timelapse", "script_tour", "script_drama"],
         jobs: ["script"],
         model: "llm",
       },
-      { id: "lint", kind: "code", title: "Correcteur", detail: "Vérifie les règles mesurables ; en cas d’écart, le script repart au scénariste." },
+      {
+        id: "lint",
+        kind: "code",
+        title: "Correcteur",
+        detail: "Vérifie les règles mesurables ; en cas d’écart, l’histoire ou le script repart au scénariste.",
+      },
       {
         id: "script_review",
         kind: "agent",
         title: "Relecteur",
-        detail: "Enjeu compris avant 10 s, promesses tenues, conflit et humain, faits du dossier ; ses remarques font réécrire le script une fois.",
+        detail:
+          "La checklist du récit : sujet dit tout de suite, promesse tenue, contexte compris, « mais » et « donc » plutôt que des faits alignés, une seule idée, faits du dossier ; ses remarques font réécrire l’histoire une fois.",
         agents: ["script_review"],
+        jobs: ["script"],
+        model: "llm",
+        only: "histoires racontées",
+      },
+      {
+        id: "script_shots",
+        kind: "agent",
+        title: "Réalisateur",
+        detail: "Le code découpe l’histoire en scènes, phrase par phrase ; le réalisateur décide l’image et le mouvement de chaque plan.",
+        agents: ["script_shots"],
         jobs: ["script"],
         model: "llm",
         only: "histoires racontées",

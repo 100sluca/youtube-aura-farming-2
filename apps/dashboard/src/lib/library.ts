@@ -10,8 +10,9 @@ import { PRODUCTION_STATUS_LABELS } from "@/lib/labels";
 import type { LibraryClip, LibraryDetail, LibraryItem, LibraryMaking } from "@/lib/library-types";
 import { getVideoInsight } from "@/lib/insights";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { allTasks } from "@/lib/task-types";
 import { getTaskBoard } from "@/lib/tasks";
-import { getLibraryTikTok } from "@/lib/tiktok";
+import { getLibraryTikTok, getTikTokBriefs } from "@/lib/tiktok";
 import type { ProductionStatus, VideoOverview } from "@/lib/types";
 
 /** Vidéo de l'appli dont le montage n'existe pas encore (script, storyboard, clips en cours, ou fabrication arrêtée). */
@@ -30,7 +31,7 @@ async function makingOf(videos: VideoOverview[]): Promise<Map<string, LibraryMak
     db.from("assets").select("id, production_id, scene_index, selected").in("production_id", prodIds).eq("kind", "storyboard").order("scene_index").order("created_at"),
     db.from("productions").select("id, concepts(title)").in("id", prodIds),
   ]);
-  const tasks = new Map([...board.running, ...board.queued, ...board.waiting, ...board.failed, ...board.stopped].map((t) => [t.id, t]));
+  const tasks = new Map(allTasks(board).map((t) => [t.id, t]));
   const cover = new Map<string, { id: string; selected: boolean }>();
   for (const a of images.data ?? []) {
     const cur = cover.get(a.production_id);
@@ -67,11 +68,11 @@ export async function getLibrary(channelId?: string): Promise<{ items: LibraryIt
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const videos = (data ?? []).map(mapOverview);
-  const [root, making] = await Promise.all([dataRoot(), makingOf(videos.filter(unfinished))]);
+  const [root, making, tiktok] = await Promise.all([dataRoot(), makingOf(videos.filter(unfinished)), getTikTokBriefs().catch(() => new Map())]);
   const items = await Promise.all(
     videos.map(async (v): Promise<LibraryItem> => {
       const size = v.origin === "imported" || v.files_deleted_at ? 0 : await videoFootprint(root, v.id, v.production_id);
-      return { ...v, size_bytes: size, making: making.get(v.id) ?? null };
+      return { ...v, size_bytes: size, making: making.get(v.id) ?? null, tiktok: tiktok.get(v.id) ?? null };
     }),
   );
   // Plus récent d'abord : date de publication, sinon de programmation, sinon de fabrication

@@ -105,6 +105,13 @@ class VideoFacts:
     end_retention_pct: float | None = None
     views_24h: int | None = None
     views_7d: int | None = None
+    # la même vidéo sur TikTok (docs/39, table tiktok_posts), si elle y est sortie
+    tiktok_views: int | None = None
+    tiktok_likes: int | None = None
+    tiktok_comments: int | None = None
+    tiktok_shares: int | None = None
+    tiktok_completion_pct: float | None = None
+    tiktok_for_you_pct: float | None = None
     hook_title: str | None = None
     on_screen: list[str] = field(default_factory=list)
     narration: list[str] = field(default_factory=list)
@@ -218,6 +225,12 @@ def facts_from_row(r: dict[str, Any], now: datetime, comments: Sequence[str] = (
         end_retention_pct=_num(r.get("end_retention_pct")),
         views_24h=_int(r.get("views_24h")),
         views_7d=_int(r.get("views_7d")),
+        tiktok_views=_int(r.get("tt_views")),
+        tiktok_likes=_int(r.get("tt_likes")),
+        tiktok_comments=_int(r.get("tt_comments")),
+        tiktok_shares=_int(r.get("tt_shares")),
+        tiktok_completion_pct=_num(r.get("tt_completion_pct")),
+        tiktok_for_you_pct=_num(r.get("tt_for_you_pct")),
         hook_title=feats.get("hook_title"),
         on_screen=feats.get("on_screen", []),
         narration=feats.get("narration", []),
@@ -238,7 +251,13 @@ def load_facts(db: Any, channel_id: Any, window_days: int, now: datetime | None 
     """Les vidéos publiées de la chaîne sur la fenêtre, avec leur fiche."""
     now = now or datetime.now(UTC)
     rows = db.fetch_all(
-        """select o.*, p.script from v_video_overview o left join productions p on p.id = o.production_id
+        """select o.*, p.script, tt.views as tt_views, tt.likes as tt_likes, tt.comments as tt_comments,
+                  tt.shares as tt_shares, tt.completion_pct as tt_completion_pct,
+                  round((tt.impression_sources->>'forYou')::numeric * 100, 1) as tt_for_you_pct
+           from v_video_overview o left join productions p on p.id = o.production_id
+           -- la même vidéo sur TikTok (docs/39), vues relevées par Zernio (pas une vidéo tout juste lue en direct)
+           left join lateral (select * from tiktok_posts t where t.video_id = o.id and coalesce(t.sync_status, '') <> 'live'
+                              order by t.views desc limit 1) tt on true
            where o.channel_id = %s and o.status = 'published' and o.published_at is not null
              and o.published_at > now() - make_interval(days => %s)
            order by o.published_at""",
@@ -381,6 +400,12 @@ def video_block(v: VideoFacts) -> str:
         f"  J'aime {_fmt(v.likes)} ({_fmt(v.like_rate_pct, ' %', 2)} des vues) · commentaires {_fmt(v.comments)} · "
         f"partages {_fmt(v.shares)} · abonnés gagnés {_fmt(v.subscribers_gained)}",
     ]
+    if v.tiktok_views is not None:
+        lines.append(
+            f"  TikTok (même vidéo) : vues {_fmt(v.tiktok_views)} · j'aime {_fmt(v.tiktok_likes)} · commentaires "
+            f"{_fmt(v.tiktok_comments)} · partages {_fmt(v.tiktok_shares)} · vue jusqu'au bout "
+            f"{_fmt(v.tiktok_completion_pct, ' %', 1)} · vues venues de « Pour toi » {_fmt(v.tiktok_for_you_pct, ' %')}"
+        )
     if v.hook_title:
         lines.append(f"  Titre d'accroche affiché : « {v.hook_title} »")
     if v.shots:

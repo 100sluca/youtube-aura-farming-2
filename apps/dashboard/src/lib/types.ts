@@ -47,7 +47,9 @@ export type JobType =
   | "import_channel"
   | "voice_preview"
   | "montage_preview"
-  | "analyze";
+  | "analyze"
+  | "tiktok_publish"
+  | "sync_tiktok";
 
 /** Série de contenu (table series, migration 0003) : un « thème » dans l'interface. */
 export interface Series {
@@ -76,6 +78,8 @@ export interface StoryboardScene {
   visual_prompt: string;
   /** Ce que dit la voix pendant la scène, dans la langue de la vidéo (récits) ; absent pour une vidéo sans voix. */
   narration?: string | null;
+  /** Drame (docs/35) : le personnage qui dit la réplique, montré à part ; son nom n'est ni dit ni écrit dans la vidéo. */
+  speaker?: string | null;
   continues_previous: boolean;
   /** i2v (depuis l'image) ou flf (première + dernière image, chantier en accéléré : impossible avec Gemini). */
   clip_mode?: string;

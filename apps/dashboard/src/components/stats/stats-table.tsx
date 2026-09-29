@@ -25,7 +25,8 @@ type SortKey =
   | "comments"
   | "shares"
   | "subs"
-  | "engaged";
+  | "engaged"
+  | "tiktok";
 type Dir = "asc" | "desc";
 type VerdictFilter = "all" | "top" | "flop";
 
@@ -156,10 +157,24 @@ function columns(median: number | null): Column[] {
       value: (v) => v.engaged_pct,
       cell: (v) => pct(v.engaged_pct),
     },
+    {
+      key: "tiktok",
+      label: "TikTok",
+      hint: "Vues de la même vidéo sur TikTok, relevées chaque heure (onglet TikTok pour le détail). « prog. » : programmée, pas encore sortie.",
+      value: (v) => (v.tiktok?.status === "published" && !v.tiktok.draft ? (v.tiktok.views ?? null) : null),
+      cell: (v) =>
+        v.tiktok?.status === "published" && !v.tiktok.draft ? (
+          num(v.tiktok.views)
+        ) : v.tiktok?.status === "scheduled" ? (
+          <span className="text-muted-foreground text-xs">prog.</span>
+        ) : (
+          muted
+        ),
+    },
   ];
 }
 
-function HeaderHint({ label, hint }: { label: string; hint: string }) {
+export function HeaderHint({ label, hint }: { label: string; hint: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -353,6 +368,7 @@ export function StatsTable({ videos, median, showChannel, onOpen }: { videos: St
                   else if (c.key === "shares") content = sorted.some((v) => v.shares !== null) ? formatNumber(sum((v) => v.shares)) : muted;
                   else if (c.key === "subs")
                     content = sorted.some((v) => v.subscribers_gained !== null) ? formatSigned(sum((v) => c.value(v))) : muted;
+                  else if (c.key === "tiktok") content = sorted.some((v) => c.value(v) !== null) ? formatNumber(sum((v) => c.value(v))) : muted;
                   return (
                     <TableCell key={c.key} className="text-right font-medium tabular-nums">
                       {content}

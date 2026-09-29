@@ -60,7 +60,8 @@ class RecipeSpec:
 
 
 RECIPES: dict[str, RecipeSpec] = {
-    "story": RecipeSpec("story", True, False, None, (4, 14), (2.0, 8.0), False, 0.12, 330),
+    # Récit : 60 à 90 s découpés phrase par phrase (worker/storycraft.py, docs/37), jusqu'à 24 scènes
+    "story": RecipeSpec("story", True, False, None, (4, 24), (2.0, 8.0), False, 0.12, 330),
     "timelapse": RecipeSpec("timelapse", False, True, None, (8, 14), (1.2, 5.0), False, 0.35, 1330,
                             max_speedup=4.5, trails=True, counter=True, title_size=76,
                             video_negative="giant person, person close to the camera, close-up of a person, face, hand in the "

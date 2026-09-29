@@ -40,6 +40,7 @@ Les statuts `concept`, `production` et `video` sont détaillés dans `02-data-mo
 | `upload` | vidéo | final + métadonnées + créneau | `youtube_video_id`, `scheduled` | Data API v3 | 30-90 s |
 | `tiktok_publish` | vidéo | final + titre et description YouTube + créneau | `videos.tiktok` : publication TikTok programmée au même créneau, puis son lien (docs/36) | API Zernio | 30 s à 2 min, puis attente du créneau |
 | `sync_metrics` | chaîne | J-2..J | `video_metrics_daily`, `video_stats`, `channel_metrics_daily` | Analytics + Data API | 30 s |
+| `sync_tiktok` | — (tous les comptes TikTok) | clé Zernio | `tiktok_accounts`, `tiktok_posts` et leurs relevés ; lien TikTok manquant, vidéo publiée à la main reconnue (docs/39) | API Zernio | 2 à 5 s |
 | `sync_retention` | vidéo | J+3 / J+14 | `video_retention` | Analytics API | 5 s |
 | `sync_comments` | vidéo | — | `video_comments` | Data API | 5 s |
 | `improve` | — | métriques 14 j par version de prompt | nouvelle version de `prompt_templates` (inactive, à valider) | LLM | 1 min |
@@ -58,7 +59,8 @@ class Step(Protocol):
 
 Le worker :
 1. `claim_jobs(worker_id, types, max=1)` toutes les 5 s (jobs GPU sérialisés : concurrence 1 ;
-   jobs réseau/LLM : concurrence 3).
+   jobs réseau/LLM : concurrence 3). Ordre : priorité, puis place de la vidéo dans la file (une vidéo après l'autre,
+   ordre modifiable dans le panneau Tâches), puis ancienneté ; les vidéos en pause attendent (docs/40).
 2. Exécute le step, envoie un heartbeat (`locked_at`) toutes les 30 s.
 3. `done` + `result` ou `fail_job(id, error)` (backoff, puis alerte).
 
@@ -69,6 +71,8 @@ Le worker :
 | toutes les 20 s | envoi des mails en attente : « vidéo terminée » et mail d'essai des Réglages (docs/32) ; les autres alertes (échecs, quota, tampon) restent en base, sans mail |
 | toutes les 5 min | `requeue_stale_jobs()` ; pour chaque vidéo `ready` sans créneau : `scheduled_at = next_free_slot(channel)` puis job `upload` (uniquement si créneau < 72 h : ne pas immobiliser des uploads trop tôt, le quota est journalier) |
 | toutes les 5 min | `plan_tiktok` : pour chaque chaîne reliée à TikTok en publication automatique, chaque Short programmé sur YouTube depuis l'activation (et 24 h en arrière au plus) reçoit un job `tiktok_publish` (docs/36) |
+| toutes les 5 min | `plan_tiktok_backlog` : pour chaque chaîne en rattrapage, un créneau resté vide (entre 29 et 5 min d'ici) reçoit la plus ancienne vidéo déjà sortie sur YouTube et jamais envoyée sur TikTok (`tiktok_publish` avec `payload.at`, docs/39) |
+| chaque heure à h10 | `tiktok_counters` : job `sync_tiktok` (statistiques TikTok, docs/39) si une clé Zernio est enregistrée |
 | toutes les heures | si backlog de concepts `approved` + productions en cours < 3 jours de créneaux → job `ideate` (10 idées) et, si `auto_approve_ideas`, création automatique des productions |
 | 03:00 | `sync_metrics` par chaîne ; `sync_retention` pour les vidéos publiées J+3 et J+14 ; `sync_comments` pour les 10 dernières |
 | 06:00 | contrôle des créneaux : alerte si un créneau < 24 h est vide ; alerte si quota J-1 > 80 % |

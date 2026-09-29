@@ -3,12 +3,16 @@
  * et une heure de fin estimée. Serveur uniquement (clé service role) ; le panneau l'interroge toutes les quelques
  * secondes par l'action fetchTaskBoard (app/tasks/actions.ts).
  *
- * Estimation : durée médiane des 300 derniers jobs terminés de chaque type (valeurs par défaut sinon). La carte
- * graphique ne fait qu'une chose à la fois (voie « gpu » du worker : storyboard, clips) : on déroule sa file dans
- * l'ordre de claim_jobs (priorité, puis ancienneté) pour dater la fin de chaque vidéo ; le reste (script, voix,
- * montage…) tourne en parallèle et s'ajoute au bout.
+ * Ordre (claim_jobs, migration 0027, docs/40) : priorité du job, puis place de sa vidéo dans la file (queueKey : celle
+ * choisie par Luca, sinon l'heure de ses premiers clips, sinon sa création), puis ancienneté ; les vidéos en pause sont
+ * sautées. La carte graphique ne fait qu'une chose à la fois (voie « gpu » du worker : storyboard, clips, voix) : on
+ * déroule sa file dans cet ordre pour dater la fin de chaque vidéo ; le reste (script, montage…) tourne en parallèle et
+ * s'ajoute au bout.
+ *
+ * Estimation : durée médiane des 300 derniers jobs terminés de chaque type (valeurs par défaut sinon).
  */
 import { IS_MOCK } from "@/lib/data";
+import { formatDateTime, formatTime, parisDayKey } from "@/lib/format";
 import { JOB_TYPE_LABELS } from "@/lib/labels";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { EMPTY_TASK_BOARD, type TaskBoard, type TaskJob, type TaskProduction } from "@/lib/task-types";
@@ -26,7 +30,11 @@ const WEIGHTS: Partial<Record<JobType, number>> = { script: 10, storyboard: 15, 
 const DEFAULT_S: Partial<Record<JobType, number>> = {
   script: 240, storyboard: 360, render: 5, generate_clip: 300, tts: 20, seo: 60, assemble: 60, qa: 15,
   ideate: 90, import_channel: 60, sync_metrics: 60, sync_retention: 20, sync_comments: 20, strategy: 90, improve: 120, upload: 120,
+  tiktok_publish: 90, sync_tiktok: 10,
 };
+/** Jobs interrompus par une pause ou un arrêt (SQL pause_productions, cancel_production) : ils repartent à la reprise. */
+const PAUSE_MARK = "Mise en pause";
+const STOP_MARK = "Arrêtée par l'utilisateur";
 
 async function rows(q: PromiseLike<{ data: unknown; error: { message?: string } | null }>): Promise<Row[]> {
   const { data, error } = await q;
@@ -40,6 +48,17 @@ function median(values: number[]): number {
 }
 
 const seconds = (from: string | null, to: number) => (from ? Math.max(0, (to - new Date(from).getTime()) / 1000) : 0);
+
+/** Horodatage Postgres (jusqu'à la microseconde) en microsecondes : deux places de la file diffèrent parfois d'1 µs. */
+function micros(ts: string): number {
+  const frac = /\.(\d+)/.exec(ts)?.[1] ?? "";
+  return Math.floor(Date.parse(ts) / 1000) * 1_000_000 + Number(frac.padEnd(6, "0").slice(0, 6));
+}
+
+/** « à 09:30 » aujourd'hui (heure de Paris), sinon « le mer. 30 sept., 09:30 ». */
+function whenLabel(ts: string, nowMs: number): string {
+  return parisDayKey(ts) === parisDayKey(new Date(nowMs).toISOString()) ? `à ${formatTime(ts)}` : `le ${formatDateTime(ts)}`;
+}
 
 function stageLabel(job: Row, clipJobs: Row[]): string {
   const type = job.type as JobType;
@@ -84,21 +103,42 @@ export async function getTaskBoard(): Promise<TaskBoard> {
   const dur = (type: JobType) => median(byType.get(type) ?? []) || DEFAULT_S[type] || 60;
 
   const prodIds = active.map((p) => p.id as string);
-  const [jobs, covers] = prodIds.length
+  const [jobs, covers, prodRows] = prodIds.length
     ? await Promise.all([
-        rows(db.from("jobs").select("id, type, status, priority, progress, progress_label, payload, started_at, created_at, error, production_id").in("production_id", prodIds).neq("type", "upload")),
+        rows(db.from("jobs").select("id, type, status, priority, progress, progress_label, payload, run_after, started_at, created_at, error, production_id").in("production_id", prodIds).neq("type", "upload")),
         rows(db.from("assets").select("id, production_id, scene_index").in("production_id", prodIds).eq("kind", "storyboard").eq("selected", true).order("scene_index")),
+        rows(db.from("productions").select("id, paused_at, queue_at, created_at").in("id", prodIds)),
       ])
-    : [[], []];
+    : [[], [], []];
   const jobsOf = new Map<string, Row[]>();
   for (const j of jobs) jobsOf.set(j.production_id, [...(jobsOf.get(j.production_id) ?? []), j]);
   const coverOf = new Map<string, string>();
   for (const a of covers) if (!coverOf.has(a.production_id)) coverOf.set(a.production_id, a.id);
+  const paused = new Set(prodRows.filter((p) => p.paused_at).map((p) => p.id as string));
 
-  // File de la carte graphique, dans l'ordre de claim_jobs : fin estimée de chaque job
+  // Place de chaque vidéo dans la file, comme production_queue_key (migration 0027) : choisie par Luca, sinon l'heure de
+  // ses premiers clips, sinon sa création
+  const firstClip = new Map<string, number>();
+  for (const j of jobs) {
+    if (j.type !== "generate_clip") continue;
+    const t = micros(j.created_at);
+    if (t < (firstClip.get(j.production_id) ?? Infinity)) firstClip.set(j.production_id, t);
+  }
+  const keyOf = new Map<string, number>(
+    prodRows.map((p) => [p.id as string, p.queue_at ? micros(p.queue_at) : (firstClip.get(p.id) ?? micros(p.created_at))]),
+  );
+  const key = (id: string | null) => (id ? keyOf.get(id) : undefined) ?? Number.MAX_SAFE_INTEGER;
+
+  // File de la carte graphique, dans l'ordre de claim_jobs (vidéos en pause sautées) : fin estimée de chaque job
   const gpu = jobs
-    .filter((j) => GPU_TYPES.has(j.type) && (j.status === "running" || j.status === "queued"))
-    .sort((a, b) => (a.status === "running" ? -1 : 0) - (b.status === "running" ? -1 : 0) || a.priority - b.priority || a.created_at.localeCompare(b.created_at));
+    .filter((j) => GPU_TYPES.has(j.type) && (j.status === "running" || (j.status === "queued" && !paused.has(j.production_id))))
+    .sort(
+      (a, b) =>
+        Number(b.status === "running") - Number(a.status === "running") ||
+        a.priority - b.priority ||
+        key(a.production_id) - key(b.production_id) ||
+        micros(a.created_at) - micros(b.created_at),
+    );
   const gpuEnd = new Map<string, number>(); // production → fin de son dernier job GPU (ms)
   let clock = nowMs;
   for (const j of gpu) {
@@ -109,8 +149,12 @@ export async function getTaskBoard(): Promise<TaskBoard> {
 
   const toTask = (p: Row): TaskProduction => {
     const pj = jobsOf.get(p.id) ?? [];
+    const isPaused = paused.has(p.id);
     const running = pj.find((j) => j.status === "running") ?? null;
-    const clips = pj.filter((j) => j.type === "generate_clip");
+    // Jobs faits ou à faire : un job interrompu par une pause ou un arrêt repartira à la reprise
+    const counted = pj.filter((j) => j.status !== "cancelled" || j.error === PAUSE_MARK || j.error === STOP_MARK);
+    const clips = counted.filter((j) => j.type === "generate_clip");
+    const clipsDone = clips.filter((j) => j.status === "done").length;
     // Production encore « en cours » mais bloquée : un job a définitivement échoué (3 essais) et plus rien ne tourne.
     // Elle n'avancera plus seule (le montage attend ce clip) : on la montre en échec, avec « Relancer ».
     // Refaire / Réinventer une scène (payload.scenes, docs/27) : un échec laisse le storyboard tel quel, rien ne l'attend
@@ -125,7 +169,7 @@ export async function getTaskBoard(): Promise<TaskBoard> {
     const total = expected.reduce((s, t) => s + (WEIGHTS[t] ?? 0), 0) || 1;
     let got = 0;
     for (const t of expected) {
-      const list = pj.filter((j) => j.type === t && j.status !== "cancelled");
+      const list = counted.filter((j) => j.type === t);
       if (!list.length) continue;
       const frac =
         list.reduce((s, j) => {
@@ -137,27 +181,42 @@ export async function getTaskBoard(): Promise<TaskBoard> {
     }
     const progress = status === "storyboard_review" ? Math.max(Math.round((got / total) * 100), 25) : Math.round((got / total) * 100);
 
+    const pending = counted
+      .filter((j) => j.status === "queued" || j.status === "cancelled")
+      .sort((a, b) => a.priority - b.priority || micros(a.created_at) - micros(b.created_at));
     let stage: string;
     if (status === "storyboard_review") stage = "Storyboard à valider";
     else if (status === "cancelled") stage = "Arrêtée";
     else if (status === "failed") stage = "En échec";
     else if (running) stage = stageLabel(running, clips);
-    else {
-      const next = pj.filter((j) => j.status === "queued").sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at))[0];
+    else if (isPaused) {
+      stage = clips.length
+        ? `En pause · ${clipsDone} clip${clipsDone > 1 ? "s" : ""} sur ${clips.length} fait${clipsDone > 1 ? "s" : ""}`
+        : pending[0]
+          ? `En pause · avant : ${(JOB_TYPE_LABELS[pending[0].type as JobType] ?? pending[0].type).toLowerCase()}`
+          : "En pause";
+    } else {
+      const next = pending.find((j) => j.status === "queued");
       const label = next ? stageLabel(next, clips) : "";
-      stage = !next ? "En file" : label.includes("· Gemini") ? label : `En file · ${label.toLowerCase()}`;
+      // Tâche programmée plus tard (script réécrit à une heure donnée…) : on dit quand elle partira
+      const later = next && new Date(next.run_after).getTime() > nowMs + 60_000 && !label.includes("· Gemini") ? ` · prévue ${whenLabel(next.run_after, nowMs)}` : "";
+      stage = !next ? "En file" : label.includes("· Gemini") ? label : `En file · ${label.toLowerCase()}${later}`;
     }
 
-    // Fin estimée : file de la carte graphique + ce qui reste à faire ailleurs (script, voix, montage…)
+    // Fin estimée : file de la carte graphique + ce qui reste à faire ailleurs (script, voix, montage…) ; aucune en pause.
+    // Rien ne part avant la plus proche heure de départ de ses tâches en file (run_after)
     let eta: number | null = null;
-    if (ACTIVE.includes(status) && status !== "storyboard_review") {
+    if (ACTIVE.includes(status) && status !== "storyboard_review" && !isPaused) {
       const ioLeft = pj
         .filter((j) => !GPU_TYPES.has(j.type) && (j.status === "queued" || j.status === "running"))
         .reduce((s, j) => s + (j.status === "running" ? Math.max(15, dur(j.type) - seconds(j.started_at, nowMs)) : dur(j.type)), 0);
       const noStoryboardYet = ["draft", "scripting"].includes(status) && !pj.some((j) => j.type === "storyboard");
-      const base = gpuEnd.get(p.id) ?? nowMs;
+      const queuedStarts = pj.filter((j) => j.status === "queued").map((j) => new Date(j.run_after).getTime());
+      const startAt = running || !queuedStarts.length ? nowMs : Math.max(nowMs, Math.min(...queuedStarts));
+      const base = Math.max(gpuEnd.get(p.id) ?? nowMs, startAt);
       eta = base + (ioLeft + (noStoryboardYet ? dur("storyboard") : 0)) * 1000;
     }
+    const stepEnd = running ? nowMs + Math.max(30, dur(running.type) - seconds(running.started_at, nowMs)) * 1000 : null;
 
     return {
       id: p.id,
@@ -174,18 +233,37 @@ export async function getTaskBoard(): Promise<TaskBoard> {
       cover_asset_id: coverOf.get(p.id) ?? null,
       error: p.error ?? (blocked ? (failedJob?.error ?? "Un job a échoué") : null),
       updated_at: p.updated_at,
+      phase: pj.some((j) => j.type === "generate_clip") ? "fabrication" : "preparation",
+      paused: isPaused,
+      pause_pending: isPaused && Boolean(running),
+      step_type: (running?.type as JobType | undefined) ?? null,
+      gpu_step: Boolean(running && GPU_TYPES.has(running.type)),
+      step_progress: running ? (running.progress ?? 0) : null,
+      step_end_at: stepEnd ? new Date(stepEnd).toISOString() : null,
+      clips_done: clipsDone,
+      clips_total: clips.length,
     };
   };
 
   const all = active.map(toTask);
   const blockedTasks = all.filter((t) => t.status === "failed"); // bloquées (voir toTask) : rangées avec les échecs
   const tasks = all.filter((t) => t.status !== "failed");
-  const runningTasks = tasks.filter((t) => t.running && t.status !== "storyboard_review");
+  const byKey = (a: TaskProduction, b: TaskProduction) => key(a.id) - key(b.id);
+  const runningTasks = tasks
+    .filter((t) => t.running && t.status !== "storyboard_review")
+    .sort((a, b) => Number(b.gpu_step) - Number(a.gpu_step) || byKey(a, b));
   const waiting = tasks.filter((t) => t.status === "storyboard_review");
-  const queued = tasks
-    .filter((t) => !t.running && t.status !== "storyboard_review")
-    .sort((a, b) => (a.eta_at ?? "").localeCompare(b.eta_at ?? "") || a.updated_at.localeCompare(b.updated_at))
+  const idle = tasks.filter((t) => !t.running && t.status !== "storyboard_review");
+  // File d'attente : l'ordre de claim_jobs pour les clips, que Luca peut changer (reorder_queue) ; la préparation (script,
+  // images du storyboard) passe avant les clips par sa priorité et se range par fin estimée
+  const queued = idle
+    .filter((t) => !t.paused && t.phase === "fabrication")
+    .sort(byKey)
     .map((t, i) => ({ ...t, queue_position: i + 1 }));
+  const preparing = idle
+    .filter((t) => !t.paused && t.phase === "preparation")
+    .sort((a, b) => (a.eta_at ?? "").localeCompare(b.eta_at ?? "") || byKey(a, b));
+  const pausedTasks = idle.filter((t) => t.paused).sort(byKey);
 
   const toJob = (j: Row): TaskJob => {
     const payload = (j.payload ?? {}) as Record<string, unknown>;
@@ -193,6 +271,7 @@ export async function getTaskBoard(): Promise<TaskBoard> {
       typeof payload.series === "string" ? (seriesName.get(payload.series) ?? payload.series) : null,
       typeof payload.count === "number" ? `${payload.count} idées` : null,
       j.type === "voice_preview" && typeof payload.voice === "string" ? payload.voice : null,
+      j.type === "tiktok_publish" && payload.source === "rattrapage" ? "rattrapage d’une ancienne vidéo" : null,
       channelName.get(j.channel_id ?? (typeof payload.channel_id === "string" ? payload.channel_id : "")) ?? null,
     ].filter(Boolean);
     const detail = parts.length ? parts.join(" · ") : null;
@@ -222,6 +301,8 @@ export async function getTaskBoard(): Promise<TaskBoard> {
     generated_at: new Date(nowMs).toISOString(),
     running: runningTasks,
     queued,
+    preparing,
+    paused: pausedTasks,
     waiting,
     review_videos: reviewVideos,
     failed,
@@ -230,7 +311,7 @@ export async function getTaskBoard(): Promise<TaskBoard> {
     failed_jobs: failedJobs,
     queue_end_at: queueEnd > nowMs ? new Date(queueEnd).toISOString() : null,
     counts: {
-      active: runningTasks.length + queued.length + otherJobs.filter((j) => j.status === "running").length,
+      active: runningTasks.length + queued.length + preparing.length + otherJobs.filter((j) => j.status === "running").length,
       attention: waiting.length + reviewVideos,
       failures: failed.length + failedJobs.length,
     },

@@ -1,7 +1,7 @@
 /** Bibliothèque : types et regroupements partagés serveur / navigateur. Données : lib/library.ts. */
 import type { VideoDetail } from "@/lib/data/contract";
 import type { VideoInsight } from "@/lib/stats-types";
-import type { LibraryTikTok } from "@/lib/tiktok-types";
+import type { LibraryTikTok, TikTokBrief } from "@/lib/tiktok-types";
 import type { ProductionCard, ProductionStatus, VideoOverview } from "@/lib/types";
 
 export interface LibraryItem extends VideoOverview {
@@ -9,6 +9,8 @@ export interface LibraryItem extends VideoOverview {
   size_bytes: number;
   /** Vidéo de l'appli pas encore montée (docs/28) : où en est sa fabrication. Absent une fois le montage fini. */
   making?: LibraryMaking | null;
+  /** Sa publication sur TikTok et ses vues TikTok au dernier relevé (docs/39), null si elle n'y est pas partie. */
+  tiktok?: TikTokBrief | null;
 }
 
 /** Fabrication d'une vidéo pas encore montée, avec les mots du gestionnaire de tâches (lib/tasks.ts). */

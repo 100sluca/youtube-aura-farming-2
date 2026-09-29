@@ -290,11 +290,13 @@ export async function productionCards(ids?: string[]): Promise<ProductionCard[]>
     const storyboard: StoryboardScene[] = script
       ? script.scenes.map((s) => {
           const reinvention = sceneReinvention(mine, s.index);
+          const who = s.lines?.[0]?.who; // drame : qui dit la réplique (la narration est la réplique seule, docs/35)
           return {
             index: s.index,
             role: s.role ?? null,
             visual_prompt: s.visual_prompt,
             narration: (lang ? s.narration?.[lang] : Object.values(s.narration ?? {})[0]) || null,
+            speaker: who ? ((script.cast ?? []).find((m) => m.key === who)?.name ?? who) : null,
             continues_previous: Boolean(s.continues_previous),
             clip_mode: s.clip_mode ?? "i2v",
             passage: Boolean(s.passage),

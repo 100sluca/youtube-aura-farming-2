@@ -25,17 +25,18 @@ def code_prompts() -> dict[str, str]:
     from .steps.analyze import ANALYST_PROMPT
     from .steps.ideate import DEFAULT_PROMPT as IDEA
     from .steps.improve import IMPROVE_PROMPT
-    from .steps.script import CONTINUITY_HINT, REVIEW_PROMPT
-    from .steps.script import DEFAULT_PROMPT as SCRIPT
+    from .steps.script import CONTINUITY_HINT
     from .steps.seo import DEFAULT_PROMPT as SEO
     from .steps.strategy import DEFAULT_PROMPT as STRATEGY
-    from .storytelling import RULES
+    from .storycraft import REVIEW_PROMPT, SHOTS_PROMPT, STORY_PROMPT
+    from .storytelling import IMAGE_RULES, RULES
 
     return {
         # prompts système des agents
         "idea": IDEA,
-        "script": SCRIPT,
-        "script_review": REVIEW_PROMPT,  # relecture éditoriale des récits (docs/24)
+        "script": STORY_PROMPT,  # le conteur des récits : l'histoire en entier, avant le découpage (docs/37)
+        "script_review": REVIEW_PROMPT,  # relecture du récit, checklist du storytelling (docs/24, docs/37)
+        "script_shots": SHOTS_PROMPT,  # le réalisateur des récits : les plans de chaque scène (docs/37)
         **{f"script_{recipe}": text for recipe, text in SCRIPT_PROMPTS.items()},  # formats visuels (docs/15)
         "scene_rewrite": REWRITE_PROMPT,  # scène réinventée pendant la revue du storyboard (docs/27)
         "seo": SEO,
@@ -46,6 +47,7 @@ def code_prompts() -> dict[str, str]:
         "clip_qc": CLIP_SYSTEM,
         # consignes communes, ajoutées au message de l'agent avec les données de la tâche
         "rules_storytelling": RULES,
+        "rules_images": IMAGE_RULES,  # règles de l'image des récits (réalisateur, scène réinventée, docs/37)
         **{f"guide_{recipe}": text for recipe, text in IDEA_GUIDES.items()},
         "rules_hook_title": HOOK_RULES,
         "hint_continuity": CONTINUITY_HINT,

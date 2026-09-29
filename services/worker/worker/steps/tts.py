@@ -51,9 +51,11 @@ class TTSStep(Step):
         lang = v["lang"]
         script = ScriptV1.model_validate(v["script"])
         speed = float(v["voice_speed"] or ctx.settings.kokoro_speed)
-        if not forced and is_drama(recipe_for_production(ctx.db, v["production_id"])):  # une retouche garde sa voix unique
+        drama = is_drama(recipe_for_production(ctx.db, v["production_id"]))
+        if not forced and drama:  # une retouche garde sa voix unique
             return self._drama(ctx, out, script, lang, speed)
-        texts = {s.index: s.narration.get(lang, "").strip() for s in script.scenes}
+        # drame retouché : la voix choisie dit les répliques seules, jamais le nom de qui parle
+        texts = {s.index: (line_text(s) if drama else s.narration.get(lang, "")).strip() for s in script.scenes}
         # voix : celle de la retouche, sinon les Réglages du dashboard (« moteur:voix »), sinon .env
         voices = {lang: forced} if forced else load_generation_config(ctx.settings, ctx.db).voices
         tts, voice = resolve_voice(ctx.settings, voices, lang)

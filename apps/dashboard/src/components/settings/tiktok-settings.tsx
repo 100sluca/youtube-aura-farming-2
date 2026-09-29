@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime } from "@/lib/format";
 import type { Channel } from "@/lib/types";
-import type { TikTokAccount, TikTokSettings } from "@/lib/tiktok-types";
+import type { TikTokAccount, TikTokBacklogVideo, TikTokSettings } from "@/lib/tiktok-types";
 
 const NONE = "none";
 
@@ -41,14 +41,31 @@ function Toggle({ id, label, help, checked, onChange }: { id: string; label: str
   );
 }
 
-/** Réglages → TikTok : Zernio publie les Shorts sur TikTok ; l'envoi YouTube, lui, ne change pas (docs/36). */
-export function TikTokSettingsCard({ initial, keyHint, channels }: { initial: TikTokSettings; keyHint: string | null; channels: Channel[] }) {
+/** Réglages → TikTok : Zernio publie les Shorts sur TikTok ; l'envoi YouTube, lui, ne change pas (docs/36). Rattrapage des
+ * vidéos déjà sorties sur YouTube, chaîne par chaîne (docs/39). */
+export function TikTokSettingsCard({
+  initial,
+  keyHint,
+  channels,
+  backlog = {},
+}: {
+  initial: TikTokSettings;
+  keyHint: string | null;
+  channels: Channel[];
+  /** Vidéos à rattraper par chaîne, dans l'ordre où elles partiront. */
+  backlog?: Record<string, TikTokBacklogVideo[]>;
+}) {
   const [hint, setHint] = React.useState(keyHint);
   const [editingKey, setEditingKey] = React.useState(!keyHint);
   const [keyValue, setKeyValue] = React.useState("");
   const [accounts, setAccounts] = React.useState<TikTokAccount[] | null>(null);
   const [links, setLinks] = React.useState(() =>
-    Object.fromEntries(channels.map((c) => [c.id, { account_id: initial.channels[c.id]?.account_id ?? "", enabled: initial.channels[c.id]?.enabled ?? false }])),
+    Object.fromEntries(
+      channels.map((c) => [
+        c.id,
+        { account_id: initial.channels[c.id]?.account_id ?? "", enabled: initial.channels[c.id]?.enabled ?? false, backlog: initial.channels[c.id]?.backlog ?? false },
+      ]),
+    ),
   );
   const [options, setOptions] = React.useState({
     allow_comment: initial.allow_comment,
@@ -106,7 +123,13 @@ export function TikTokSettingsCard({ initial, keyHint, channels }: { initial: Ti
     startTransition(async () =>
       setNotice(
         await saveTikTokSettings({
-          links: channels.map((c) => ({ channel_id: c.id, account_id: links[c.id]?.account_id ?? "", username: nameOf(links[c.id]?.account_id ?? ""), enabled: Boolean(links[c.id]?.account_id) && Boolean(links[c.id]?.enabled) })),
+          links: channels.map((c) => ({
+            channel_id: c.id,
+            account_id: links[c.id]?.account_id ?? "",
+            username: nameOf(links[c.id]?.account_id ?? ""),
+            enabled: Boolean(links[c.id]?.account_id) && Boolean(links[c.id]?.enabled),
+            backlog: Boolean(links[c.id]?.account_id) && Boolean(links[c.id]?.backlog),
+          })),
           ...options,
         }),
       ),
@@ -120,8 +143,9 @@ export function TikTokSettingsCard({ initial, keyHint, channels }: { initial: Ti
           TikTok (par Zernio)
         </CardTitle>
         <CardDescription>
-          Chaque Short programmé sur YouTube part aussi sur TikTok, à la même heure. Zernio sert seulement à publier sur TikTok : son appli TikTok est validée par
-          TikTok, donc les vidéos sortent en public. L’envoi sur YouTube ne change pas.
+          Chaque Short programmé sur YouTube part aussi sur TikTok, à la même heure. Zernio sert seulement à TikTok : son appli TikTok est validée par TikTok,
+          donc les vidéos sortent en public. L’envoi sur YouTube ne change pas. Les chiffres de chaque vidéo arrivent dans Dashboard → TikTok (relevés chaque
+          heure) et les publications prévues dans le Calendrier.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
@@ -211,44 +235,80 @@ export function TikTokSettingsCard({ initial, keyHint, channels }: { initial: Ti
         <section className="flex flex-col gap-3">
           <span className="text-sm font-medium">Chaînes YouTube → TikTok</span>
           {channels.map((c) => {
-            const link = links[c.id] ?? { account_id: "", enabled: false };
+            const link = links[c.id] ?? { account_id: "", enabled: false, backlog: false };
             const since = initial.channels[c.id]?.enabled && initial.channels[c.id]?.account_id === link.account_id ? initial.channels[c.id]?.enabled_at : null;
+            const pendingOld = backlog[c.id] ?? [];
             return (
-              <div key={c.id} className="flex flex-col gap-3 rounded-lg border p-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">{c.name}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {link.account_id && link.enabled
-                      ? `Publication automatique${since ? ` depuis le ${formatDateTime(since)}` : " dès l’enregistrement"} : les Shorts programmés ensuite partent aussi sur TikTok.`
-                      : "Pas de publication automatique : « Publier sur TikTok » reste possible dans la Bibliothèque."}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Select value={link.account_id || NONE} onValueChange={(v) => setLinks((l) => ({ ...l, [c.id]: { ...link, account_id: v === NONE ? "" : v } }))}>
-                    <SelectTrigger className="w-52" aria-label={`Compte TikTok de ${c.name}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>Aucun compte TikTok</SelectItem>
-                      {known.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          @{a.username}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id={`tiktok-auto-${c.id}`}
-                      checked={Boolean(link.account_id) && link.enabled}
-                      disabled={!link.account_id}
-                      onCheckedChange={(v) => setLinks((l) => ({ ...l, [c.id]: { ...link, enabled: v } }))}
-                    />
-                    <label htmlFor={`tiktok-auto-${c.id}`} className="text-sm">
-                      Automatique
-                    </label>
+              <div key={c.id} className="flex flex-col gap-3 rounded-lg border p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-medium">{c.name}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {link.account_id && link.enabled
+                        ? `Publication automatique${since ? ` depuis le ${formatDateTime(since)}` : " dès l’enregistrement"} : les Shorts programmés ensuite partent aussi sur TikTok.`
+                        : "Pas de publication automatique : « Publier sur TikTok » reste possible dans la Bibliothèque."}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Select value={link.account_id || NONE} onValueChange={(v) => setLinks((l) => ({ ...l, [c.id]: { ...link, account_id: v === NONE ? "" : v } }))}>
+                      <SelectTrigger className="w-52" aria-label={`Compte TikTok de ${c.name}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>Aucun compte TikTok</SelectItem>
+                        {known.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            @{a.username}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id={`tiktok-auto-${c.id}`}
+                        checked={Boolean(link.account_id) && link.enabled}
+                        disabled={!link.account_id}
+                        onCheckedChange={(v) => setLinks((l) => ({ ...l, [c.id]: { ...link, enabled: v } }))}
+                      />
+                      <label htmlFor={`tiktok-auto-${c.id}`} className="text-sm">
+                        Automatique
+                      </label>
+                    </div>
                   </div>
                 </div>
+                {link.account_id ? (
+                  <div className="flex flex-col gap-3 border-t pt-3 md:flex-row md:items-start md:justify-between">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="text-sm font-medium">Rattrapage des vidéos déjà sorties sur YouTube</span>
+                      <span className="text-muted-foreground text-xs">
+                        {pendingOld.length
+                          ? `${pendingOld.length} vidéo${pendingOld.length > 1 ? "s" : ""} jamais envoyée${pendingOld.length > 1 ? "s" : ""} sur TikTok. Activé, chaque créneau resté vide (aucune nouvelle vidéo à cette heure-là) en reçoit une, la plus ancienne d’abord, une demi-heure avant l’heure : jamais de rafale.`
+                          : "Rien à rattraper : chaque vidéo déjà sortie sur YouTube est aussi partie sur TikTok (ou y attend son créneau)."}
+                      </span>
+                      {pendingOld.length ? (
+                        <ol className="text-muted-foreground list-inside list-decimal text-xs">
+                          {pendingOld.slice(0, 5).map((v) => (
+                            <li key={v.id} className="truncate">
+                              {v.title ?? "Sans titre"}
+                              {v.published_at ? ` · sortie sur YouTube le ${formatDateTime(v.published_at)}` : ""}
+                            </li>
+                          ))}
+                          {pendingOld.length > 5 ? <li className="list-none">… et {pendingOld.length - 5} autres</li> : null}
+                        </ol>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Switch
+                        id={`tiktok-backlog-${c.id}`}
+                        checked={link.backlog}
+                        onCheckedChange={(v) => setLinks((l) => ({ ...l, [c.id]: { ...link, backlog: v } }))}
+                      />
+                      <label htmlFor={`tiktok-backlog-${c.id}`} className="text-sm">
+                        Rattrapage
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           })}

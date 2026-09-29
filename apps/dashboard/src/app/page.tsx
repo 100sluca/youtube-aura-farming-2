@@ -16,12 +16,14 @@ import {
   Users,
 } from "lucide-react";
 
+import { TikTokLine } from "@/components/calendar/slot-cell";
 import { ChannelBadge } from "@/components/channel-badge";
 import { ExperimentsSection } from "@/components/experiments/experiments-section";
 import { FormatBadge } from "@/components/format-badge";
 import { KpiCard, type KpiDelta } from "@/components/kpi-card";
 import { DailyViewsChart } from "@/components/overview/daily-views-chart";
 import { PageHeader } from "@/components/page-header";
+import { YouTubeMark } from "@/components/platform-marks";
 import { ToneBadge, VideoStatusBadge, type Tone } from "@/components/status-badge";
 import { OpenTasksButton } from "@/components/tasks/task-manager";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,9 @@ import {
   formatSigned,
   formatSignedPercent,
   formatTime,
+  parisAddDays,
 } from "@/lib/format";
+import { getTikTokCalendar } from "@/lib/tiktok";
 
 export const metadata: Metadata = { title: "Vue d’ensemble" };
 
@@ -53,13 +57,20 @@ function trendOf(value: number | null | undefined): KpiDelta["trend"] {
 
 export default async function OverviewPage() {
   const { channels, selected } = await getChannelContext();
-  const [kpis, daily, schedule, productions, experiments] = await Promise.all([
+  const [kpis, daily, schedule, productions, experiments, tiktok] = await Promise.all([
     getOverviewKpis(selected?.slug),
     getDailyViews(28),
     getSchedule(now().toISOString(), 3),
     listProductions(),
     getExperimentSummary(),
+    getTikTokCalendar(now().toISOString(), parisAddDays(now(), 4).toISOString()),
   ]);
+  // TikTok (docs/39) : publications du même créneau (±10 min) de la même chaîne
+  const tiktokAt = (slug: string, at: string) => {
+    const ch = channels.find((c) => c.slug === slug);
+    const ms = new Date(at).getTime();
+    return tiktok.filter((t) => t.channel_id === ch?.id && Math.abs(new Date(t.at).getTime() - ms) < 10 * 60_000);
+  };
   const shown = selected ? [selected] : channels.filter((c) => c.is_active);
   const bySlug = new Map(channels.map((c) => [c.slug, c]));
   const mine = productions.filter((p) => !selected || p.production.channel_id === selected.id);
@@ -101,6 +112,10 @@ export default async function OverviewPage() {
             {" · "}
             <Link href="/dashboard" className="hover:text-foreground underline underline-offset-2">
               Toutes les stats
+            </Link>
+            {" · "}
+            <Link href="/dashboard?plateforme=tiktok" className="hover:text-foreground underline underline-offset-2">
+              TikTok
             </Link>
           </span>
         }
@@ -328,6 +343,7 @@ export default async function OverviewPage() {
             <ul className="divide-y">
               {upcoming.map((slot) => {
                 const ch = bySlug.get(slot.channel_slug);
+                const onTikTok = tiktokAt(slot.channel_slug, slot.at);
                 return (
                   <li key={`${slot.channel_slug}-${slot.at}`} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                     <div className="w-20 shrink-0 text-sm">
@@ -340,12 +356,25 @@ export default async function OverviewPage() {
                         <p className="truncate text-sm" title={slot.video.title ?? undefined}>
                           {slot.video.title ?? "Sans titre"}
                         </p>
-                        <VideoStatusBadge status={slot.video.status} className="w-fit" />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="flex items-center gap-1">
+                            <YouTubeMark className="size-3.5" />
+                            <VideoStatusBadge status={slot.video.status} className="w-fit" />
+                          </span>
+                          {onTikTok.map((t) => (
+                            <TikTokLine key={t.video_id} item={t} showTitle={t.video_id !== slot.video?.id} />
+                          ))}
+                        </div>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-                        <TriangleAlert className="size-4" />
-                        Créneau vide
+                      <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                          <TriangleAlert className="size-4" />
+                          Créneau vide
+                        </div>
+                        {onTikTok.map((t) => (
+                          <TikTokLine key={t.video_id} item={t} showTitle />
+                        ))}
                       </div>
                     )}
                   </li>

@@ -1,4 +1,9 @@
-"""Client de l'API Zernio, limité à ce que sert la publication TikTok (https://docs.zernio.com).
+"""Client de l'API Zernio, limité à ce que servent la publication TikTok et ses statistiques (https://docs.zernio.com).
+
+Statistiques (docs/39) : `GET /analytics?platform=tiktok` (chaque vidéo sortie sur le compte, pages de 100),
+`GET /analytics/tiktok/account-insights` (abonnés, j'aime, vidéos du compte) et `POST /posts/sync-external` (relecture
+immédiate des vidéos publiées à la main dans TikTok). Incluses dans le plan gratuit (`hasAnalyticsAccess`, vérifié le
+29/09) ; 402 `analytics_addon_required` sinon. Limite : 6 requêtes par seconde.
 
 Envoi d'une vidéo en 3 appels : `POST /media/presign` (adresse d'envoi signée, valable 1 h), `PUT` du fichier vers le
 stockage de Zernio (sans en-tête Authorization), puis `POST /posts` avec l'adresse publique du fichier. Le fichier
@@ -15,6 +20,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -157,3 +163,42 @@ class ZernioClient:
 
     def get_post(self, post_id: str) -> dict[str, Any]:
         return self._get(f"/posts/{post_id}", "publication").get("post") or {}
+
+    # ---- Statistiques (docs/39-tiktok-partout.md) ------------------------------------------------------------------
+    def post_analytics(self, account_id: str, *, days: int = 365, max_pages: int = 20) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Chiffres de chaque vidéo sortie sur le compte (publiée par l'appli ou à la main), toutes pages lues, et le
+        résumé de la première page (`overview.lastSync` : dernier passage de Zernio chez TikTok). Seules les vidéos
+        sorties y figurent : une publication programmée n'apparaît qu'une fois publiée. 366 jours au plus par requête."""
+        since = (datetime.now(UTC) - timedelta(days=min(days, 365))).date().isoformat()
+        posts: list[dict[str, Any]] = []
+        overview: dict[str, Any] = {}
+        for page in range(1, max_pages + 1):
+            data = self._get("/analytics", "statistiques des vidéos", platform="tiktok", accountId=account_id,
+                             fromDate=since, limit=100, page=page, sortBy="date", order="desc")
+            if page == 1:
+                overview = data.get("overview") or {}
+            posts += [p for p in data.get("posts") or [] if isinstance(p, dict)]
+            pages = int((data.get("pagination") or {}).get("pages") or 1)
+            if page >= pages:
+                break
+        return posts, overview
+
+    def account_posts(self, account_id: str) -> list[dict[str, Any]]:
+        """Les 25 dernières vidéos du compte lues en direct chez TikTok (id TikTok, légende, date, lien, j'aime,
+        commentaires, partages ; pas les vues) : une vidéo y figure dès sa sortie, avant le passage de Zernio."""
+        data = self._get(f"/accounts/{account_id}/posts", "vidéos du compte")
+        return [p for p in data.get("posts") or [] if isinstance(p, dict)]
+
+    def sync_external(self, account_id: str) -> dict[str, Any]:
+        """Fait relire tout de suite chez TikTok les vidéos publiées à la main sur le compte (sinon Zernio ne repasse qu'au
+        mieux toutes les 90 min) : elles apparaissent alors dans `post_analytics` avec leurs j'aime et commentaires.
+        Zernio ignore un second appel dans les 15 s."""
+        resp = self.http.post(f"{self.base_url}/posts/sync-external", json={"accountId": account_id})
+        if resp.status_code >= 400:
+            raise _error(resp, "relecture des vidéos du compte")
+        return _json(resp).get("synced") or {}
+
+    def account_insights(self, account_id: str) -> dict[str, Any]:
+        """Compteurs du compte lus en direct chez TikTok : abonnés, abonnements, j'aime reçus, vidéos."""
+        return self._get("/analytics/tiktok/account-insights", "statistiques du compte", accountId=account_id,
+                         metrics="follower_count,following_count,likes_count,video_count")

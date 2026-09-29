@@ -11,16 +11,17 @@ Code : `apps/dashboard`. Démarrage : `npm install && NEXT_PUBLIC_MOCK=1 npm run
 | Route | Vue | Répond à |
 |---|---|---|
 | `/` | Vue d'ensemble | « où en est la chaîne aujourd'hui ? », ce qui attend une décision, ce qui marche le mieux |
-| `/dashboard` | Dashboard | les chiffres de chaque vidéo publiée (tableau triable, graphiques, Actualiser) et l'agent analyste : ce qui marche et pourquoi, leçons à valider ([`25-dashboard-statistiques.md`](25-dashboard-statistiques.md)) |
+| `/dashboard` | Dashboard | onglets YouTube et TikTok : les chiffres de chaque vidéo publiée (tableau triable, graphiques, Actualiser) et l'agent analyste : ce qui marche et pourquoi, leçons à valider ([`25-dashboard-statistiques.md`](25-dashboard-statistiques.md), onglet TikTok : [`39-tiktok-partout.md`](39-tiktok-partout.md)) |
 | `/create` | Création | chaîne → thème → idées notées → ✓ / ✗ ; storyboards à regarder avant la fabrication |
 | `/library` | Bibliothèque | toutes les vidéos (produites ici et importées de YouTube) : lecture, publication (YouTube, et TikTok par Zernio : état, lien, « Publier sur TikTok »), stats, suppression |
-| `/calendar` | Calendrier | « qu'est-ce qui sort quand, et quels créneaux sont vides ? » |
+| `/calendar` | Calendrier | « qu'est-ce qui sort quand, et quels créneaux sont vides ? », sur YouTube et TikTok (rattrapage prévu compris, docs/39) |
 | `/agents` | Agents | les agents et leurs prompts (modifiables, versionnés), la chaîne de production en direct ([`22-agents.md`](22-agents.md)) |
 | `/montage` | Montage | le modèle de montage de toutes les vidéos : titre d'accroche, sous-titres, textes à l'écran placés sur un aperçu 9:16, rendu exact ([`23-montage.md`](23-montage.md)) |
-| `/settings` | Réglages | chaînes (ajout, OAuth, historique), TikTok (clé Zernio, compte relié, publication automatique), modèles, IA, notifications, quota |
+| `/settings` | Réglages | chaînes (ajout, OAuth, historique), TikTok (clé Zernio, compte relié, publication automatique, rattrapage), modèles, IA, notifications, quota |
 
 En-tête : sélecteur de chaîne (liste des chaînes par leur nom, « Toutes », « Ajouter une chaîne », mémorisé dans un
-cookie), bouton **Tâches** (panneau de droite : ce qui se fabrique, file d'attente, échecs, arrêt), thème clair / sombre.
+cookie), bouton **Tâches** (panneau de droite : ce qui se fabrique, file d'attente, échecs, arrêt ; pause, reprise et
+ordre de la file : [`40-pause-et-ordre-de-la-file.md`](40-pause-et-ordre-de-la-file.md)), thème clair / sombre.
 
 ## 2. Vue d'ensemble `/`
 

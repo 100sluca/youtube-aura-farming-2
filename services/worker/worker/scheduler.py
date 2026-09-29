@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -11,6 +11,7 @@ from .config import Settings
 from .db import Db
 from .notify import flush_pending_alerts
 from .series import active_series, create_production, next_concepts
+from .tiktok.backlog import LEAD_MAX, backlog_slot, slot_times
 from .tiktok.config import load_tiktok_config, zernio_key
 
 log = structlog.get_logger(__name__)
@@ -70,6 +71,66 @@ def plan_tiktok(db: Db, settings: Settings) -> None:
         for r in rows:
             db.enqueue("tiktok_publish", video_id=r["id"], channel_id=channel_id, priority=55, max_attempts=3)
             log.info("tiktok.planned", video=str(r["id"]), account=ch.username or ch.account_id)
+
+
+def plan_tiktok_backlog(db: Db, settings: Settings) -> None:
+    """Rattrapage (docs/39, tiktok/backlog.py) : pour une chaîne qui l'a activé, une vidéo déjà sortie sur YouTube et
+    jamais envoyée sur TikTok (v_tiktok_backlog, la plus ancienne d'abord) part dans chaque créneau resté vide, entre 29
+    et 5 min avant son heure. Une par créneau : jamais de rafale."""
+    cfg = load_tiktok_config(db)
+    channels = [(cid, ch) for cid, ch in cfg.channels.items() if ch.backlog and ch.account_id]
+    if not channels or not zernio_key(settings, db):
+        return
+    now = datetime.now(UTC)
+    for channel_id, ch in channels:
+        row = db.fetch_one(
+            "select publish_slots, timezone from channels where id = %s and is_active", (channel_id,)
+        )
+        if not row or not row["publish_slots"]:
+            continue
+        window = [s for s in slot_times(row["publish_slots"], row["timezone"], now) if s <= now + LEAD_MAX]
+        if not window:
+            continue
+        busy = [
+            r["at"]
+            for r in db.fetch_all(
+                """select coalesce(v.youtube_publish_at, v.scheduled_at) as at from videos v
+                   where %s and v.channel_id = %s and v.status in ('ready', 'uploading', 'scheduled', 'published')
+                     and coalesce(v.youtube_publish_at, v.scheduled_at) between now() - interval '1 hour' and now() + interval '2 hours'
+                   union all
+                   select (v.tiktok->>'scheduled_for')::timestamptz from videos v
+                   where v.tiktok->>'account_id' = %s and v.tiktok->>'scheduled_for' is not null
+                     and v.tiktok->>'status' not in ('failed', 'cancelled')
+                     and (v.tiktok->>'scheduled_for')::timestamptz between now() - interval '1 hour' and now() + interval '2 hours'
+                   union all
+                   select (j.payload->>'at')::timestamptz from jobs j
+                   where j.type = 'tiktok_publish' and j.status in ('queued', 'running') and j.payload ? 'at'
+                     and (j.channel_id = %s or j.payload->>'account_id' = %s)""",
+                # publication automatique coupée : la vidéo YouTube du créneau ne part pas sur TikTok, le créneau reste libre
+                (ch.enabled, channel_id, ch.account_id, channel_id, ch.account_id),
+            )
+            if r["at"] is not None
+        ]
+        slot = backlog_slot(window, now, busy)
+        if not slot:
+            continue
+        video = db.fetch_one(
+            "select id, title from v_tiktok_backlog where channel_id = %s order by published_at, id limit 1", (channel_id,)
+        )
+        if not video:
+            continue
+        db.enqueue("tiktok_publish", video_id=video["id"], channel_id=channel_id, priority=55, max_attempts=3,
+                   payload={"at": slot.isoformat(), "source": "rattrapage", "account_id": ch.account_id})
+        log.info("tiktok.backlog", video=str(video["id"]), at=slot.isoformat(), account=ch.username or ch.account_id)
+
+
+def tiktok_counters(db: Db, settings: Settings) -> None:
+    """Toutes les heures : statistiques TikTok des comptes connectés à Zernio (docs/39), sauf si un relevé attend déjà."""
+    if not zernio_key(settings, db):
+        return
+    if db.fetch_one("select 1 from jobs where type = 'sync_tiktok' and status in ('queued', 'running') limit 1"):
+        return
+    db.enqueue("sync_tiktok", payload={"source": "horaire"}, priority=86)
 
 
 def top_up_ideas(db: Db, settings: Settings) -> None:
@@ -189,6 +250,8 @@ def start_scheduler(db: Db, settings: Settings) -> BackgroundScheduler:
     s = BackgroundScheduler(timezone="Europe/Paris")
     s.add_job(plan_uploads, "interval", minutes=5, args=[db, settings], id="plan_uploads")
     s.add_job(plan_tiktok, "interval", minutes=5, args=[db, settings], id="plan_tiktok")  # docs/36
+    s.add_job(plan_tiktok_backlog, "interval", minutes=5, args=[db, settings], id="plan_tiktok_backlog")  # docs/39
+    s.add_job(tiktok_counters, "cron", minute=10, args=[db, settings], id="tiktok_counters")  # docs/39
     s.add_job(top_up_ideas, "interval", hours=1, args=[db, settings], id="top_up_ideas")
     s.add_job(start_productions, "interval", minutes=15, args=[db, settings], id="start_productions")
     s.add_job(flush_pending_alerts, "interval", seconds=20, args=[db, settings], id="alerts")  # mails, docs/32

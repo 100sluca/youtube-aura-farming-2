@@ -800,7 +800,7 @@ def main(argv: list[str] | None = None) -> None:
 
     from .cli_formats import register  # hook, sfx, music : formats visuels (docs/15)
     from .cli_gemini import register as register_gemini  # gemini open|status|check|clip|send (docs/17)
-    from .cli_tiktok import register as register_tiktok  # tiktok key|accounts|link|status|check|post (docs/36)
+    from .cli_tiktok import register as register_tiktok  # tiktok key|link|post… (docs/36), stats|backlog (docs/39)
 
     register(sub)
     register_gemini(sub)

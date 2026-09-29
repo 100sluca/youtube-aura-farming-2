@@ -1,8 +1,9 @@
 "use server";
 
 /**
- * Gestes du Dashboard (docs/25-dashboard-statistiques.md) : actualiser les stats YouTube tout de suite, lancer l'agent
- * analyste, valider ou écarter ses leçons. Tout passe par la file de jobs du worker (sync_metrics, analyze) ; une leçon
+ * Gestes du Dashboard (docs/25-dashboard-statistiques.md) : actualiser les stats YouTube ou TikTok (docs/39) tout de suite,
+ * lancer l'agent analyste, valider ou écarter ses leçons. Tout passe par la file de jobs du worker (sync_metrics,
+ * sync_tiktok, analyze) ; une leçon
  * validée est lue par les agents idées, scénaristes et SEO dès leur tâche suivante (worker/lessons.py).
  */
 import { revalidatePath } from "next/cache";
@@ -33,6 +34,22 @@ export async function refreshStats(): Promise<ActionResult> {
   }
   revalidatePath("/dashboard");
   return { ok: true, message: "Actualisation lancée : compteurs, YouTube Analytics et courbes de rétention (une minute environ)." };
+}
+
+/** Onglet TikTok (docs/39) : relevé des statistiques TikTok tout de suite (job sync_tiktok, pris dans la seconde par le fil
+ * « stats » du worker), devant le relevé de l'heure s'il attend déjà. */
+export async function refreshTikTokStats(): Promise<ActionResult> {
+  const db = supabaseAdmin();
+  const { data: key } = await db.from("app_secrets").select("name").eq("name", "zernio_api_key").maybeSingle();
+  if (!key) return { ok: false, message: "Pas de clé Zernio : Réglages → TikTok." };
+  const pending = await db.from("jobs").select("id").eq("type", "sync_tiktok").eq("status", "queued").limit(1);
+  if (pending.error) return { ok: false, message: errorText(pending.error) };
+  const res = pending.data?.length
+    ? await db.from("jobs").update({ priority: 10, run_after: new Date().toISOString() }).eq("id", pending.data[0].id)
+    : await db.from("jobs").insert({ type: "sync_tiktok", priority: 10, payload: { source: "dashboard" } });
+  if (res.error) return { ok: false, message: errorText(res.error) };
+  revalidatePath("/dashboard");
+  return { ok: true, message: "Relevé TikTok lancé (quelques secondes)." };
 }
 
 /** L'agent analyste compare maintenant les vidéos qui marchent et les autres. */

@@ -192,6 +192,8 @@ def test_tts_step_redoes_the_voice_chosen_by_the_retouch(tmp_path: Path, monkeyp
 
     class Db:
         def fetch_one(self, sql: str, params: Any = None) -> dict:
+            if "recipe" in sql:  # recipes.recipe_for_production : un drame retouché dit ses répliques seules
+                return {"recipe": "story"}
             return {"lang": "fr", "timeline": {"scenes": []}, "production_id": "p", "script": _script(), "voice_speed": 1.0}
 
         def add_asset(self, **cols: Any) -> str:

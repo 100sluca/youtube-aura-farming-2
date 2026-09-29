@@ -48,8 +48,8 @@ export async function refreshTikTokAccounts(): Promise<ActionResult & { accounts
 }
 
 export interface TikTokSettingsInput {
-  /** id de la chaîne YouTube → compte TikTok choisi ("" = aucun) et publication automatique. */
-  links: { channel_id: string; account_id: string; username: string; enabled: boolean }[];
+  /** id de la chaîne YouTube → compte TikTok choisi ("" = aucun), publication automatique et rattrapage (docs/39). */
+  links: { channel_id: string; account_id: string; username: string; enabled: boolean; backlog: boolean }[];
   allow_comment: boolean;
   allow_duet: boolean;
   allow_stitch: boolean;
@@ -65,7 +65,14 @@ export async function saveTikTokSettings(input: TikTokSettingsInput): Promise<Ac
     const prev = before.channels[l.channel_id];
     // l'activation (ou un changement de compte) date le premier créneau concerné : rien d'ancien ne part en rafale
     const keep = prev && prev.enabled && prev.account_id === l.account_id;
-    channels[l.channel_id] = { account_id: l.account_id, username: l.username, enabled: Boolean(l.enabled), enabled_at: l.enabled ? (keep ? prev.enabled_at : now) : null };
+    channels[l.channel_id] = {
+      account_id: l.account_id,
+      username: l.username,
+      enabled: Boolean(l.enabled),
+      enabled_at: l.enabled ? (keep ? prev.enabled_at : now) : null,
+      // rattrapage (docs/39) : les vidéos déjà sorties sur YouTube partent une par une dans les créneaux restés vides
+      backlog: Boolean(l.backlog),
+    };
   }
   const value: TikTokSettings = {
     channels,
@@ -77,11 +84,15 @@ export async function saveTikTokSettings(input: TikTokSettingsInput): Promise<Ac
   const { error } = await supabaseAdmin().from("app_settings").upsert({ key: "tiktok", value, updated_at: now });
   if (error) return fail(error);
   revalidatePath("/settings");
+  revalidatePath("/calendar");
   const auto = Object.values(channels).filter((c) => c.enabled);
+  const backlog = Object.values(channels).some((c) => c.backlog);
   return {
     ok: true,
-    message: auto.length
-      ? `Enregistré : chaque Short programmé part aussi sur TikTok (${auto.map((c) => `@${c.username}`).join(", ")}), à la même heure que sur YouTube`
-      : "Enregistré : aucune publication automatique sur TikTok",
+    message:
+      (auto.length
+        ? `Enregistré : chaque Short programmé part aussi sur TikTok (${auto.map((c) => `@${c.username}`).join(", ")}), à la même heure que sur YouTube`
+        : "Enregistré : aucune publication automatique sur TikTok") +
+      (backlog ? ". Rattrapage actif : les anciennes vidéos prennent les créneaux restés vides, une par créneau" : ""),
   };
 }

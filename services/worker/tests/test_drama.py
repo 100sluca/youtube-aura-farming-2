@@ -70,8 +70,20 @@ def test_normalize_resolves_characters_merges_a_speakers_lines_and_times_the_sce
     # nombres en chiffres à l'écran, groupés par une espace insécable (docs/33)
     assert len(first.lines) == 1 and first.lines[0].text == "50\xa0000. Je le rends."
     assert first.duration_s == pytest.approx(0.8 + 5 / drama.DIALOGUE_WPS)
-    assert first.narration["fr"] == "Kiwi : 50\xa0000. Je le rends."  # pour l'affichage, jamais lue par une voix
+    # ce qui est dit et écrit : la réplique seule, jamais « Kiwi : » (règle de Luca, 29/09) ; qui parle reste dans lines
+    assert first.narration["fr"] == "50\xa0000. Je le rends."
+    assert drama.speaker_line(n, first) == "Kiwi : 50\xa0000. Je le rends." and drama.speaker_line(n, second) == ""
     assert second.duration_s == drama.CLIP_S and second.narration == {} and not second.continues_previous
+
+
+def test_a_speaker_label_copied_into_a_line_is_never_said_nor_written():
+    s = normalize_script(_script([
+        _scene(0, "kiwi", "Kiwi : Je vais le rendre."),
+        _scene(1, "madame_figue", "MADAME (off) : « Personne ne le saura. »"),
+        _scene(2, "prune", "Maman a dit : sois gentil."),  # pas une étiquette : « Maman a dit » n'est personne
+    ]), "drama")
+    assert [sc.lines[0].text for sc in s.scenes[:3]] == ["Je vais le rendre.", "Personne ne le saura.", "Maman a dit : sois gentil."]
+    assert s.scenes[0].narration["fr"] == "Je vais le rendre."
 
 
 def test_a_good_drama_passes_the_linter():
@@ -172,7 +184,7 @@ def test_reinventing_a_drama_scene_keeps_one_line_and_its_characters():
                        characters=["kiwi"], lines=[{"who": "Kiwi", "text": "Pourquoi personne ne me croit ?"}])
     out = apply_rewrite(s, 2, draft, "drama")
     assert out.scenes[2].characters == ["kiwi"] and out.scenes[2].lines[0].who == "kiwi"
-    assert out.scenes[2].narration["fr"] == "Kiwi : Pourquoi personne ne me croit ?"
+    assert out.scenes[2].narration["fr"] == "Pourquoi personne ne me croit ?"
 
 
 # ---------------------------------------------------------------------------
@@ -326,3 +338,47 @@ def test_constant_voices_say_each_line_with_its_characters_voice_on_one_track(tm
     audio, rate = sf.read(str(tmp_path / "narration.wav"))
     assert rate == 24000 and len(audio) / rate == pytest.approx(result["duration_s"], abs=0.05)
     assert saved[-1][0] == "drama" and "kiwi=qwen3:perso_humble" in saved[-1][1]  # videos.tts_provider, tts_voice
+
+
+def test_a_voice_retouch_says_and_writes_the_lines_alone_never_who_speaks(tmp_path, monkeypatch):
+    """Bibliothèque → Retoucher → Voix (docs/34) sur un drame : une seule voix dit les répliques et les sous-titres (mots
+    de la timeline) les écrivent, sans « Kiwi : » devant (règle de Luca, 29/09)."""
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("soundfile")
+    from types import SimpleNamespace
+
+    from worker.providers.tts import Speech
+    from worker.steps import tts as tts_step
+
+    s = drama.normalize(_script([_scene(0, "kiwi", "Je vais le rendre."), _scene(1, "prune", "Personne ne saura."), _scene(2)]))
+    said: list[str] = []
+
+    class Engine:
+        name = "kokoro"
+
+        def speak_many(self, texts: list[str], *, voice: str, lang: str, speed: float, on_progress: Any = None) -> list[Speech]:
+            said.extend(texts)
+            return [Speech(samples=np.full(12000, 0.2, dtype="float32"), rate=24000, voice=voice) for _ in texts]
+
+    monkeypatch.setattr(tts_step, "recipe_for_production", lambda db, pid: "drama")
+    monkeypatch.setattr(tts_step, "resolve_voice", lambda settings, voices, lang: (Engine(), voices[lang].split(":")[1]))
+    saved: list[Any] = []
+
+    class Db:
+        def fetch_one(self, sql: str, params: Any = None) -> dict:
+            return {"lang": "fr", "timeline": None, "production_id": "p", "script": s.model_dump(), "voice_speed": 1.0}
+
+        def add_asset(self, **cols: Any) -> str:
+            return "a"
+
+        def execute(self, sql: str, params: Any = None) -> int:
+            saved.append(params)
+            return 1
+
+    ctx = SimpleNamespace(job=SimpleNamespace(video_id="v", payload={"voice": "kokoro:ff_siwis"}), db=Db(),
+                          settings=SimpleNamespace(dry_run=False, kokoro_speed=1.0), video_dir=lambda vid: tmp_path,
+                          progress=lambda *a: None, log=lambda *a, **k: None)
+    result = tts_step.TTSStep().run(ctx)
+    assert result["retouch"] and said == ["Je vais le rendre.", "Personne ne saura."]
+    words = [w["text"] for sc in saved[-1][2].obj["scenes"] for w in sc["words"]]
+    assert words and not {"Kiwi", "Kiwi :", "Prune", ":"} & set(words)

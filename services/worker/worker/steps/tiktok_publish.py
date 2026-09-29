@@ -1,7 +1,9 @@
 """Publication d'un Short sur TikTok par Zernio (docs/36-publication-tiktok.md).
 
-Le job naît de deux façons : le planificateur (scheduler.plan_tiktok) le crée pour chaque Short programmé sur YouTube
-d'une chaîne reliée à TikTok, ou Luca clique « Publier sur TikTok » dans la Bibliothèque. Déroulé :
+Le job naît de trois façons : le planificateur (scheduler.plan_tiktok) le crée pour chaque Short programmé sur YouTube
+d'une chaîne reliée à TikTok, le rattrapage (scheduler.plan_tiktok_backlog, docs/39) pour une vidéo déjà sortie sur
+YouTube, au créneau resté vide donné dans `payload.at`, ou Luca clique « Publier sur TikTok » dans la Bibliothèque.
+Déroulé :
 
 1. le montage final part au stockage de Zernio (presign + PUT) ;
 2. la publication est créée à l'heure du créneau YouTube (`scheduledFor`), ou tout de suite si le créneau est passé
@@ -91,7 +93,9 @@ class TikTokPublishStep(Step):
             round_ += 1
         now = datetime.now(UTC)
         draft = bool(payload.get("draft"))
-        when = publish_time(v["scheduled_at"], now, force_now=bool(payload.get("now")) or draft)
+        # rattrapage (docs/39) : l'heure du créneau resté vide, pas celle du créneau YouTube, passé depuis longtemps
+        slot = _parse(payload.get("at")) or v["scheduled_at"]
+        when = publish_time(slot, now, force_now=bool(payload.get("now")) or draft)
         state = {
             "status": "sending",
             "round": round_,
@@ -100,6 +104,8 @@ class TikTokPublishStep(Step):
             "scheduled_for": when.isoformat() if when else None,
             "draft": draft,
             "requested_at": now.isoformat(),
+            # auto (créneau YouTube), rattrapage, bibliothèque ou cli : le Calendrier l'affiche
+            "source": str(payload.get("source") or "auto"),
         }
         self._save(ctx, v["id"], state)
 

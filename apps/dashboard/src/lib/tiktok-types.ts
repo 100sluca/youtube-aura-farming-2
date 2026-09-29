@@ -12,6 +12,8 @@ export interface TikTokChannelLink {
   enabled: boolean;
   /** Activation : seuls les créneaux qui suivent partent tout seuls (rien d'ancien n'est republié en rafale). */
   enabled_at: string | null;
+  /** Rattrapage (docs/39) : les vidéos déjà sorties sur YouTube partent une par une dans les créneaux restés vides. */
+  backlog: boolean;
 }
 
 export interface TikTokSettings {
@@ -36,6 +38,10 @@ export interface TikTokAccount {
 
 export type TikTokStatus = "sending" | "scheduled" | "pending" | "publishing" | "processing" | "uploading" | "published" | "failed" | "cancelled";
 
+/** D'où vient la publication : créneau YouTube (auto), rattrapage d'une ancienne vidéo, Bibliothèque, terminal, ou publiée
+ * à la main dans l'appli TikTok (reconnue par le relevé des stats à sa légende, docs/39). */
+export type TikTokSource = "auto" | "rattrapage" | "bibliothèque" | "cli" | "manuel";
+
 export interface VideoTikTok {
   status: TikTokStatus;
   url: string | null;
@@ -44,6 +50,42 @@ export interface VideoTikTok {
   username: string | null;
   error: string | null;
   draft: boolean;
+  source: TikTokSource;
+}
+
+/** Résumé TikTok d'une vidéo pour les listes : vignettes de la Bibliothèque, tableau YouTube du Dashboard (docs/39). */
+export interface TikTokBrief {
+  status: TikTokStatus;
+  draft: boolean;
+  source: TikTokSource;
+  scheduled_for: string | null;
+  url: string | null;
+  /** Vues TikTok au dernier relevé des stats (null tant que la vidéo n'a pas été relevée). */
+  views: number | null;
+}
+
+/** Publication TikTok d'une vidéo de l'appli dans le Calendrier (docs/39) : programmée, sortie, en échec, ou seulement
+ * prévue par le rattrapage (`forecast` : le créneau est vide, il la recevra si aucune nouvelle vidéo ne le prend). */
+export interface TikTokCalendarItem {
+  video_id: string;
+  channel_id: string;
+  title: string | null;
+  /** Heure de sortie sur TikTok (ISO). */
+  at: string;
+  status: TikTokStatus;
+  draft: boolean;
+  source: TikTokSource;
+  url: string | null;
+  error: string | null;
+  forecast?: boolean;
+}
+
+/** Vidéo en attente de rattrapage (vue v_tiktok_backlog, migration 0026) : déjà sortie sur YouTube, jamais sur TikTok. */
+export interface TikTokBacklogVideo {
+  id: string;
+  channel_id: string;
+  title: string | null;
+  published_at: string | null;
 }
 
 /** Publication TikTok d'une vidéo, pour sa fiche dans la Bibliothèque. */
@@ -75,7 +117,13 @@ export function parseTikTokSettings(raw: unknown): TikTokSettings {
   const channels: Record<string, TikTokChannelLink> = {};
   for (const [id, c] of Object.entries((v.channels ?? {}) as Record<string, Record<string, unknown>>)) {
     if (!c || typeof c !== "object" || !str(c.account_id)) continue;
-    channels[id] = { account_id: String(c.account_id), username: str(c.username) ?? "", enabled: bool(c.enabled, false), enabled_at: str(c.enabled_at) };
+    channels[id] = {
+      account_id: String(c.account_id),
+      username: str(c.username) ?? "",
+      enabled: bool(c.enabled, false),
+      enabled_at: str(c.enabled_at),
+      backlog: bool(c.backlog, false),
+    };
   }
   return {
     channels,
@@ -98,5 +146,6 @@ export function parseVideoTikTok(raw: unknown): VideoTikTok | null {
     username: str(v.username),
     error: str(v.error),
     draft: v.draft === true,
+    source: (["rattrapage", "bibliothèque", "cli", "manuel"] as const).find((s) => s === v.source) ?? "auto",
   };
 }

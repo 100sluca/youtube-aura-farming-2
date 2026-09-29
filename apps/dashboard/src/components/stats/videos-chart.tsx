@@ -11,22 +11,37 @@ import type { StatsVideo } from "@/lib/stats-types";
 import { cn } from "@/lib/utils";
 
 type View = "ranking" | "scatter";
-type Axis = "duration" | "retention" | "hook" | "hour";
 
-const AXES: { id: Axis; label: string; value: (v: StatsVideo) => number | null; format: (n: number) => string }[] = [
-  { id: "duration", label: "Durée de la vidéo", value: (v) => v.duration_s, format: (n) => formatDuration(n) },
+/** Ce qu'il faut d'une vidéo pour la dessiner : une ligne de l'onglet YouTube (StatsVideo) ou TikTok (docs/39). */
+export type ChartVideo = Pick<StatsVideo, "id" | "title" | "views" | "duration_s" | "published_at" | "origin" | "recipe">;
+
+/** Mesure en abscisse du nuage ; `later` : pourquoi elle manque encore (sinon : délai de YouTube Analytics). */
+export interface ChartAxis<T extends ChartVideo> {
+  id: string;
+  label: string;
+  value: (v: T) => number | null;
+  format: (n: number) => string;
+  later?: string;
+}
+
+export const DURATION_AXIS: ChartAxis<ChartVideo> = { id: "duration", label: "Durée de la vidéo", value: (v) => v.duration_s, format: (n) => formatDuration(n) };
+
+export const HOUR_AXIS: ChartAxis<ChartVideo> = {
+  id: "hour",
+  label: "Heure de publication",
+  value: (v) => {
+    if (!v.published_at) return null;
+    const p = parisParts(v.published_at);
+    return p.hour + p.minute / 60;
+  },
+  format: (n) => `${Math.floor(n)} h${String(Math.round((n % 1) * 60)).padStart(2, "0")}`,
+};
+
+const AXES: ChartAxis<StatsVideo>[] = [
+  DURATION_AXIS,
   { id: "retention", label: "Rétention moyenne", value: (v) => v.average_view_pct ?? null, format: (n) => formatPercent(n) },
   { id: "hook", label: "Encore là à 3 s", value: (v) => v.hook_retention_pct ?? null, format: (n) => formatPercent(n) },
-  {
-    id: "hour",
-    label: "Heure de publication",
-    value: (v) => {
-      if (!v.published_at) return null;
-      const p = parisParts(v.published_at);
-      return p.hour + p.minute / 60;
-    },
-    format: (n) => `${Math.floor(n)} h${String(Math.round((n % 1) * 60)).padStart(2, "0")}`,
-  },
+  HOUR_AXIS,
 ];
 
 const RANKING_MAX = 10;
@@ -55,7 +70,7 @@ function Legend({ formats }: { formats: FormatKey[] }) {
   );
 }
 
-function VideoTip({ video, extra }: { video: StatsVideo; extra?: string }) {
+function VideoTip({ video, extra }: { video: ChartVideo; extra?: string }) {
   return (
     <div className="border-border/50 bg-background grid max-w-64 gap-1 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl">
       <p className="font-medium">{video.title ?? "Sans titre"}</p>
@@ -71,11 +86,13 @@ function VideoTip({ video, extra }: { video: StatsVideo; extra?: string }) {
   );
 }
 
-/** Chaque vidéo : classement par vues, ou nuage vues × une autre mesure. Un clic ouvre la fiche de la vidéo. */
-export function VideosChart({ videos, onOpen }: { videos: StatsVideo[]; onOpen: (id: string) => void }) {
+/** Chaque vidéo : classement par vues, ou nuage vues × une autre mesure. Un clic ouvre la fiche de la vidéo. `axes` :
+ * mesures du nuage (par défaut celles de YouTube). */
+export function VideosChart<T extends ChartVideo>({ videos, onOpen, axes }: { videos: T[]; onOpen: (id: string) => void; axes?: ChartAxis<T>[] }) {
+  const list = axes ?? (AXES as unknown as ChartAxis<T>[]);
   const [view, setView] = React.useState<View>("ranking");
-  const [axisId, setAxisId] = React.useState<Axis>("duration");
-  const axis = AXES.find((a) => a.id === axisId) ?? AXES[0];
+  const [axisId, setAxisId] = React.useState<string>("duration");
+  const axis = list.find((a) => a.id === axisId) ?? list[0];
   const present = FORMAT_ORDER.filter((f) => videos.some((v) => formatKey(v) === f));
 
   const ranking = [...videos]
@@ -113,12 +130,12 @@ export function VideosChart({ videos, onOpen }: { videos: StatsVideo[]; onOpen: 
           ))}
         </div>
         {view === "scatter" ? (
-          <Select value={axisId} onValueChange={(v) => setAxisId(v as Axis)}>
+          <Select value={axisId} onValueChange={setAxisId}>
             <SelectTrigger size="sm" className="w-48" aria-label="Mesure en abscisse">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {AXES.map((a) => (
+              {list.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
                   Vues × {a.label.toLowerCase()}
                 </SelectItem>
@@ -148,7 +165,7 @@ export function VideosChart({ videos, onOpen }: { videos: StatsVideo[]; onOpen: 
                 </text>
               )}
             />
-            <ChartTooltip cursor={{ fill: "var(--muted)", opacity: 0.4 }} content={({ payload }) => (payload?.[0] ? <VideoTip video={(payload[0].payload as { video: StatsVideo }).video} /> : null)} />
+            <ChartTooltip cursor={{ fill: "var(--muted)", opacity: 0.4 }} content={({ payload }) => (payload?.[0] ? <VideoTip video={(payload[0].payload as { video: ChartVideo }).video} /> : null)} />
             <Bar
               dataKey="views"
               radius={[0, 4, 4, 0]}
@@ -168,7 +185,7 @@ export function VideosChart({ videos, onOpen }: { videos: StatsVideo[]; onOpen: 
         </ChartContainer>
       ) : points.length === 0 ? (
         <p className="text-muted-foreground flex h-[240px] items-center justify-center px-6 text-center text-sm">
-          Pas encore de {axis.label.toLowerCase()} : YouTube Analytics la publie 2 à 3 jours après la mise en ligne.
+          Pas encore de {axis.label.toLowerCase()} : {axis.later ?? "YouTube Analytics la publie 2 à 3 jours après la mise en ligne."}
         </p>
       ) : (
         <ChartContainer config={FORMAT_CHART_CONFIG} className="aspect-auto h-[260px] w-full">
@@ -180,7 +197,7 @@ export function VideosChart({ videos, onOpen }: { videos: StatsVideo[]; onOpen: 
             <ChartTooltip
               cursor={false}
               content={({ payload }) => {
-                const p = payload?.[0]?.payload as { video: StatsVideo; x: number } | undefined;
+                const p = payload?.[0]?.payload as { video: ChartVideo; x: number } | undefined;
                 return p ? <VideoTip video={p.video} extra={`${axis.label.toLowerCase()} ${axis.format(p.x)}`} /> : null;
               }}
             />

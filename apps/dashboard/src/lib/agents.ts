@@ -136,8 +136,8 @@ export async function getAgentActivity(): Promise<Record<string, AgentActivity>>
   for (const j of [...((recent.data ?? []) as unknown as JobRow[]), ...((live.data ?? []) as unknown as JobRow[])]) {
     const key = agentOf(j);
     if (!key) continue;
-    // le relecteur passe dans chaque tâche du scénariste des histoires (worker/steps/script.py)
-    for (const k of key === "script" ? [key, "script_review"] : [key]) {
+    // le relecteur et le réalisateur passent dans chaque tâche du conteur des histoires (worker/steps/script.py, docs/37)
+    for (const k of key === "script" ? [key, "script_review", "script_shots"] : [key]) {
       const e = entry(k);
       if (j.status === "done") e.done += 1;
       else if (j.status === "failed") e.failed += 1;

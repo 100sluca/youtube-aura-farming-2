@@ -162,8 +162,10 @@ def test_the_writer_gets_the_script_the_note_and_the_versions_already_rejected()
     assert ">>> Scène 4 [escalation, 5 s] À RÉINVENTER" in user and "Scène 5 [payoff, 5 s]" in user
     assert "version écartée 1 : image « A steel hinge alone on a grey background » ; narration « Tout tient sur un axe. »" in user
     assert f"version actuelle : image « {PIVOT} »" in user and "autre scène" not in user
-    assert "narration de 10 à 15 mots" in user and "RÈGLES DU STORYTELLING" in user and "Maisons de rêve" in user
-    assert "CONSIGNES DU SCÉNARISTE" in user and "conforme à ScriptV1" not in user  # sa réponse est une seule scène
+    assert "narration de 10 à 15 mots" in user and "RÈGLES DU RÉCIT" in user and "Maisons de rêve" in user
+    assert "RÈGLES DE L'IMAGE" in user and "RÉCIT : tu écris AUSSI la narration" in user  # récit : docs/37
+    # consignes du réalisateur des récits (script_shots), sans sa consigne de réponse : une seule scène est attendue
+    assert "CONSIGNES DU SCÉNARISTE" in user and "Tu es le réalisateur" in user and "conforme à ShotList" not in user
 
 
 def test_without_a_note_the_writer_is_told_the_scene_is_off_topic():

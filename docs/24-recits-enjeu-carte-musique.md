@@ -1,5 +1,9 @@
 # 24 — Récits : enjeu, scène carte, modèle d'écriture
 
+> Mise à jour du 2026-09-29 : l'écriture des récits est refondue (un conteur écrit l'histoire en entier, un relecteur
+> la juge, le code la découpe, un réalisateur fait les plans ; 75 s) : voir
+> [`37-conteur-des-recits.md`](37-conteur-des-recits.md). Le § 2 ci-dessous décrit l'ancien scénariste.
+
 Demandé par Luca le 2026-09-28 après la vidéo « Canal Rhin-Danube : 70 ans de travaux fous » (production 1f5d87f0,
 série « Histoires vraies ») : on ne comprend pas l'enjeu (« controversé » n'est jamais expliqué, on ne sait pas à quoi
 sert le canal ni pourquoi il compte), pas assez d'émotion ni de rythme, pas de titre d'accroche, pas de musique, et il

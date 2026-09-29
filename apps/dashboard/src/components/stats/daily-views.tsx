@@ -19,9 +19,11 @@ const SOURCE_LABELS: Record<DayViews["source"], string> = {
 /** `day` est une clé « YYYY-MM-DD » ; midi UTC tombe le même jour à Paris. */
 const dayToDate = (day: unknown) => `${String(day)}T12:00:00Z`;
 
-/** Vues par jour : YouTube Analytics (plein), estimations d'après les relevés horaires (clair), jours inconnus (vides). */
-export function DailyViewsChart({ data }: { data: DayViews[] }) {
+/** Vues par jour : YouTube Analytics (plein), estimations d'après les relevés horaires (clair), jours inconnus (vides).
+ * Onglet TikTok (docs/39) : pas d'équivalent d'Analytics, toutes les barres viennent des relevés horaires. */
+export function DailyViewsChart({ data, platform = "youtube" }: { data: DayViews[]; platform?: "youtube" | "tiktok" }) {
   const points = data.map((d) => ({ ...d, value: d.views ?? 0 }));
+  const tiktok = platform === "tiktok";
   if (!points.some((p) => p.value > 0)) {
     return (
       <div className="text-muted-foreground flex h-[240px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 text-center text-sm">
@@ -29,8 +31,9 @@ export function DailyViewsChart({ data }: { data: DayViews[] }) {
           <>
             <p className="text-foreground font-medium">Pas encore de vues datées jour par jour</p>
             <p>
-              YouTube Analytics les publie avec 2 à 3 jours de retard, et les relevés horaires des compteurs viennent de commencer : les premières barres
-              (estimées) arrivent demain, puis Analytics les confirme.
+              {tiktok
+                ? "Les vues de chaque jour se déduisent des relevés faits chaque heure : les premières barres arrivent le lendemain de la première vidéo sortie."
+                : "YouTube Analytics les publie avec 2 à 3 jours de retard, et les relevés horaires des compteurs viennent de commencer : les premières barres (estimées) arrivent demain, puis Analytics les confirme."}
             </p>
           </>
         ) : (
@@ -66,7 +69,7 @@ export function DailyViewsChart({ data }: { data: DayViews[] }) {
                         <span className="text-muted-foreground">Vues</span>
                         <span className="text-foreground ml-auto font-mono font-medium tabular-nums">{p.views === null ? "—" : formatNumber(p.views)}</span>
                       </div>
-                      <span className="text-muted-foreground text-[11px]">{SOURCE_LABELS[p.source]}</span>
+                      <span className="text-muted-foreground text-[11px]">{tiktok && p.source === "estimate" ? "d’après les relevés horaires" : SOURCE_LABELS[p.source]}</span>
                     </div>
                   );
                 }}
@@ -75,21 +78,23 @@ export function DailyViewsChart({ data }: { data: DayViews[] }) {
           />
           <Bar dataKey="value" fill="var(--color-views)" radius={[4, 4, 0, 0]} isAnimationActive={false}>
             {points.map((p) => (
-              <Cell key={p.day} fillOpacity={p.source === "estimate" ? 0.45 : 1} />
+              <Cell key={p.day} fillOpacity={p.source === "estimate" && !tiktok ? 0.45 : 1} />
             ))}
           </Bar>
         </BarChart>
       </ChartContainer>
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-[2px] bg-[#2a78d6] dark:bg-[#3987e5]" />
-          YouTube Analytics
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-[2px] bg-[#2a78d6]/45 dark:bg-[#3987e5]/45" />
-          Estimé d’après les compteurs (relevés chaque heure)
-        </span>
-      </div>
+      {tiktok ? null : (
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-[2px] bg-[#2a78d6] dark:bg-[#3987e5]" />
+            YouTube Analytics
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-[2px] bg-[#2a78d6]/45 dark:bg-[#3987e5]/45" />
+            Estimé d’après les compteurs (relevés chaque heure)
+          </span>
+        </div>
+      )}
     </div>
   );
 }

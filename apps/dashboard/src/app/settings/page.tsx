@@ -20,7 +20,7 @@ import { getGeminiBrowserInfo, getGeminiSettings, getGeminiStatus } from "@/lib/
 import { getGenerationCatalog, getGenerationSettings } from "@/lib/generation-data";
 import { getNotificationSettings, getNotifyStatus } from "@/lib/notify";
 import { PRESET_MODELS, getChannelVideoCounts, getLlmSettings, getQuotaToday, getSecretHints } from "@/lib/settings-data";
-import { getTikTokSettings, getZernioKeyHint } from "@/lib/tiktok";
+import { getTikTokBacklog, getTikTokSettings, getZernioKeyHint } from "@/lib/tiktok";
 
 export const metadata: Metadata = { title: "Réglages" };
 
@@ -29,7 +29,7 @@ const UPLOADS_PER_DAY = 100; // videos.insert : compteur séparé, 100 appels pa
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
-  const [channels, llm, hints, prompts, quota, generation, catalog, gemini, geminiStatus, geminiBrowser, notifications, notifyStatus, tiktok, zernioHint] = await Promise.all([
+  const [channels, llm, hints, prompts, quota, generation, catalog, gemini, geminiStatus, geminiBrowser, notifications, notifyStatus, tiktok, zernioHint, tiktokBacklog] = await Promise.all([
     getChannels(),
     getLlmSettings(),
     getSecretHints(),
@@ -44,6 +44,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     getNotifyStatus(),
     getTikTokSettings(),
     getZernioKeyHint(),
+    getTikTokBacklog(),
   ]);
   const connected = typeof params.connected === "string" ? params.connected : null;
   const oauthError = typeof params.oauth_error === "string" ? params.oauth_error : null;
@@ -71,7 +72,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <ChannelsSettings channels={channels} counts={counts} openAdd={params.add_channel === "1"} />
 
-      <TikTokSettingsCard initial={tiktok} keyHint={zernioHint} channels={channels} />
+      <TikTokSettingsCard initial={tiktok} keyHint={zernioHint} channels={channels} backlog={tiktokBacklog} />
 
       <GenerationSettingsCard initial={generation} catalog={catalog} />
 

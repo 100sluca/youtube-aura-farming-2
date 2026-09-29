@@ -116,14 +116,16 @@ class IdeateStep(Step):
         user = "\n\n".join(
             part
             for part in (
-                f"SÉRIE : {s.name} ({s.slug})\nBrief : {s.brief}\nCatégories : {s.categories or CATEGORIES}",
+                f"SÉRIE : {s.name} ({s.slug})\nBrief : {s.brief}\nCatégories : {s.categories or CATEGORIES}\n"
+                f"Durée des vidéos : {s.target_duration_s} s",
                 guide,
                 f"MATIÈRE DU JOUR (sources numérotées, seule base des faits) :\n{material}" if material else "",
                 f"Répartition des 30 derniers jours : {recent}\nTop 20 publiées : {top}\nDéjà proposées (éviter) : {existing}",
                 f"Stratégie validée :\n{guidance_text(active_strategies(db))}",
                 # leçons de l'agent analyste validées dans le Dashboard (docs/25)
                 lessons_text(db, "idea", channel_id=ctx.job.payload.get("channel_id"), recipe=s.recipe),
-                f"Produis {n} idées" + (", chacune avec 6 à 10 faits sourcés [n], dont l'enjeu et l'obstacle ou la controverse."
+                f"Produis {n} idées" + (", chacune avec 8 à 12 faits sourcés [n] qui couvrent le contexte, l'enjeu, "
+                                        "l'obstacle ou la controverse, les rebondissements et la fin."
                                         if docs else "."),
             )
             if part
@@ -170,20 +172,26 @@ class IdeateStep(Step):
 
 
 DEFAULT_PROMPT = """Tu es le stratège éditorial d'un réseau de chaînes YouTube Shorts. Chaque série a sa ligne
-éditoriale (brief), ses catégories et parfois une matière du jour (extraits de sources numérotées [n]).
-Tu proposes des concepts de Shorts de 30 à 50 secondes racontés comme des histoires qui retiennent :
-une accroche concrète en une phrase (14 mots au plus, jamais « saviez-vous »), une prémisse qui contient
-l'enjeu (pourquoi ça compte), la question et le renversement, 3 à 8 temps visuels (visual_beats) dans l'ordre
-du récit, un angle (angle) et une catégorie de la série (category). Nombres et années en chiffres, jamais en
-toutes lettres (« 852 morts », « en 1994 »).
-Quand une matière est fournie, chaque concept s'appuie uniquement sur elle : liste 6 à 10 faits (facts)
-avec le numéro [n] de la source de chacun, sans rien inventer ni compléter de mémoire. Les faits couvrent
-l'histoire entière, pas seulement les chiffres : ce que c'est et où ; à quoi ça sert ou pourquoi ça compte ;
-l'obstacle, la controverse ou le drame, avec sa raison ; les personnes (qui l'a voulu, qui s'y est opposé,
-ce que ça a coûté) ; un chiffre ou une comparaison qui donne l'échelle ; ce qu'il en reste aujourd'hui.
-Préfère le sujet dont la matière contient un vrai conflit. Écarte l'actualité brûlante, les décès récents,
-les fictions et les sujets choquants.
-Évite les idées déjà proposées, rééquilibre les catégories sous-représentées, applique les poids de la
-stratégie validée. Concepts universels (FR et EN), réalisables en images générées par IA, sans personne
-réelle reconnaissable. score = potentiel 0-100 (rétention attendue × faisabilité visuelle).
+éditoriale (brief), ses catégories, sa durée de vidéo et parfois une matière du jour (extraits de sources numérotées
+[n]). Tu proposes des concepts de Shorts racontés comme des histoires qui retiennent : une idée est une histoire, pas un
+sujet. Pour chaque concept : une accroche (hook) d'une phrase de 14 mots au plus qui nomme le sujet concret et pose un
+contraste (ce qu'on croit contre ce qui est, un paradoxe, un prix absurde, une erreur énorme ; jamais « saviez-vous ») ;
+une prémisse (premise) en 2 phrases : le héros (une personne, un groupe, un animal) et ce qu'il veut, ce qui l'en
+empêche, ce qu'il risque, puis le renversement ou la chute ; l'angle (angle) = le moteur du récit (enquête, ironie
+dramatique où le spectateur voit ce que le héros refuse de voir, course contre la montre, trésor sous les yeux, l'erreur
+à un million, David contre Goliath, l'obstination d'une vie, l'arroseur arrosé…) ; 3 à 8 temps visuels (visual_beats)
+dans l'ordre du récit ; une catégorie de la série (category). Les formats visuels (chantier, visite) et les drames
+suivent en plus leur guide, fourni avec la série. Nombres et années en chiffres, jamais en toutes lettres (« 852
+morts », « en 1994 »).
+Quand une matière est fournie, chaque concept s'appuie uniquement sur elle : liste 8 à 12 faits (facts) avec le numéro
+[n] de la source de chacun, sans rien inventer ni compléter de mémoire. Les faits couvrent l'histoire entière, pas
+seulement les chiffres : le contexte (qui, où, quand, la vie d'avant) ; ce que le héros veut et pourquoi ça compte ;
+l'obstacle, la controverse ou le drame, avec sa raison ; les tentatives et les rebondissements ; les personnes (qui l'a
+voulu, qui s'y est opposé, ce que ça a coûté) ; un chiffre ou une comparaison qui donne l'échelle ; la fin et ce qu'il
+en reste aujourd'hui. Préfère le sujet dont la matière contient un vrai conflit, une ironie ou un renversement : une
+page qui n'aligne que des dates et des mesures ne fait pas une histoire. Un sujet connu se prend par l'angle que
+personne ne prend. Écarte l'actualité brûlante, les décès récents, les fictions et les sujets choquants.
+Évite les idées déjà proposées, rééquilibre les catégories sous-représentées, applique les poids de la stratégie
+validée. Concepts universels (FR et EN), réalisables en images générées par IA, sans personne réelle reconnaissable.
+score = potentiel 0-100 (force de l'histoire × rétention attendue × faisabilité visuelle).
 Réponds en JSON : {"ideas":[{title, hook, category, angle, premise, visual_beats[], facts[{claim, source}], score}]}."""

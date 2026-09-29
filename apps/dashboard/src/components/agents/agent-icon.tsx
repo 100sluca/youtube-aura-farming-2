@@ -2,6 +2,7 @@ import {
   Brain,
   Clapperboard,
   ClipboardCheck,
+  Film,
   Hammer,
   House,
   Lightbulb,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 export const AGENT_ICONS: Record<AgentIconName, LucideIcon> = {
   idea: Lightbulb,
   story: ScrollText,
+  shots: Film,
   review: ClipboardCheck,
   timelapse: Hammer,
   tour: House,

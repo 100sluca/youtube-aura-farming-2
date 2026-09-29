@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckSquare, CircleCheck, CircleX, Eye, Film, HardDrive, MonitorPlay, Search, Square, Trash2, X } from "lucide-react";
+import { CheckSquare, CircleCheck, CircleX, Eye, Film, HardDrive, MonitorPlay, Music2, Search, Square, Trash2, X } from "lucide-react";
 
 import { deleteVideos } from "@/app/library/actions";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -11,8 +11,9 @@ import { Poster } from "@/components/poster";
 import { PRODUCTION_STATUS_TONES, ToneBadge, VideoStatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatBytes, formatCompact, formatDuration } from "@/lib/format";
+import { formatBytes, formatCompact, formatDateTime, formatDuration } from "@/lib/format";
 import { LIBRARY_GROUPS, libraryGroup, type LibraryGroup, type LibraryItem } from "@/lib/library-types";
+import { TIKTOK_STATUS_LABELS, type TikTokBrief } from "@/lib/tiktok-types";
 import { cn } from "@/lib/utils";
 
 type Origin = "all" | "app" | "imported";
@@ -24,6 +25,25 @@ function thumbnail(v: LibraryItem): string | null {
   // Pas encore montée : une image de son storyboard
   if (v.making?.cover_asset_id) return `/api/media/${v.making.cover_asset_id}`;
   return null;
+}
+
+/** État TikTok d'une vignette (docs/39) : vues TikTok une fois sortie, sinon « prog. », « envoi », « échec »… */
+function TikTokChip({ tiktok }: { tiktok: TikTokBrief }) {
+  const out = tiktok.status === "published";
+  const text = out ? (tiktok.draft ? "brouillon" : tiktok.views !== null ? formatCompact(tiktok.views) : "en ligne") : tiktok.status === "scheduled" ? "prog." : tiktok.status === "failed" ? "échec" : tiktok.status === "cancelled" ? "annulée" : "envoi";
+  const title = out
+    ? tiktok.draft
+      ? "TikTok : brouillon dans la boîte de réception"
+      : `TikTok : en ligne${tiktok.views !== null ? `, ${formatCompact(tiktok.views)} vues` : ""}`
+    : tiktok.status === "scheduled"
+      ? `TikTok : programmée${tiktok.scheduled_for ? ` le ${formatDateTime(tiktok.scheduled_for)}` : ""}${tiktok.source === "rattrapage" ? " (rattrapage)" : ""}`
+      : `TikTok : ${TIKTOK_STATUS_LABELS[tiktok.status].toLowerCase()}`;
+  return (
+    <span className={cn("flex items-center gap-1", tiktok.status === "failed" && "text-red-300")} title={title}>
+      <Music2 className="size-3" />
+      {text}
+    </span>
+  );
 }
 
 /** Une vignette 9:16 : image, statut, origine, durée et vues ; en mode sélection, une case à cocher. */
@@ -88,11 +108,12 @@ function LibraryCard({
         ) : null}
         <span className="absolute right-2 bottom-2 left-2 flex items-center gap-2 text-[11px] font-medium text-white tabular-nums">
           {item.youtube_video_id && item.status === "published" ? (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1" title={`YouTube : ${formatCompact(item.views)} vues`}>
               <Eye className="size-3" />
               {formatCompact(item.views)}
             </span>
           ) : null}
+          {item.tiktok ? <TikTokChip tiktok={item.tiktok} /> : null}
           {making ? (
             <>
               <span className="h-1 flex-1 overflow-hidden rounded-full bg-white/30" aria-hidden>

@@ -21,7 +21,9 @@
 ## 2. La page Dashboard (`/dashboard`)
 
 Menu **Dashboard**, juste sous Vue d'ensemble. La chaîne se choisit en haut, comme partout ; la **période** (7, 28,
-90 jours, tout) filtre les vidéos par date de mise en ligne.
+90 jours, tout) filtre les vidéos par date de mise en ligne. Depuis le 29/09, deux onglets : **YouTube** (ce qui suit)
+et **TikTok** (`?plateforme=tiktok`, mêmes blocs pour chaque compte TikTok relié : [`39-tiktok-partout.md`](39-tiktok-partout.md)) ;
+le tableau YouTube a une colonne « TikTok » (vues de la même vidéo sur TikTok).
 
 - **Six chiffres** : vues des vidéos de la période, abonnés (total relevé chaque heure, +Δ sur 7 jours), rétention
   moyenne (pondérée par les vues), audience encore là à 3 s, j'aime (et leur part des vues), commentaires · partages.

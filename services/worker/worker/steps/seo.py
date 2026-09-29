@@ -15,6 +15,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from ..drama import speaker_line
 from ..lessons import lessons_text
 from ..models import ScriptV1, SeoPack
 from ..prompts import prompt_text
@@ -76,7 +77,8 @@ class SeoStep(Step):
                      "Ce qu'on voit, scène par scène :",
                      *[f"  {s.index + 1}. {s.visual_prompt[:160]}" for s in script.scenes]]
                     if visual else
-                    ["Narration, scène par scène :", *[f"  {s.index + 1}. {s.narration.get(lang, '')}" for s in script.scenes]]
+                    ["Narration, scène par scène :",
+                     *[f"  {s.index + 1}. {speaker_line(script, s) or s.narration.get(lang, '')}" for s in script.scenes]]  # type: ignore[call-overload]
                 ),
                 "Textes à l'écran : " + " | ".join(t for s in script.scenes if (t := s.on_screen_text.get(lang))),
                 f"Brouillon de l'agent script : titre « {draft.title if draft else ''} », tags {draft.tags if draft else []}",

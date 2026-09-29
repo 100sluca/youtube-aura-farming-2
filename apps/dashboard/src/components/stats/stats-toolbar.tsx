@@ -5,14 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CircleCheck, CircleX, RefreshCw } from "lucide-react";
 
-import { refreshStats } from "@/app/dashboard/actions";
+import { refreshStats, refreshTikTokStats } from "@/app/dashboard/actions";
 import type { ActionResult } from "@/app/production/actions";
+import { dashboardHref, type StatsPlatform } from "@/components/stats/platform-tabs";
 import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/format";
 import { STATS_PERIODS, type StatsPeriod } from "@/lib/stats-types";
 import { cn } from "@/lib/utils";
 
-/** Période (date de mise en ligne des vidéos affichées), bouton « Actualiser » et fraîcheur des chiffres. */
+/** Période (date de mise en ligne des vidéos affichées), bouton « Actualiser » et fraîcheur des chiffres, pour l'onglet
+ * YouTube ou TikTok (docs/39 : relevé sync_tiktok au lieu de sync_metrics, le compte choisi suit les changements de période). */
 export function StatsToolbar({
   period,
   syncActive,
@@ -20,6 +22,8 @@ export function StatsToolbar({
   countersAt,
   lastError,
   connected,
+  platform = "youtube",
+  account = null,
 }: {
   period: StatsPeriod;
   syncActive: boolean;
@@ -27,6 +31,9 @@ export function StatsToolbar({
   countersAt: string | null;
   lastError: string | null;
   connected: boolean;
+  platform?: StatsPlatform;
+  /** Onglet TikTok : compte choisi (?compte=). */
+  account?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
@@ -48,7 +55,7 @@ export function StatsToolbar({
           {STATS_PERIODS.map((p) => (
             <Link
               key={p.id}
-              href={p.id === "28" ? "/dashboard" : `/dashboard?periode=${p.id}`}
+              href={dashboardHref(platform, p.id, { compte: account })}
               scroll={false}
               aria-current={period === p.id ? "page" : undefined}
               className={cn(
@@ -66,7 +73,7 @@ export function StatsToolbar({
           disabled={busy || !connected}
           onClick={() =>
             startTransition(async () => {
-              const res = await refreshStats();
+              const res = platform === "tiktok" ? await refreshTikTokStats() : await refreshStats();
               setNotice(res);
               router.refresh();
             })
@@ -78,7 +85,9 @@ export function StatsToolbar({
       </div>
       <p className="text-muted-foreground text-xs" suppressHydrationWarning>
         {!connected
-          ? "Aucune chaîne connectée à YouTube"
+          ? platform === "tiktok"
+            ? "Aucun compte TikTok relié"
+            : "Aucune chaîne connectée à YouTube"
           : countersAt
             ? `Compteurs relevés ${formatRelative(countersAt)} · automatiquement chaque heure`
             : "Compteurs jamais relevés : clique « Actualiser »"}

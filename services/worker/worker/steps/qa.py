@@ -14,6 +14,10 @@ from ..models import QACheck, QAReport
 from ..notify import queue_video_ready
 from .base import Context, Step
 
+# Durée admise d'un Short : YouTube en accepte jusqu'à 3 min depuis octobre 2024 ; les drames durent 60 à 80 s (docs/35)
+# et les récits 60 à 90 s (docs/37). L'ancienne borne (58 s) aurait refusé les deux.
+DURATION_S = (15.0, 180.0)
+
 
 class QAStep(Step):
     type = "qa"
@@ -57,7 +61,7 @@ class QAStep(Step):
         vs = next(s for s in probe["streams"] if s["codec_type"] == "video")
         dur = float(probe["format"]["duration"])
         checks = [
-            QACheck(name="duration", ok=15 <= dur <= 58, value=dur),
+            QACheck(name="duration", ok=DURATION_S[0] <= dur <= DURATION_S[1], value=dur),
             QACheck(name="resolution", ok=(vs["width"], vs["height"]) == (1080, 1920), value=f"{vs['width']}x{vs['height']}"),
         ]
         lufs = None

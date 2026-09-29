@@ -154,6 +154,10 @@ Essais du 29/09 :
 Limites connues : changer le créneau d'une vidéo déjà programmée ne déplace pas sa publication TikTok ; couper la
 publication automatique n'annule pas les publications déjà programmées chez Zernio (les annuler sur zernio.com).
 
+Suite le 29/09 ([`39-tiktok-partout.md`](39-tiktok-partout.md)) : statistiques TikTok relevées chaque heure (onglet
+TikTok du Dashboard), publications TikTok dans le Calendrier et la Vue d'ensemble, rattrapage des vidéos déjà sorties sur
+YouTube dans les créneaux restés vides (Réglages → TikTok, coupé par défaut).
+
 ## 7. Sources
 
 - TikTok for Developers : [Content Sharing Guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines),

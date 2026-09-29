@@ -9,8 +9,9 @@ voisines, qui ne changent pas. Le step storyboard (payload « reinvent ») enreg
 la scène.
 
 Le scénariste reçoit (prompt système scene_rewrite, onglet Agents) : le thème et l'idée (faits et dossier des séries
-documentaires), ses consignes de scénariste (version active de script ou script_<recette>, pour le sens des champs),
-les règles du storytelling (récits), le script scène par scène, la scène visée, ce qu'en dit Luca et les versions déjà
+documentaires), les consignes de qui a écrit les plans (version active de script_<recette>, ou du réalisateur des
+récits, script_shots, depuis le 29/09 : docs/37), pour le sens des champs, les règles du récit et de l'image (récits),
+le script scène par scène, la scène visée, ce qu'en dit Luca et les versions déjà
 écartées de cette scène (payload « reinvented » des jobs précédents), pour ne pas y revenir. Rôle, durée et mécanique
 de la scène restent ceux de l'ancienne ; le correcteur de la recette vérifie le résultat, et un écart nouveau fait
 repartir la scène une fois au scénariste.
@@ -28,7 +29,7 @@ from .models import SceneDraft, SceneRewrite, ScriptScene, ScriptV1
 from .prompts import code_prompts, prompt_text
 from .providers.llm import LLM
 from .recipes import has_prompt, is_visual, lint_recipe_script, normalize_script
-from .storytelling import RULES, lint_script, normalize_story, scene_words_max
+from .storytelling import IMAGE_RULES, RULES, lint_script, normalize_story, scene_words_max
 
 NOTE_MAX = 500  # caractères de la remarque de Luca
 SAME_PLAN = 0.8  # part de mots communs (≥ 4 lettres) au-delà de laquelle deux visual_prompt décrivent la même image
@@ -36,8 +37,9 @@ DEFAULT_REASON = (
     "Luca la trouve hors sujet : son image ne se rattache ni au sujet de la vidéo ni aux autres scènes, elle casse "
     "l'enchaînement."
 )
-# Consignes du scénariste données pour le sens des champs : sa dernière phrase demande un script entier
-_WHOLE_SCRIPT = re.compile(r"Réponds uniquement en JSON\s+conforme à ScriptV1\.?")
+# Consignes du scénariste données pour le sens des champs : leur dernière phrase (jusqu'à la fin du texte) demande un
+# script entier (ScriptV1) ou tous les plans d'un récit (ShotList)
+_WHOLE_SCRIPT = re.compile(r"Réponds uniquement en JSON.*\Z", re.S)
 
 FORMAT_HINTS = {
     "tour": (
@@ -51,6 +53,13 @@ FORMAT_HINTS = {
         "obtenir celle-ci ; le compteur de jours (texte à l'écran) reste entre ceux des étapes voisines. Pas de narration."
     ),
     "drama": DRAMA_HINT,
+    # Récit (docs/37) : les consignes reçues sont celles du réalisateur, qui ne touche pas à la narration ; la scène
+    # réinventée, elle, la réécrit
+    "story": (
+        "RÉCIT : tu écris AUSSI la narration de la scène (champ narration), dans la langue de la vidéo, en suivant les "
+        "règles du récit : une phrase de récit reliée à la scène d'avant par une conséquence ou un obstacle, jamais un "
+        "fait posé seul ; les nombres en chiffres. Une scène carte (map) seulement si le script n'en a pas d'autre."
+    ),
 }
 
 REWRITE_PROMPT = """Tu es le scénariste d'un YouTube Short (9:16) dont le script est écrit et le storyboard fait : une image
@@ -291,9 +300,10 @@ def reinvent_scene(db: Any, llm: LLM, pid: UUID | str, script: ScriptV1, recipe:
     old = script.scenes[pos]
     langs = brief["langs"] or sorted(old.narration) or ["fr"]
     narrated = brief.get("format") == "A_voiceover" and not has_prompt(recipe)  # un drame n'a pas de narration écrite
-    key = f"script_{recipe}" if has_prompt(recipe) else "script"
+    key = f"script_{recipe}" if has_prompt(recipe) else "script_shots"  # récit : le réalisateur, qui écrit les plans
     consignes = _WHOLE_SCRIPT.sub("", prompt_text(db, key, code_prompts().get(key, ""))).strip()
-    rules = "" if has_prompt(recipe) else f"RÈGLES DU STORYTELLING :\n{prompt_text(db, 'rules_storytelling', RULES)}"
+    rules = "" if has_prompt(recipe) else (f"{prompt_text(db, 'rules_storytelling', RULES)}\n\n"
+                                           f"{prompt_text(db, 'rules_images', IMAGE_RULES)}")
     rejected = rejected_versions(db, pid, index)
     sources = brief.get("sources") or []
     user = rewrite_request(brief, script, recipe, pos, note, rejected, langs, consignes, rules,

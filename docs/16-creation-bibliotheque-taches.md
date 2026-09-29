@@ -97,6 +97,11 @@ ComfyUI ≥ 0.37 ; sinon `/interrupt` ciblé). Un appel LLM en cours va jusqu'au
 n'est plus pris : `claim_jobs` annule les jobs d'une production arrêtée, `complete` et `fail_job` ne réécrivent
 pas un job arrêté. Reprendre (SQL `resume_production`) remet en file les jobs arrêtés et le statut d'avant l'arrêt.
 
+**Pause et ordre de la file** (29/09, migration 0027) : Pause (tout de suite ou à la fin du clip en cours), Reprendre,
+« Tout mettre en pause sauf celle-ci », « Tout mettre en pause » / « Tout reprendre », et l'ordre de la file (glisser,
+« En premier », monter / descendre) ; les vidéos sortent maintenant l'une après l'autre. Voir
+[`40-pause-et-ordre-de-la-file.md`](40-pause-et-ordre-de-la-file.md).
+
 ## 5. Bibliothèque `/library`
 
 - Toutes les vidéos de la chaîne choisie, en fabrication comme finies (depuis le 28/09, docs/30), plus l'historique

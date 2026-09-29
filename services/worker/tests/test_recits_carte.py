@@ -1,11 +1,9 @@
-"""Récits (docs/24) : scène carte (worker/maps.py), règles d'enjeu et de remplissage, relecture éditoriale du script,
-modèle d'écriture. Réseau, base et LLM remplacés par des doublures."""
+"""Récits (docs/24) : scène carte (worker/maps.py), règles d'enjeu et de remplissage, modèle d'écriture (la relecture
+du récit est dans tests/test_storycraft.py, docs/37). Réseau, base et LLM remplacés par des doublures."""
 
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +13,8 @@ import pytest
 from worker import maps
 from worker.config import Settings
 from worker.dag import continuity_plan
-from worker.models import Job, MapSpec, ScriptReview, ScriptV1
+from worker.models import MapSpec, ScriptV1
 from worker.settings_store import LlmConfig
-from worker.steps import script as script_step
-from worker.steps.base import Context
 from worker.steps.seo import MAP_CREDIT, finalize
 from worker.storytelling import lint_script, normalize_story
 
@@ -166,82 +162,13 @@ def test_resolver_reads_its_cache_without_network(tmp_path: Path, monkeypatch: p
 
 
 # ---------------------------------------------------------------------------
-# Relecture éditoriale et modèle d'écriture
+# Modèle d'écriture (le conteur, son relecteur et le réalisateur des récits : tests/test_storycraft.py)
 # ---------------------------------------------------------------------------
-
-
-class FakeDb:
-    def __init__(self) -> None:
-        self.logs: list[tuple[str, Any]] = []
-
-    def fetch_one(self, sql: str, params: Any = None) -> dict | None:
-        return None  # ni prompt en base, ni série
-
-    def fetch_all(self, sql: str, params: Any = None) -> list[dict]:
-        return []
-
-    def heartbeat(self, *a: Any) -> None:
-        pass
-
-    def log(self, job_id: Any, level: str, message: str, data: Any) -> None:
-        self.logs.append((message, data))
-
-
-class FakeLlm:
-    """Premier script vague, relecture qui le refuse, réécriture qui tient la promesse."""
-
-    def __init__(self, review: ScriptReview | Exception) -> None:
-        self.review, self.calls = review, []
-
-    def complete_json(self, system: str, user: str, schema: type) -> Any:
-        self.calls.append((schema.__name__, user))
-        if schema is ScriptReview:
-            if isinstance(self.review, Exception):
-                raise self.review
-            return self.review
-        writes = sum(1 for name, _ in self.calls if name == "ScriptV1")
-        lines = list(LINES)
-        if writes == 1:
-            lines[1] = "Ce projet colossal reste très controversé pendant des décennies, sans que l'on sache pourquoi."
-        return _script(lines)
-
-
-def _prod() -> dict[str, Any]:
-    return {"concept_id": None, "title": "Le canal", "hook": "h", "angle": None, "premise": "p", "category": "history",
-            "visual_beats": [], "facts": [{"claim": "Inauguré en 1992", "source": 0}],
-            "sources": [{"title": "Canal Rhin-Main-Danube", "url": "u", "lang": "fr", "kind": "wikipedia"}],
-            "target_duration_s": 35, "format": "A_voiceover", "style_preset": "history_cinematic"}
 
 
 def _settings(tmp_path: Path | None = None) -> Settings:
     extra = {"data_dir": tmp_path} if tmp_path else {}
     return Settings(database_url="postgresql://x", supabase_url="http://x", supabase_service_role_key="x", **extra)
-
-
-def _ctx(tmp_path: Path) -> Context:
-    job = Job(id=uuid.uuid4(), type="script", status="running", priority=100, created_at=datetime.now(UTC))
-    return Context(job=job, db=FakeDb(), settings=_settings(tmp_path))  # type: ignore[arg-type]
-
-
-def test_review_problems_send_the_script_back_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    llm = FakeLlm(ScriptReview(ok=False, problems=["scène 2 : dire pourquoi c'était controversé (vallée de l'Altmühl)"]))
-    seen: dict[str, Any] = {}
-    monkeypatch.setattr(script_step, "get_llm", lambda s, d, writer=False: seen.setdefault("writer", writer) and llm or llm)
-    monkeypatch.setattr(script_step, "source_dossier", lambda *a, **k: "[1] Canal — la vallée de l'Altmühl sacrifiée")
-    script, issues, _ = script_step.ScriptStep()._write(_ctx(tmp_path), _prod(), ["fr"])
-    names = [n for n, _ in llm.calls]
-    assert names == ["ScriptV1", "ScriptReview", "ScriptV1"] and seen["writer"] is True
-    assert "controversé" not in script.scenes[1].narration["fr"] and issues == []
-    assert "vallée de l'Altmühl" in llm.calls[2][1] and "DOSSIER" in llm.calls[0][1]
-
-
-def test_an_approving_or_failing_review_keeps_the_first_script(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(script_step, "source_dossier", lambda *a, **k: "")
-    for review in (ScriptReview(ok=True, problems=["détail"]), RuntimeError("quota")):
-        llm = FakeLlm(review)
-        monkeypatch.setattr(script_step, "get_llm", lambda s, d, writer=False, llm=llm: llm)
-        script_step.ScriptStep()._write(_ctx(tmp_path), _prod(), ["fr"])
-        assert [n for n, _ in llm.calls] == ["ScriptV1", "ScriptReview"]
 
 
 def test_writer_model_goes_first_then_the_usual_model(monkeypatch: pytest.MonkeyPatch):

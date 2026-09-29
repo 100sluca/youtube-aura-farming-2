@@ -18,6 +18,12 @@ Règle « image rattachée au sujet » ajoutée le 28/09 après le storyboard du
 invisible » illustré par un mécanisme seul, sans le miroir ; une scène ratée se réinvente dans Création.
 Règle « nombres en chiffres » du 28/09 (docs/33) : ils s'affichent en chiffres (« 852 morts », pas « huit cent
 cinquante-deux ») ; la voix les lit en toutes lettres et le correcteur compte les mots qu'elle dit (worker/numbers.py).
+Refonte du 29/09 (docs/37, « Le trésor de Begrâm » : des faits juxtaposés, sans héros ni fil) : RULES devient l'art du
+récit, commun à toute histoire (les 3 C, l'enjeu, « donc » et « pourtant », montrer plutôt que dire, une seule idée,
+l'accroche suivie d'une promesse, l'ironie dramatique, la fin écrite en premier, la checklist), donné à l'agent idées,
+au conteur des récits (worker/storycraft.py), à son relecteur, à la scène réinventée et au scénariste des drames ; les
+règles de l'image passent dans IMAGE_RULES (clé rules_images), celles de la voix dans le prompt du conteur. lint_script
+vérifie toujours le script découpé ; storycraft.lint_story vérifie le récit avant le découpage.
 """
 
 from __future__ import annotations
@@ -39,76 +45,88 @@ MAP_SCENES_MAX = 1
 MAP_DURATION_S = (4.0, 7.0)  # la descente depuis l'espace puis le tracé : ni précipités, ni interminables
 ROLES = ("hook", "setup", "reveal", "escalation", "payoff", "loop")
 
-RULES = """RÈGLES DU STORYTELLING (Shorts racontés de 30 à 50 s, voix de synthèse, images générées par IA)
+RULES = """RÈGLES DU RÉCIT (toute histoire : racontée en voix off ou jouée en dialogues)
 
-La rétention se joue en trois temps : retenir dans les 3 premières secondes, ne jamais refermer une
-question sans en ouvrir une autre, et finir sur un plan qui renvoie au début pour que le Short reparte.
-Mais on ne reste que si l'on comprend l'ENJEU : ce que c'est, pourquoi ça compte, ce qui s'y est joué.
+Un Short retient quand on comprend tout de suite de quoi il parle, qu'on veut la suite et qu'on ressent quelque
+chose. Une liste de faits ne retient personne, même vrais, même étonnants : il faut une histoire.
 
-1. STRUCTURE : une scène de 4 à 6 s par tranche de 5 s de la durée cible (6 scènes pour 30 s, 8 pour
-40 s), chacune avec un rôle (champ role) :
-- hook (scène 1, 0-3 s) : la promesse ou la contradiction, en une phrase de 14 mots au plus, concrète
-  (un chiffre, un lieu, un nom). Elle crée une question dans la tête du spectateur sans la poser.
-  L'image montre le sujet immédiatement : pas d'introduction, pas de « bonjour », pas de « saviez-vous ».
-- setup (scène 2) : ce que c'est, où c'est et pourquoi ça compte (à quoi ça sert, ce qui est en jeu).
-  Pour un lieu réel, c'est la scène carte. Elle se termine sur une boucle ouverte.
-- reveal (avant la 12e seconde) : la première réponse concrète, qui ouvre aussitôt une nouvelle question.
-- escalation (une ou plusieurs scènes) : l'obstacle, le conflit, le prix payé : chiffres, comparaisons,
-  conséquences, un renversement amené par « mais » ou « sauf que ». Chaque scène se termine sur un
-  élément non résolu.
-- payoff (avant-dernière scène) : la réponse finale et l'image la plus forte ; la phrase que l'on retient.
-- loop (dernière scène) : le dernier plan renvoie au premier (même lieu, même objet, même cadrage) et la
-  dernière phrase rebondit sur l'accroche, pour que la relecture soit naturelle. Jamais d'appel à l'action
-  (abonne-toi, like, commente) : il casse la boucle.
+1. UNE SEULE IDÉE. Tout le récit sert une idée ou une émotion unique (une ironie, une injustice, une obstination, un
+   prix payé). Ce qui ne la nourrit pas est coupé : dates qui ne font que dater, grades, noms secondaires, chiffres
+   de décor. Mieux vaut une histoire bien racontée que cinq faits.
+2. LES 3 C. Contexte : le point de départ, le héros (une personne, un groupe, un animal) et son monde, assez pour
+   qu'un spectateur qui ne connaît rien sache qui, où, quand et ce que le héros veut. Conflit : l'élément
+   déclencheur, l'obstacle, ce qui s'oppose ou tourne mal ; sans friction, pas d'histoire. Conclusion : la
+   résolution et ce qui a changé (une transformation, un prix payé, une ironie), jamais une morale plaquée.
+3. L'ENJEU. On sait vite ce que le héros veut et ce qu'il perd s'il échoue (sa vie, sa fortune, son honneur, des
+   années, ses petits). Plus la perte est concrète, plus on reste.
+4. « MAIS » ET « DONC » (la règle des auteurs de South Park). Chaque temps découle du précédent : c'est une
+   conséquence (donc, alors) ou un obstacle (mais, pourtant, sauf que) : « il veut X, donc il tente Y, mais Z
+   arrive, donc il doit… ». La règle porte sur le lien entre les événements, pas sur le mot : si deux temps se
+   relient par « et ensuite », il manque une cause ou un obstacle, et changer le mot n'y suffit pas. Une chronologie
+   d'encyclopédie se réécrit en causes et en obstacles. Le conflit ouvre une question, le contexte qui suit la
+   referme, un nouveau « mais » en ouvre une autre : c'est la danse, un rebondissement toutes les 7 à 8 secondes.
+5. MONTRER, PAS DIRE. Des actions et des détails qu'on voit, qu'on entend, qu'on touche, au lieu d'adjectifs
+   d'émotion : pas « il était désespéré » mais « il vend sa montre pour payer une semaine de fouilles de plus » ;
+   pas « un trésor incroyable » mais « 400 pièces d'or cousues dans la doublure d'un manteau ».
+6. L'ACCROCHE SANS DÉLAI. Dès la 1re phrase, on sait exactement de quoi on parle (un objet, un lieu, une personne,
+   un événement concret) et on sent un contraste : ce qu'on croit contre ce qui est, un paradoxe, une erreur énorme,
+   un prix absurde. Les 4 erreurs qui font passer à la vidéo suivante : le délai (le sujet arrive après une phrase
+   d'introduction : supprime-la), la confusion (une phrase qui se lit de deux façons : relis-la seule), le
+   hors-sujet (rien ne promet une histoire qu'on ne connaît pas), le désintérêt (aucune question ouverte). Une bonne
+   accroche ferait un bon titre ; elle se comprend même sans le son, parce que l'image montre au même instant ce que
+   dit la phrase. Pas de « saviez-vous », pas de « vous n'allez pas le croire » sans le sujet.
+   La 2e phrase est une PROMESSE : elle annonce la fin sans la donner (« Pourtant, personne n'a le droit d'en toucher
+   une seule pièce. ») ; la fin la tient. À elles deux, 6 secondes au plus.
+7. LES BOUCLES OUVERTES. Chaque réponse ouvre une nouvelle question. Un mot qui intrigue (secret, maudit, interdit,
+   controversé) est expliqué par un fait concret au plus tard dans le temps suivant. Aucune promesse sans réponse.
+   Un mécanisme peut tirer jusqu'au bout : 3 tentatives annoncées, un compte à rebours, une question posée au début.
+   Tiens la promesse, puis tords la fin quand le dossier le permet : l'attente comblée, puis la surprise.
+8. L'IRONIE DRAMATIQUE, quand l'histoire s'y prête : le spectateur voit ce que le héros ignore ou refuse de voir (la
+   solution évidente, le piège, le traître). Il a envie de crier « ne fais pas ça » et reste pour voir le choc. En
+   4 temps : l'erreur ou le paradoxe en accroche ; l'évidence, ce que tout le monde aurait fait ; le héros qui
+   s'entête et double la mise ; le retour de bâton, où il finit par faire ce qu'il aurait dû, après avoir tout perdu.
+9. DES HUMAINS ET UN ANGLE RARE. Un nom, un geste, une décision, une phrase dite (tirée des sources) : on s'attache
+   à quelqu'un, pas à un bâtiment. Pour un objet ou un lieu, le héros est celui qui le cherche, le construit, le
+   défend ou le perd ; pour un animal, l'animal lui-même : ce qu'il veut (manger, survivre, protéger ses petits) et
+   ce qui l'en empêche. Un sujet connu se raconte par l'angle que personne ne prend (ce qu'il a coûté, l'erreur
+   derrière, la personne oubliée).
+10. SIMPLE ET RYTHMÉ. Des mots qu'un enfant de 10 ans comprend (CM2 au plus) ; un mot savant ou technique se
+    remplace, ou s'explique par une action. Le ton d'une histoire qu'on raconte à un ami, pas d'une encyclopédie.
+    Des phrases de longueurs variées : une courte qui claque (« Personne ne revient. »), une moyenne, une longue qui
+    déroule, puis une courte ; écrites l'une sous l'autre, leurs bords sont dentelés, jamais alignés. Nombres et
+    années en chiffres (« 852 morts », « en 1937 ») : la voix les lit en lettres ; un nombre qui porte l'enjeu ou le
+    contraste se garde, un nombre de décor se coupe.
+11. LA FIN S'ÉCRIT EN PREMIER, avec l'accroche. La dernière phrase (chute sèche, ironie, twist ou retour à
+    l'accroche) décide de tout le reste ; elle doit pouvoir être partagée seule et, comme le Short repart en boucle,
+    elle peut préparer la première. Le récit s'arrête dès que la promesse est tenue et la chute dite : pas de résumé,
+    pas de morale, pas de question au public, pas d'appel à s'abonner ; chaque seconde de trop fait partir du monde.
 
-2. ENJEU ET ÉMOTION (ce qui fait qu'on s'attache) :
-- Avant la 10e seconde, le spectateur sait ce que c'est, où c'est, et pourquoi ça compte : à quoi ça
-  sert, ce que ça change, ce qui était en jeu. Sans enjeu, les faits ne sont qu'une liste.
-- Chaque promesse est tenue : un mot qui intrigue (« controversé », « secret », « maudit », « fou »,
-  « personne ne savait ») est expliqué par un fait concret dans la même scène ou la suivante. Jamais un
-  mystère annoncé puis laissé sans réponse.
-- Un conflit : ce qui s'y opposait (la nature, l'argent, des adversaires, le temps) et ce que ça a coûté
-  (des années, des vies, un paysage, une fortune).
-- De l'humain : qui l'a voulu, qui s'y est opposé, qui l'a payé ; un nom, une date, une citation courte
-  tirée des sources.
-- Une échelle qu'on ressent : comparer à du connu (« 2 fois la tour Eiffel », « de la mer du Nord à
-  la mer Noire »).
-- Le ton d'un conteur, pas d'une encyclopédie : faire ressentir l'obstination, l'absurde, la perte ou la
-  fierté par les faits, pas par des adjectifs.
-- Chaque scène apporte une information nouvelle : aucune phrase de remplissage (« ce projet colossal »,
-  « une histoire fascinante »), aucune redite.
+CHECKLIST avant de rendre : le sujet est-il dit dans les 2 premières secondes ? Relue seule, l'accroche se lit-elle
+d'une seule façon ? La 2e phrase annonce-t-elle une fin que le récit tient ? Un spectateur qui ne connaît rien
+comprend-il qui, où, quand et pourquoi ça compte ? Chaque temps est-il une conséquence ou un obstacle du précédent, ou
+reste-t-il un « et ensuite », une suite de dates ? Chaque phrase sert-elle l'idée unique ? Les dates, grades et
+chiffres de décor sont-ils coupés ? Le texte s'arrête-t-il net après la chute ?"""
 
-3. VOIX (le texte sera lu par une voix de synthèse, environ 3 mots par seconde) :
-- Phrases de 4 à 16 mots, une idée par phrase, présent de narration, voix active.
-- Le texte remplit la scène sans la déborder : 10 à 15 mots par scène de 5 s. Les blancs cassent le rythme.
-- Du concret à chaque scène : un chiffre, un lieu, une matière, un nom. « 300 bouteilles » plutôt que
-  « beaucoup de bouteilles ».
-- Les phrases s'enchaînent par « mais » et « donc », jamais par « et puis ».
-- Pas d'adjectifs empilés ni de superlatifs vides (incroyable, hallucinant) : le fait est plus fort que le
-  commentaire. Pas de sigles, pas de parenthèses ; une date se dit par son année seule, sans le jour ni le mois.
-- Nombres et années TOUJOURS en chiffres, jamais en toutes lettres, comme ils s'affichent dans les sous-titres
-  (« 852 morts », « en 1994 », « 1 350 tonnes », « 3 millions », « 19e siècle », « 40 % ») ; la voix les lit en
-  toutes lettres d'elle-même. Un nombre compte pour les mots qui le disent (« 1994 » : mille neuf cent
-  quatre-vingt-quatorze).
-- « Vous » et « imaginez » au plus deux fois par Short.
-- Séries documentaires : chaque affirmation vient du dossier fourni (faits de l'idée et pages sources) ;
-  aucun chiffre, nom, date ou citation inventé. Dans le doute, dire moins.
-
-4. IMAGE (une image de départ puis quelques secondes d'animation par scène) :
-- Le sujet est reconnaissable dès la première image de la scène 1. L'image la plus spectaculaire est
-  réservée à la révélation ou au payoff.
-- Chaque image se rattache au sujet au premier coup d'œil : un détail (mécanisme, matière, outil) se
-  montre sur le sujet et dans son décor, jamais seul sur fond neutre ; un objet qui revient d'une scène
-  à l'autre est décrit avec les mêmes mots (le modèle d'image ne connaît que le prompt de sa scène).
-- Une seule action ou un seul mouvement de caméra par scène, lent et lisible : travelling avant,
-  panoramique, mécanisme qui s'ouvre, animal qui frappe.
-- Un changement visuel toutes les 3 à 5 secondes : d'une scène à l'autre, changer de valeur de plan
-  (large puis gros plan) ou d'échelle.
-- Récits historiques : l'époque se voit (costumes, outils, engins et matériaux du moment raconté).
+# Règles de l'image des récits (clé rules_images) : données au réalisateur (storycraft.SHOTS_PROMPT) et à la scène
+# réinventée ; elles faisaient la 4e partie de RULES jusqu'au 29/09.
+IMAGE_RULES = """RÈGLES DE L'IMAGE (une image de départ, puis quelques secondes d'animation par scène)
+- La 1re image montre exactement ce que dit l'accroche (l'objet, le lieu, la personne), dès la 1re seconde : la voix,
+  le titre et l'image disent la même chose.
+- Chaque image montre ce que dit la narration à ce moment-là : une action, un geste, un objet précis, une
+  conséquence visible ; jamais une illustration vague de l'ambiance.
+- Chaque image se rattache au sujet au premier coup d'œil : un détail (mécanisme, matière, outil) se montre sur le
+  sujet et dans son décor, jamais seul sur fond neutre. Un objet, un lieu ou un personnage qui revient est décrit
+  avec les mêmes mots d'une scène à l'autre : le modèle d'image ne connaît que le prompt de sa scène.
+- Une seule action ou un seul mouvement de caméra par scène, lent et lisible (travelling avant, panoramique,
+  mécanisme qui s'ouvre, animal qui frappe) ; rien n'apparaît, rien ne se transforme.
+- Un changement visuel à chaque scène : alterner plan large, plan moyen et gros plan, changer d'échelle ou d'angle.
+- L'image la plus spectaculaire est gardée pour le renversement ou la réponse ; le dernier plan renvoie au premier.
+- Récits historiques : l'époque se voit (costumes, outils, engins, matériaux du moment raconté).
 - Lieu réel : une scène carte le situe (vue de l'espace, zoom, tracé) ; elle est rendue par le code.
-- Cadrage vertical pour un téléphone : sujet centré, gros plans, fort contraste, sans texte dans l'image,
-  sans visage reconnaissable.
-- Texte à l'écran seulement pour un chiffre ou un mot-clé, 5 mots au plus."""
+- Personnes réelles : jamais de visage reconnaissable (de dos, de trois quarts dans l'ombre, les mains, une
+  silhouette), toujours la même tenue d'une scène à l'autre.
+- Cadrage vertical pour un téléphone : sujet centré, fort contraste, sans texte dans l'image.
+- Texte à l'écran seulement pour un chiffre ou un mot-clé que dit la narration, 5 mots au plus."""
 
 BANNED_OPENERS = {
     "fr": r"^\W*(bonjour|salut|hello|coucou|bienvenue|aujourd'hui|dans cette vidéo|saviez[- ]vous|savez[- ]vous|est-ce que vous saviez)",

@@ -122,8 +122,10 @@ FFmpeg et uv s'installent plus simplement en tapant, dans le **Terminal** (menu 
 - **Publier aussi sur TikTok** (gratuit pour 2 comptes) : crée un compte sur [zernio.com](https://zernio.com), connecte-y
   ton compte TikTok, crée une clé API, puis colle-la dans **Réglages > TikTok**. Choisis ton compte TikTok en face de ta
   chaîne et coche **Automatique** : chaque Short programmé sur YouTube sort aussi sur TikTok, à la même heure. Les
-  vidéos déjà sorties se publient une par une depuis la Bibliothèque (**Publier sur TikTok**). Tout le détail :
-  [`docs/36-publication-tiktok.md`](docs/36-publication-tiktok.md).
+  vidéos déjà sorties partent une par une dans les créneaux restés vides si tu coches **Rattrapage**, ou à la main
+  depuis la Bibliothèque (**Publier sur TikTok**). Leurs chiffres sont dans **Dashboard > TikTok**, leurs heures dans le
+  Calendrier. Tout le détail : [`docs/36-publication-tiktok.md`](docs/36-publication-tiktok.md) et
+  [`docs/39-tiktok-partout.md`](docs/39-tiktok-partout.md).
 - **Nouvelle version du projet** : retélécharge le ZIP, extrais-le, relance `INSTALLER.bat`. C'est rapide : tes réglages
   et tout ce qui est déjà téléchargé restent dans `C:\YouTube2`.
 - **Tout désinstaller** : supprime le dossier du projet et `C:\YouTube2`, puis, si tu veux, Docker Desktop, Node.js,
@@ -207,6 +209,16 @@ générés par IA en local, avec un dashboard de pilotage.
    YouTube sort aussi sur TikTok à la même heure ; clé et compte dans Réglages → TikTok, état et lien dans la
    Bibliothèque ; pourquoi ni l'API officielle, ni Make, ni un robot de navigateur) :
    [`docs/36-publication-tiktok.md`](docs/36-publication-tiktok.md).
+   **Le conteur des récits** (histoires vraies et animaux : un conteur écrit d'abord l'histoire en entier avec les
+   règles du récit — 3 C, enjeu, « mais / donc », montrer plutôt que dire, accroche et promesse, ironie dramatique, fin
+   écrite en premier —, un relecteur la juge avec la checklist, le code la découpe sans changer un mot, un réalisateur
+   fait les plans ; vidéos de 75 s) : [`docs/37-conteur-des-recits.md`](docs/37-conteur-des-recits.md).
+   **TikTok partout** (onglet TikTok du Dashboard avec les mêmes chiffres que YouTube pour chaque compte relié, relevés
+   chaque heure par Zernio ; publications TikTok dans le Calendrier et la Vue d'ensemble ; rattrapage des vidéos déjà
+   sorties sur YouTube dans les créneaux restés vides) : [`docs/39-tiktok-partout.md`](docs/39-tiktok-partout.md).
+   **Pause et ordre de la file** (panneau Tâches : mettre une vidéo en pause tout de suite ou à la fin du clip en cours
+   sans perdre ce qui est fait, la reprendre, tout mettre en pause sauf une, changer l'ordre de la file en glissant ;
+   les vidéos sortent l'une après l'autre) : [`docs/40-pause-et-ordre-de-la-file.md`](docs/40-pause-et-ordre-de-la-file.md).
 3. [`docs/03-pipeline.md`](docs/03-pipeline.md) : les étapes, le planificateur, les agents.
 4. [`docs/05-youtube-api.md`](docs/05-youtube-api.md) : OAuth, quotas, **audit de conformité à lancer tout de suite**.
 5. [`docs/08-benchmark-video.md`](docs/08-benchmark-video.md) : génération vidéo gratuite, locale et en ligne, recommandation.

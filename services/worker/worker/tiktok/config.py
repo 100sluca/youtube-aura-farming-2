@@ -2,12 +2,14 @@
 
 app_settings « tiktok » :
     {"channels": {"<id de la chaîne YouTube>": {"account_id": "…", "username": "…", "enabled": true,
-                                                 "enabled_at": "2026-09-29T01:40:00+02:00"}},
+                                                 "enabled_at": "2026-09-29T01:40:00+02:00", "backlog": false}},
      "allow_comment": true, "allow_duet": true, "allow_stitch": true, "ai_label": false}
 
 Une chaîne YouTube publie sur un compte TikTok connecté à Zernio. `enabled` : chaque Short programmé sur YouTube part
 aussi sur TikTok, à la même heure ; seuls les Shorts dont le créneau suit `enabled_at` partent tout seuls (rien n'est
-republié en rafale à l'activation), les autres se publient à la main depuis la Bibliothèque. `ai_label` : étiquette
+republié en rafale à l'activation). `backlog` (rattrapage, docs/39) : les autres, déjà sortis sur YouTube, partent un
+par un dans les créneaux restés vides (tiktok/backlog.py) ; sinon ils se publient à la main depuis la Bibliothèque.
+`ai_label` : étiquette
 « contenu généré par IA » de TikTok, coupée par défaut (choix de Luca le 29/09). La visibilité n'est pas réglable : un
 compte connecté par l'appli TikTok for Business ne publie une vidéo qu'en public.
 
@@ -35,6 +37,7 @@ class ChannelTikTok:
     username: str = ""
     enabled: bool = False
     enabled_at: datetime | None = None
+    backlog: bool = False  # rattrapage des vidéos déjà sorties sur YouTube (docs/39)
 
 
 @dataclass
@@ -65,6 +68,7 @@ def parse_config(value: dict[str, Any] | None) -> TikTokConfig:
             username=str(c.get("username") or ""),
             enabled=bool(c.get("enabled")),
             enabled_at=_when(c.get("enabled_at")),
+            backlog=bool(c.get("backlog")),
         )
         for cid, c in (v.get("channels") or {}).items()
         if isinstance(c, dict)

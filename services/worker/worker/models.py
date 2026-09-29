@@ -42,6 +42,7 @@ JobType = Literal[
     "montage_preview",
     "analyze",  # agent analyste des performances (migration 0015, docs/25)
     "tiktok_publish",  # publication sur TikTok par Zernio (migration 0023, docs/36)
+    "sync_tiktok",  # statistiques TikTok par Zernio (migration 0025, docs/39)
 ]
 
 
@@ -180,6 +181,67 @@ class LangMetadata(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=30)
 
 
+# ---- Récit écrit avant le découpage en plans (worker/storycraft.py, docs/37) -------------------------------------
+
+# Temps d'un récit, dans l'ordre : l'accroche (le sujet et un contraste, sans délai), la promesse de ce qu'on va
+# découvrir, le contexte (qui, où, quand, ce qu'il veut), le conflit (l'obstacle, ce qui tourne mal, par « pourtant »
+# et « donc »), le renversement, la réponse (le payoff), la dernière phrase (chute sèche ou boucle vers l'accroche).
+StoryPart = Literal["hook", "promise", "context", "conflict", "twist", "payoff", "ending"]
+
+
+class StoryBeat(BaseModel):
+    """Un temps du récit : ce que dit la voix (une ou plusieurs phrases) et ce qu'on voit pendant ce temps."""
+
+    part: StoryPart
+    text: str  # la narration, dans la langue de la vidéo, nombres en chiffres
+    show: str = ""  # ce qu'on VOIT pendant ce temps, en français, concret : le réalisateur en tire les plans
+
+
+class StoryDraft(BaseModel):
+    """L'histoire écrite par le conteur (prompt script) avant le découpage en plans. Les champs viennent dans l'ordre où
+    il réfléchit : l'idée unique, le moteur, le héros et son enjeu, la dernière phrase écrite AVANT le récit."""
+
+    central_idea: str = ""  # l'idée ou l'émotion unique que sert tout le récit, en une phrase
+    engine: str = ""  # le moteur : enquête, ironie dramatique, course contre la montre, trésor sous les yeux…
+    protagonist: str = ""  # qui, et ce qu'il veut
+    stakes: str = ""  # ce qu'il risque s'il échoue, concret
+    ending: str = ""  # la dernière phrase, écrite en premier (« the last dab »)
+    beats: list[StoryBeat] = Field(min_length=4, max_length=24)
+    hook_title: LangText = Field(default_factory=dict)
+
+
+class Shot(BaseModel):
+    """Un plan du réalisateur (prompt script_shots) pour une scène dont la narration est déjà écrite par le conteur."""
+
+    index: int
+    visual_prompt: str
+    motion_prompt: str | None = None
+    on_screen_text: LangText = Field(default_factory=dict)
+    continues_previous: bool = False
+    map: MapSpec | None = None
+    # La narration de la scène dans les AUTRES langues demandées (traduction) ; celle de la langue du récit est reprise
+    # telle quelle par le code
+    narration: LangText = Field(default_factory=dict)
+
+
+class ShotList(BaseModel):
+    """Le découpage d'un récit en plans : ce qu'on voit, scène par scène, et ce qui habille la vidéo."""
+
+    shots: list[Shot] = Field(min_length=1, max_length=24)
+    design_bible: str | None = None  # l'époque, le lieu et le rendu communs à toutes les images, en anglais
+    loop_note: str | None = None
+    music_mood: str | None = None
+    metadata: dict[Lang, LangMetadata] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _scenes(cls, data: Any) -> Any:
+        """Un LLM appelle parfois ses plans « scenes » (le mot du script)."""
+        if isinstance(data, dict) and "shots" not in data and isinstance(data.get("scenes"), list):
+            return {**{k: v for k, v in data.items() if k != "scenes"}, "shots": data["scenes"]}
+        return data
+
+
 class ScriptV1(BaseModel):
     version: Literal[1] = 1
     # 24 au plus : une visite de 9 pièces compte aussi ses 8 passages (recipes.normalize_script)
@@ -198,6 +260,9 @@ class ScriptV1(BaseModel):
     view: str | None = None
     # Drame : les personnages de l'histoire (fiche image et voix de chacun, docs/35)
     cast: list[CastMember] = Field(default_factory=list)
+    # Récit : l'histoire telle que le conteur l'a écrite avant le découpage en plans (docs/37) ; une scène réinventée
+    # ensuite change la narration du script, pas ce brouillon
+    story: StoryDraft | None = None
 
     @property
     def duration_s(self) -> float:
@@ -316,7 +381,7 @@ class StrategyProposal(BaseModel):
     title_patterns: list[str] = Field(default_factory=list, max_length=6)
     avoid: list[str] = Field(default_factory=list, max_length=6)
     publish_slots: list[str] | None = Field(None, description="créneaux HH:MM, seulement si les données le justifient")
-    target_duration_s: int | None = Field(None, ge=15, le=60)
+    target_duration_s: int | None = Field(None, ge=15, le=180)  # un Short dure jusqu'à 3 min ; récits de 60 à 90 s (docs/37)
     experiments: list[str] = Field(default_factory=list, max_length=3)
     confidence: Literal["faible", "moyenne", "bonne"] = "faible"
 

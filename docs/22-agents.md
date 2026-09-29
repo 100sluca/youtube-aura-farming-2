@@ -26,7 +26,9 @@ Fiche d'un agent (`/agents/<clé>`) : l'éditeur du prompt, l'historique des ver
 | Clé | Agent | Job | Rôle |
 |---|---|---|---|
 | `idea` | Agent idées | ideate | idées notées par thème |
-| `script` | Scénariste · histoires | script | script des thèmes racontés (voix off) |
+| `script` | Conteur · histoires (Scénariste · histoires jusqu'au 29/09) | script | l'histoire des thèmes racontés, écrite en entier avant le découpage ([`37-conteur-des-recits.md`](37-conteur-des-recits.md)) |
+| `script_review` | Relecteur · histoires | script | relit l'histoire avec la checklist du récit, la fait réécrire une fois |
+| `script_shots` | Réalisateur · histoires | script | les plans de chaque scène d'une histoire découpée par le code |
 | `script_timelapse` | Scénariste · chantier | script | étapes d'un chantier en accéléré |
 | `script_tour` | Scénariste · visite | script | parcours d'une maison de luxe |
 | `seo` | Agent SEO | seo | titre, description, tags, hashtags |
@@ -36,6 +38,9 @@ Fiche d'un agent (`/agents/<clé>`) : l'éditeur du prompt, l'historique des ver
 | `improve` | Agent amélioration | improve | meilleures versions des prompts idées et script |
 | `analyst` | Agent analyste | analyze | ce qui marche et pourquoi, leçons à valider dans Dashboard ([`25-dashboard-statistiques.md`](25-dashboard-statistiques.md)) |
 
+Depuis le 29/09 (docs/37) : `rules_storytelling` s'appelle « Règles du récit » (l'art de raconter, commun à toute
+histoire, donné aussi au relecteur et au scénariste des drames) et `rules_images` (« Règles de l'image · histoires »)
+va au réalisateur et à la scène réinventée ; `hint_continuity` va au réalisateur.
 Consignes communes (glissées dans le message, avec les données de la tâche) : `rules_storytelling` (règles du
 storytelling, agent idées et scénariste histoires), `guide_timelapse` et `guide_tour` (agent idées, thèmes visuels),
 `rules_hook_title` (titre d'accroche, scénaristes chantier et visite), `hint_continuity` (continuité entre clips,

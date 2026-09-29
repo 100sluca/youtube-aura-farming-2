@@ -41,8 +41,16 @@ et le projet GCP utilisé (quota API dédié par chaîne, voir `05-youtube-api.m
 `videos.tiktok` (jsonb, migration 0024, docs/36) : état de la publication de la vidéo sur TikTok par Zernio, `null` tant
 qu'elle n'est pas demandée : `status` (sending, scheduled, publishing…, published, failed, cancelled), `post_id`
 (Zernio), `url`, `scheduled_for`, `published_at`, `account_id`, `username`, `error`, `round`, `draft`. Les réglages
-(lien chaîne YouTube → compte TikTok, publication automatique, interactions, étiquette IA) sont dans
-`app_settings.tiktok`, la clé API chiffrée dans `app_secrets.zernio_api_key`.
+(lien chaîne YouTube → compte TikTok, publication automatique, rattrapage `backlog`, interactions, étiquette IA) sont dans
+`app_settings.tiktok`, la clé API chiffrée dans `app_secrets.zernio_api_key`. Depuis 0026 (docs/39), `videos.tiktok.source`
+dit d'où vient la publication (auto, rattrapage, bibliothèque, cli, manuel).
+
+Statistiques TikTok (migration 0026, docs/39), relevées chaque heure par le job `sync_tiktok` : `tiktok_accounts` (un
+compte connecté à Zernio : abonnés, j'aime reçus, vidéos, Business ou non), `tiktok_account_snapshots` (relevés),
+`tiktok_posts` (une vidéo sortie sur un compte, rattachée à `videos` si elle vient de l'appli : vues, j'aime,
+commentaires, partages, enregistrements, temps regardé, part vue jusqu'au bout, provenance des vues, vues à 24 h et 7 j),
+`tiktok_post_snapshots` (relevés), vue `v_tiktok_post_daily_snapshots` (dernier relevé de chaque jour). Vue
+`v_tiktok_backlog` : vidéos de l'appli sorties sur YouTube et jamais envoyées sur TikTok (rattrapage).
 
 `ScriptV1` (JSON dans `productions.script`) :
 ```json
@@ -64,7 +72,9 @@ Un job = une étape atomique, avec `type`, `priority`, `progress` (0-100), `prog
 
 | Fonction | Rôle |
 |---|---|
-| `claim_jobs(worker, types[], max)` | réserve des jobs prêts (dépendances terminées) avec `FOR UPDATE SKIP LOCKED` |
+| `claim_jobs(worker, types[], max)` | réserve des jobs prêts (dépendances terminées) avec `FOR UPDATE SKIP LOCKED` ; ordre : priorité, place de la vidéo dans la file (`production_queue_key`), ancienneté ; saute les productions en pause (0027, docs/40) |
+| `pause_productions(ids[], now)` / `unpause_productions(ids[])` | pause d'une vidéo (`productions.paused_at`) : « tout de suite » interrompt le calcul GPU en cours (marqueur `Mise en pause`), la reprise le remet en file sans passer devant la vidéo en cours (docs/40) |
+| `reorder_queue(ids[])` / `focus_production(id, now)` | ordre de la file choisi dans le panneau Tâches (`productions.queue_at`) ; « tout mettre en pause sauf celle-ci » (docs/40) |
 | `fail_job(job, error)` | re-planifie avec backoff (5 min × tentative) ou passe en `failed` + alerte |
 | `requeue_stale_jobs()` | requalifie les jobs `running` sans heartbeat depuis 15 min |
 | `next_free_slot(channel, after)` | prochain créneau libre d'une chaîne (14 jours glissants) |
