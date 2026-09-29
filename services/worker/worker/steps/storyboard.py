@@ -118,6 +118,16 @@ class StoryboardStep(Step):
                 (pid, scene.index),
             )
             if has and has["n"] and not only:  # idempotence : scène déjà illustrée
+                # arrêt du worker entre l'enregistrement de l'image et son choix : la dernière image devient la retenue
+                # (sans ça, « Valider » refuserait la scène, docs/42)
+                ctx.db.execute(
+                    """update assets set selected = true where id = (
+                         select id from assets where production_id = %s and kind = 'storyboard' and scene_index = %s
+                         order by created_at desc limit 1)
+                       and not exists (select 1 from assets where production_id = %s and kind = 'storyboard'
+                         and scene_index = %s and selected)""",
+                    (pid, scene.index, pid, scene.index),
+                )
                 continue
             src = sources[pos] if editor else None
             source = self._selected(ctx, pid, script.scenes[src].index) if src is not None else None

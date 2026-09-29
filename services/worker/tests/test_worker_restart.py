@@ -36,3 +36,50 @@ def test_supervisor_restarts_the_child_after_a_code_change_and_after_a_crash():
     assert main.supervise(["--verbose"], call=fake_call, pause_s=0) == 0
     assert len(calls) == 4  # relance (code), relance (plantage), relance (code), arrêt normal
     assert calls[0][1:] == ["-m", "worker.main", "--child", "--verbose"]
+
+
+class _FakeDb:
+    def __init__(self, jobs):
+        self.jobs, self.logs, self.alerts, self.asked = jobs, [], [], None
+
+    def recover_after_crash(self, worker_id):
+        self.asked = worker_id
+        return self.jobs
+
+    def log(self, job_id, level, message):
+        self.logs.append((job_id, level))
+
+    def alert(self, severity, title, body=None):
+        self.alerts.append(title)
+
+
+class _Settings:
+    worker_id = "desktop"
+    comfy_base_url = "http://127.0.0.1:8188"
+
+
+def test_recovery_after_a_crash_requeues_and_clears_the_orphan_comfy_render():
+    db = _FakeDb(
+        [
+            {"id": 1, "type": "generate_clip", "locked_by": "desktop/gpu", "production_id": None},
+            {"id": 2, "type": "script", "locked_by": "desktop/io", "production_id": None},
+        ]
+    )
+    cleared: list[str] = []
+    jobs = main.recover_after_crash(db, _Settings(), clear_comfy=cleared.append)
+    assert db.asked == "desktop" and len(jobs) == 2
+    assert [lvl for _, lvl in db.logs] == ["warn", "warn"]
+    assert cleared == ["http://127.0.0.1:8188"]  # un clip était en cours : son rendu orphelin est retiré de ComfyUI
+    assert "2 tâche(s)" in db.alerts[0]
+
+
+def test_recovery_leaves_comfy_alone_without_gpu_job_and_is_silent_when_nothing_ran():
+    cleared: list[str] = []
+    main.recover_after_crash(
+        _FakeDb([{"id": 3, "type": "seo", "locked_by": "desktop/io", "production_id": None}]),
+        _Settings(),
+        clear_comfy=cleared.append,
+    )
+    assert cleared == []
+    db = _FakeDb([])
+    assert main.recover_after_crash(db, _Settings(), clear_comfy=cleared.append) == [] and not db.alerts

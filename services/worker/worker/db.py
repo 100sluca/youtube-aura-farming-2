@@ -122,6 +122,18 @@ class Db:
         assert row is not None
         return row["id"]
 
+    def recover_after_crash(self, worker_id: str) -> list[dict]:
+        """Au démarrage du worker : les jobs encore « running » à son nom sont ceux du processus précédent, mort en
+        route (plantage, coupure de courant). Remis en file tout de suite, sans consommer de tentative ; le travail déjà
+        enregistré (clips, images, voix) est gardé par l'idempotence des steps (docs/42)."""
+        return self.fetch_all(
+            """update jobs set status = 'queued', run_after = now(), attempts = greatest(attempts - 1, 0),
+                 locked_by = null, locked_at = null, progress_label = 'Reprise après un arrêt du worker'
+               where status = 'running' and locked_by like %s
+               returning id, type::text as type, locked_by, production_id""",
+            (f"{worker_id}/%",),
+        )
+
     def requeue_stale_jobs(self) -> int:
         row = self.fetch_one("select requeue_stale_jobs() as n")
         return int(row["n"]) if row else 0

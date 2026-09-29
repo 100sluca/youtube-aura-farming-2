@@ -150,6 +150,42 @@ def supervise(argv: list[str], call: object = subprocess.call, pause_s: float = 
             return int(code)
 
 
+def recover_after_crash(db: Db, settings: Settings, clear_comfy: object = None) -> list[dict]:
+    """Reprise après un plantage (docs/42) : les jobs que le processus précédent tenait repartent tout de suite (au lieu
+    des 15 min de requeue_stale_jobs), sans consommer de tentative. Si l'un d'eux était sur la voie GPU, le rendu qu'il
+    avait confié à ComfyUI tourne encore pour rien : on vide la file de ComfyUI avant que la reprise en soumette un autre."""
+    try:
+        jobs = db.recover_after_crash(settings.worker_id)
+    except Exception as exc:  # noqa: BLE001 — base injoignable : requeue_stale_jobs prendra le relais
+        log.warning("reprise.impossible", error=str(exc)[:300])
+        return []
+    if not jobs:
+        return []
+    for j in jobs:
+        db.log(j["id"], "warn", "Worker arrêté pendant cette tâche : reprise automatique, le travail déjà enregistré est gardé")
+    if any(str(j["locked_by"]).endswith("/gpu") for j in jobs):
+        (clear_comfy or _clear_comfy)(settings.comfy_base_url)  # type: ignore[operator]
+    names = ", ".join(sorted({j["type"] for j in jobs}))
+    log.warning("reprise.apres_plantage", jobs=len(jobs), types=names)
+    try:
+        db.alert("info", f"Reprise après un arrêt du worker : {len(jobs)} tâche(s) relancée(s)", names)
+    except Exception:  # noqa: BLE001
+        pass
+    return jobs
+
+
+def _clear_comfy(base_url: str) -> None:
+    """Vide la file de ComfyUI et interrompt le calcul orphelin (seul le worker s'en sert)."""
+    import httpx
+
+    base = base_url.rstrip("/")
+    try:
+        httpx.post(f"{base}/queue", json={"clear": True}, timeout=10)
+        httpx.post(f"{base}/interrupt", timeout=10)
+    except httpx.HTTPError:
+        pass  # ComfyUI arrêté aussi : rien à vider, ensure_comfy le relancera
+
+
 def main() -> None:
     utf8_console()
     parser = argparse.ArgumentParser(description="YouTube 2.0 worker")
@@ -170,6 +206,8 @@ def main() -> None:
             log.info("prompts.code", **synced)
     except Exception as exc:  # noqa: BLE001 — migration 0012 absente : les agents gardent le texte du code
         log.warning("prompts.sync_impossible", error=str(exc)[:300])
+    if not args.once:
+        recover_after_crash(db, settings)
     scheduler = start_scheduler(db, settings)
 
     gpu_types = [t for t in settings.job_types if REGISTRY[t].lane == "gpu"]
