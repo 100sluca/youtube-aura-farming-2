@@ -25,6 +25,5 @@ export interface TestMailState {
   message: string;
 }
 
-export const DEFAULT_ALERT_EMAIL = "adresse@example.com";
 export const APP_PASSWORD_URL = "https://myaccount.google.com/apppasswords";
 export const OUTBOX_HOURS = 6; // worker/notify.py : une alerte plus vieille ne part plus

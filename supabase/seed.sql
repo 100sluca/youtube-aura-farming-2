@@ -1,5 +1,6 @@
--- Données de départ (à exécuter après 0001_init.sql). Adapter l'e-mail.
-insert into app_users (email) values ('adresse@example.com') on conflict do nothing;
+-- Données de départ (à exécuter après 0001_init.sql).
+-- Dashboard hébergé (DASHBOARD_AUTH=supabase) : ajouter son e-mail dans app_users, en local seulement (dépôt public) :
+-- insert into app_users (email) values ('ton.adresse@example.com') on conflict do nothing;
 
 insert into prompt_templates (agent, version, content, is_active, created_by) values
 -- Prompts v1 (révision du 2026-09-21, docs/11), propres à la série « maisons de rêve ». Conservés inactifs :

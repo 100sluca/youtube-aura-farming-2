@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     zernio_api_key: str | None = None
 
     # Mail « vidéo terminée » (worker/notify.py, docs/32) : Réglages → Notifications prime sur ces valeurs
-    alert_email_to: str = "adresse@example.com"  # adresse qui reçoit
+    alert_email_to: str = ""  # adresse qui reçoit (ALERT_EMAIL_TO du .env ; jamais dans le dépôt, qui est public)
     notify_on_review: bool = True  # un mail dès qu'une vidéo est terminée (nom d'origine : les vidéos à valider)
     resend_api_key: str | None = None
     smtp_host: str | None = None  # défaut : smtp.gmail.com
@@ -184,4 +184,5 @@ class Settings(BaseSettings):
 
     @property
     def effective_wikipedia_user_agent(self) -> str:
-        return self.wikipedia_user_agent or f"yt2-worker/0.1 (https://github.com/100sluca/youtube-shorts-daily; {self.alert_email_to})"
+        contact = f"; {self.alert_email_to}" if self.alert_email_to else ""
+        return self.wikipedia_user_agent or f"yt2-worker/0.1 (https://github.com/100sluca/youtube-aura-farming{contact})"

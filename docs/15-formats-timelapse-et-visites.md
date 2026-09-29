@@ -1,6 +1,7 @@
 # 15 · Deux formats visuels : chantiers en accéléré et visites de maisons de luxe
 
-> 2026-09-25, demande de Luca : reproduire les vidéos du dossier `examples/` — des **time-lapses de construction**
+> 2026-09-25, demande de Luca : reproduire les vidéos du dossier `examples/` (vidéos d'autres créateurs, gardées sur le
+> PC et hors du dépôt public depuis le 29/09) — des **time-lapses de construction**
 > et des **visites de maisons de luxe** (la vidéo dont parle `visite_appart_ai.mp4`, pas l'explication elle-même),
 > avec **bruitages**, **musique libre de droits ou générée par IA** et un **titre d'accroche** (« hook title »)
 > comme dans MJClipIt. Tout gratuit et local (ADR-007). Machine : RTX 3070 8 Go, 32 Go de RAM.

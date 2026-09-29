@@ -56,8 +56,8 @@ Les 10 pistes du 28/09, décrites par Luca :
 musique inaudible sur l'une et envahissante sur l'autre.
 
 Ajouter une musique : déposer le fichier (mp3, wav, ogg, m4a, flac, aac) dans le dossier, ouvrir l'onglet Son, cocher
-ses formats et ses ambiances (ou donner sa description à Claude). Les fichiers audio sont dans le dépôt (≈ 31 Mo pour
-les dix) : à exclure de git (`music/*.mp3` dans `.gitignore`) si le dépôt ne doit pas les porter.
+ses formats et ses ambiances (ou donner sa description à Claude). Les fichiers audio sont dans le dépôt public (≈ 31 Mo
+pour les dix) : ce sont les compositions de Luca, qu'il choisit de partager (29/09).
 
 ## 3. Quelle musique sur quelle vidéo
 

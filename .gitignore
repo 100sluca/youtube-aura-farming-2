@@ -34,3 +34,6 @@ services/worker/models/
 
 # sorties du benchmark vidéo
 services/worker/bench/
+
+# vidéos de référence d'autres créateurs : gardées sur le PC, jamais dans le dépôt (public)
+examples/

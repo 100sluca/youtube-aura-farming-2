@@ -41,7 +41,7 @@ Principes :
    un tampon (buffer) de 2 à 3 jours de vidéos déjà programmées.
 3. **100 % automatique par défaut, validation humaine en option.** `channels.auto_publish`
    (interrupteur dans Réglages) : à `false`, chaque vidéo passe en « Contrôle / revue » et un
-   e-mail est envoyé à `adresse@example.com` ; à `true`, elle est programmée dès la QA.
+   e-mail est envoyé à l'adresse de Réglages → Notifications ; à `true`, elle est programmée dès la QA.
 4. **Un master visuel, deux rendus.** Une *production* génère les clips une seule fois ; une
    *vidéo* par chaîne y ajoute narration, textes et métadonnées localisés (ADR-002).
 5. **Tout passe par la file de jobs.** Chaque étape est un job avec progression 0-100, tentatives

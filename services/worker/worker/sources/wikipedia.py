@@ -38,7 +38,7 @@ from ..models import Fact, SourceRef
 
 log = structlog.get_logger(__name__)
 
-DEFAULT_USER_AGENT = "yt2-worker/0.1 (https://github.com/100sluca/youtube-shorts-daily)"
+DEFAULT_USER_AGENT = "yt2-worker/0.1 (https://github.com/100sluca/youtube-aura-farming)"
 LIST_PREFIXES = ("Liste ", "Listes ", "List of ", "Chronologie ", "Timeline of ")
 
 

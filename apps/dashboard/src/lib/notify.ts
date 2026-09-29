@@ -1,13 +1,14 @@
 /** Lectures serveur de Réglages → Notifications (docs/32) : réglages, mot de passe (ses 4 derniers caractères seulement),
  * dernier mail et mails en attente. À n'importer que depuis des Server Components ou des actions serveur. */
 import { IS_MOCK } from "@/lib/data";
-import { DEFAULT_ALERT_EMAIL, OUTBOX_HOURS, type NotificationSettings, type NotifyStatus } from "@/lib/notify-types";
+import { OUTBOX_HOURS, type NotificationSettings, type NotifyStatus } from "@/lib/notify-types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const SMTP_SECRET = "smtp_password";
 
 export async function getNotificationSettings(): Promise<NotificationSettings> {
-  const fallback: NotificationSettings = { email_to: process.env.ALERT_EMAIL_TO?.trim() || DEFAULT_ALERT_EMAIL, on_video_ready: true, sender: "" };
+  // aucune adresse par défaut dans le code (dépôt public) : Réglages → Notifications, sinon ALERT_EMAIL_TO
+  const fallback: NotificationSettings = { email_to: process.env.ALERT_EMAIL_TO?.trim() || "", on_video_ready: true, sender: "" };
   if (IS_MOCK) return fallback;
   const { data } = await supabaseAdmin().from("app_settings").select("value").eq("key", "notifications").maybeSingle();
   const v = (data?.value ?? {}) as Partial<NotificationSettings>;
