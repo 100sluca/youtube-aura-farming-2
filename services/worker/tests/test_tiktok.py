@@ -56,7 +56,7 @@ def test_post_body_public_scheduled_without_ai_label_by_default():
                         when=slot)
     s = body["tiktokSettings"]
     assert body["scheduledFor"] == slot.isoformat() and "publishNow" not in body
-    assert s["privacy_level"] == "PUBLIC_TO_EVERYONE"
+    assert s["privacy_level"] == "PUBLIC_TO_EVERYONE" and s["media_type"] == "video"
     assert s["content_preview_confirmed"] is True and s["express_consent_given"] is True
     assert "video_made_with_ai" not in s  # choix de Luca le 29/09 : pas d'étiquette IA
     assert "draft" not in s

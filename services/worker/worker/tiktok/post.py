@@ -49,6 +49,9 @@ def idempotency_key(video_id: object, round_: int) -> str:
 def post_body(*, caption: str, media_url: str, account_id: str, cfg: TikTokConfig, when: datetime | None,
               draft: bool = False) -> dict[str, Any]:
     settings: dict[str, Any] = {
+        # explicite : le 29/09, une publication programmée sans ce champ s'est retrouvée en « photo » chez Zernio
+        # douze minutes après sa création, avec risque de refus à l'heure prévue (corrigée par PUT /posts/{id})
+        "media_type": "video",
         # compte connecté par l'appli TikTok for Business : une vidéo publiée directement est toujours publique
         "privacy_level": "PUBLIC_TO_EVERYONE",
         "allow_comment": cfg.allow_comment,

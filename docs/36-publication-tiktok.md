@@ -146,6 +146,11 @@ Essais du 29/09 :
 3. Publication automatique activée à 01 h 42 : les 6 Shorts programmés des 29 et 30/09 sont programmés sur TikTok aux
    mêmes heures que sur YouTube (9 h, 13 h, 18 h).
 
+4. Relevé par la session « Dashboard YouTube et TikTok » à 2 h : la publication de 9 h (« Cabane perchée ») était passée en
+   `media_type: "photo"` chez Zernio à 1 h 58, douze minutes après sa création (origine inconnue : éditeur du site de
+   Zernio ou traitement interne). Corrigée par `PUT /posts/{id}`. Depuis, chaque publication envoie
+   `media_type: "video"`, et les 6 publications programmées ont été remises en vidéo explicite.
+
 Limites connues : changer le créneau d'une vidéo déjà programmée ne déplace pas sa publication TikTok ; couper la
 publication automatique n'annule pas les publications déjà programmées chez Zernio (les annuler sur zernio.com).
 
