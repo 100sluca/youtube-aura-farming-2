@@ -73,7 +73,7 @@ class TTS(Protocol):
     gpu: bool
 
     def speak_many(self, texts: Sequence[str], *, voice: str, lang: str, speed: float,
-                   on_progress: Progress | None = None) -> list[Speech]: ...
+                   on_progress: Progress | None = None, seed: int | None = None) -> list[Speech]: ...
 
 
 class KokoroTTS:
@@ -110,7 +110,7 @@ class KokoroTTS:
         return Speech(samples=samples, rate=int(rate), voice=voice)
 
     def speak_many(self, texts: Sequence[str], *, voice: str, lang: str, speed: float,
-                   on_progress: Progress | None = None) -> list[Speech]:
+                   on_progress: Progress | None = None, seed: int | None = None) -> list[Speech]:
         out = []
         for i, text in enumerate(texts):
             if on_progress:
@@ -151,7 +151,9 @@ class VenvTTS:
             raise FileNotFoundError(f"Script du moteur absent : {self.runner}")
 
     def speak_many(self, texts: Sequence[str], *, voice: str, lang: str, speed: float,
-                   on_progress: Progress | None = None) -> list[Speech]:
+                   on_progress: Progress | None = None, seed: int | None = None) -> list[Speech]:
+        """`seed` : une autre prise (Qwen3-TTS tire sa voix au hasard, graine fixe par voix sinon) ; sans effet sur un
+        moteur déterministe."""
         import soundfile as sf
 
         from .. import cancel
@@ -167,7 +169,7 @@ class VenvTTS:
             request = {
                 "texts": [spoken(t, lang) for t in texts], "voice": voice, "voice_params": entry.get("params") or {}, "lang": lang,
                 "speed": float(speed), "out_dir": str(work), "engine_dir": str(self.engine_dir), "home": str(self.home),
-                "options": self.spec.get("options") or {},
+                "options": {**(self.spec.get("options") or {}), **({"seed": int(seed)} if seed is not None else {})},
             }
             (work / "request.json").write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
             self._run(work, len(texts), on_progress, cancel)

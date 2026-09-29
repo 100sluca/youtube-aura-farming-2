@@ -35,6 +35,7 @@ from typing import Any
 from .hooktitle import clean_hook, lint_hook_title
 from .models import CastMember, NarrationTimeline, SceneTiming, ScriptScene, ScriptV1, WordTiming
 from .numbers import script_to_digits, spoken, to_digits, tokens
+from .speaker import legend, listeners, shot_members
 from .storytelling import CALLS_TO_ACTION, DURATION_TOLERANCE, words
 from .subtitles import distribute_words
 
@@ -231,12 +232,17 @@ def scene_prompt(script: ScriptV1, pos: int, refs: Sequence[str] = ()) -> str:
     return f"{text}. Characters: {looks}" if looks else text
 
 
-def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None = None) -> str:
-    """Prompt du clip : le film, ce qui bouge, puis la réplique entre guillemets avec la voix du personnage (le modèle
-    vidéo la dit, bouche comprise) ; un plan sans réplique demande le silence, sinon H3 invente des paroles."""
+def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None = None,
+                where: dict[str, str] | None = None, note: str = "") -> str:
+    """Prompt du clip : le film, ce qui bouge, qui est qui dans le plan (par ce qui se voit et, à plusieurs, par leur
+    place dans l'image : `where`, worker/speaker.py), puis la réplique entre guillemets avec la voix du personnage (le
+    modèle vidéo la dit, bouche comprise) et les autres qui se taisent ; un plan sans réplique demande le silence, sinon
+    H3 invente des paroles. `note` : note de réalisation (consigne de Luca pour ce plan, speaker.director_note)."""
     sc = script.scenes[pos]
+    members = shot_members(script, sc)
+    # H3 ne sait pas qui est « Api » : un nom seul lui faisait animer la mauvaise bouche (« Mamie Pomme », 29/09)
     parts = [f"{FILM.get(style_preset or '', '3D animated feature film')}.",
-             (sc.motion_prompt or sc.visual_prompt).strip().rstrip(".") + "."]
+             (sc.motion_prompt or sc.visual_prompt).strip().rstrip(".") + ".", legend(members, where)]
     if sc.lines:
         ln = sc.lines[0]
         m = script.member(ln.who)
@@ -247,12 +253,15 @@ def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None 
         how = f", {', '.join(tone)}" if tone else ""
         said = spoken(ln.text, lang)  # « 50 000 » → « cinquante mille » : la voix dit les nombres en lettres
         parts.append(f'{who} says in {LANG_NAMES.get(lang, "French")}, in {voice}{how}: "{said}"')
+        parts.append(f"Only {who} speaks, lips moving with the words.")
+        parts.append(listeners(members))
         # H3 écrivait parfois la réplique à l'image, comme un sous-titre (« Mamie Pomme », 29/09) : elle s'entend, c'est tout
-        parts.append("Only this character speaks, lips moving with the words. The words are only heard, never written on "
-                     "screen: no subtitles, no captions.")
+        parts.append("The words are only heard, never written on screen: no subtitles, no captions.")
     else:
         parts.append("Nobody speaks: only ambient sound.")
-    return " ".join(parts)
+    if note:
+        parts.append(note)
+    return " ".join(p for p in parts if p)
 
 
 def line_text(scene: ScriptScene) -> str:

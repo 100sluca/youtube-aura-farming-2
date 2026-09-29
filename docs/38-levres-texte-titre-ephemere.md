@@ -7,6 +7,11 @@
 >    vidéos, aussi dans les images ;
 > 3. dans Bibliothèque → Retoucher, pouvoir rendre le titre d'accroche éphémère : cocher, puis régler sa durée de 5 s à
 >    toute la vidéo.
+>
+> Le même jour, après avoir regardé les trois drames calés (« Madame Figue », « Mamie Pomme », « Durian ») : des mots
+> coupés en deux (« pour|quoi »), des plans où la voix est calée sur la bouche du mauvais personnage (la mère parle à
+> la place de l'ananas), et l'envie de corriger plan par plan, avec une consigne, en regardant la vidéo avec le numéro
+> du plan affiché (§1, §5, §6).
 
 ## 1. Voix des personnages calées sur la bouche des clips
 
@@ -36,10 +41,18 @@ La voix finissait souvent avant que la bouche ne s'ouvre, et H3 parle plus lente
   un mot qu'il ne couvre pas est cherché dans les passages forts du son (plan 7, « Attention la vieille ! » crié sur de
   la musique : le détecteur ne l'entendait pas) ; un premier mot que Whisper place dans un silence se rattache au
   passage parlé qui finit juste avant la suite (plan 3, « Maman, » placé à 2,26 s dans un blanc, dit à 1,60 s).
-- La réplique de synthèse est **coupée là où la bouche fait une pause** (au milieu de sa propre pause s'il y en a une
-  près du mot, sinon au début du mot), chaque morceau est **étiré ou resserré** pour durer comme la phrase de la
-  bouche (FFmpeg `atempo` : la hauteur de la voix ne bouge pas ; de ×0,8 à ×1,4, au-delà la voix sonne faux) et **posé
-  quand la bouche s'ouvre**. Fondu de 8 ms aux bords de chaque morceau (pas de clic).
+- Chaque mot de la réplique appartient à la phrase de la bouche qu'il chevauche le plus (`lipsync.assign`) ; une phrase
+  sans mot (un souffle) ne compte pas. La réplique de synthèse est **coupée seulement dans un de ses vrais blancs**
+  (≥ 0,1 s, d'après son énergie à 10 ms et le détecteur ; `pauses`, `cut_between`), entre le dernier mot d'une phrase et
+  le premier de la suivante ; **sans blanc à cet endroit, elle n'est pas coupée** et les deux phrases de la bouche n'en
+  font qu'une. Chaque morceau est **étiré ou resserré** pour durer comme sa phrase (FFmpeg `atempo` : la hauteur de la
+  voix ne bouge pas ; de ×0,8 à ×1,4, au-delà la voix sonne faux) et **posé quand la bouche s'ouvre**. Fondu de 8 ms aux
+  bords de chaque morceau (pas de clic).
+- Mots coupés (29/09, « Madame Figue », plan 16 « Prune… Pourquoi elle dort dans ta chambre ? ») : la bouche parlait en
+  trois morceaux (un souffle, « Prune… », « pourquoi elle dort… ») et Whisper plaçait « pourquoi » 0,5 s trop tôt ; la
+  première version coupait la voix juste après « pour » (« pour » à 1,4 s, « quoi… » à 2,8 s). Désormais « Prune… » va
+  sur le deuxième morceau et le reste d'un seul tenant sur le troisième. Sur les 40 plans parlés des trois drames,
+  toutes les coupes tombent dans un blanc de la voix.
 - Le plan commence **0,35 s avant que la bouche s'ouvre** : le début du clip est coupé (2 s au plus, l'image de départ
   validée au storyboard reste proche) ; il finit 0,35 s après la voix. Les longs silences du début de clip
   disparaissent : « Mamie Pomme » passe de 62,9 s à 59,6 s.
@@ -144,11 +157,63 @@ Version d'avant gardée dans `C:\YouTube2\bench\2026-09-29-levres-et-texte\` (Bi
 
 Fin à +0,35 s : la bouche bouge encore jusqu'à la coupe du plan, la voix ayant atteint son étirement maximal (×1,4).
 
-## 5. Fichiers
+## 5. Qui parle : le bon personnage
+
+Contrôle Gemini des 5 plans à deux personnages de « Mamie Pomme » (quatre images prises pendant la réplique) : **4 fois
+sur 5, H3 a fait parler la mère** (plans 7, 8, 12 et 16 : le citron, le fils ou l'ananas devaient parler), comme Luca
+l'avait vu. Le prompt disait « Api says in French… » : un nom que H3 ne peut relier à aucun visage, et « she/her » dans
+le mouvement du plan désignait souvent la mère.
+
+- **Prompt du clip** (`drama.clip_prompt`, `worker/speaker.py`) : une légende des personnages du plan, décrits par ce
+  qui se voit (le début de leur fiche et leur premier vêtement : « Api is a 30-year-old lawyer whose whole head is a
+  perfect shiny polished red apple with a small green leaf, a tailored navy suit ») et, à plusieurs, **par leur place
+  dans l'image de départ**, lue par Gemini (« on the left, kneeling down ») ; puis « Only Monsieur Ananas speaks… Mamie
+  Pomme keeps their mouth closed and only listens. »
+- **Contrôle des clips** (`keyframe_qc.clip_requirements`) : pour un plan dialogué à plusieurs, Gemini vérifie que c'est
+  la bouche de celui qui parle qui bouge et que les autres gardent la bouche fermée ; sinon le clip est refait une fois.
+- Les clips déjà faits ne changent pas : un plan fautif se corrige avec l'onglet Plans (§6).
+
+## 6. Corriger un plan : Retoucher → Plans
+
+Pour les drames, l'écran Retoucher s'ouvre sur l'onglet **Plans** :
+
+- sur la vidéo, un repère **« Plan 7 · Madame Citron »** (le plan à l'écran et qui parle) change à chaque plan, pour
+  toutes les vidéos ;
+- un **menu des plans** (« Plan 7 · Madame Citron · « Attention, la vieille !… » »), qui suit la vidéo pendant la
+  lecture (« Suivre la vidéo ») et s'arrête sur le plan dès qu'une consigne est en cours d'écriture ; choisir un plan
+  place la vidéo dessus ;
+- pour le plan : qui parle, qui est à l'image, la réplique, et **le clip brut avec la voix du modèle vidéo** (on voit
+  quelle bouche bouge) ;
+- **« Ta consigne pour ce plan »** et deux boutons :
+  - **Refaire le clip** : le clip est refait avec la consigne, que le modèle de langue (Gemini, avec l'image de départ)
+    transforme en note de réalisation anglaise pour H3 (« The golden pineapple man on the left speaks; the apple woman
+    on the right keeps her mouth closed ») ; contrôle, puis montage avec les voix recalées ;
+  - **Nouvelle prise de voix** : la même voix redit la seule réplique du plan avec une autre graine ; la consigne peut
+    demander une prononciation (« dis A-pi » : la voix lit « A-pi », les sous-titres gardent « Api ») ou un débit
+    (×0,8 à ×1,2), pas une émotion (Qwen3-TTS garde le timbre du personnage et ne joue pas sur commande). Les autres
+    répliques restent telles quelles, et leur transcription est gardée (seule la nouvelle repasse par Whisper).
+- les consignes déjà données pour le plan (date, clip et/ou voix, texte) ; elles restent dans `videos.retouch.plans`.
+
+SQL `redo_plan(vidéo, plan, consigne, clip, voix)` (migration **0028**) : mêmes conditions que Retoucher (vidéo montée,
+pas encore sur YouTube, rien en cours pour elle), puis `generate_clip` (`redo`, `note`) et/ou `tts` (`scene`, `take`,
+`note`), priorité 20, `assemble` (remontage calé) qui en dépend, `qa`. La vidéo revient à valider, une vidéo autorisée
+perd son créneau. Durée : ≈ 7 min par clip sur la carte graphique (plus l'attente du clip en cours), ≈ 1 min pour une
+prise de voix, puis montage et contrôle.
+
+Les trois drames regardés le 29/09 (« Madame Figue », « Mamie Pomme », « Durian ») étaient déjà envoyés sur YouTube,
+programmés pour le 1er octobre : YouTube ne permet pas d'en remplacer le fichier, Retoucher les laisse donc en lecture
+seule. Les corriger demande de les retirer de YouTube (YouTube Studio), puis de les rouvrir à la retouche.
+
+## 7. Fichiers
 
 | Où | Quoi |
 |---|---|
-| services/worker/worker/lipsync.py | calage : phrases de la bouche, coupes, étirement, piste et timeline, caches |
+| services/worker/worker/lipsync.py | calage : phrases de la bouche, mots par phrase, coupes dans les blancs, étirement, piste et timeline, caches (`cached_lines`, empreintes des répliques) |
+| services/worker/worker/speaker.py | qui parle : fiches courtes (`visual_tag`), légende, place dans l'image (`locate`), exigence du contrôle, notes de réalisation et de voix |
+| services/worker/worker/steps/tts.py | nouvelle prise d'une seule réplique (payload `scene`, `take`, `note`) |
+| services/worker/worker/providers/tts.py | `speak_many(…, seed=)` : une autre prise |
+| supabase/migrations/0028_corriger_un_plan.sql | SQL `redo_plan` |
+| apps/dashboard/src/components/library/retouch-plans.tsx | onglet Plans, repère « Plan N » sur la vidéo |
 | services/worker/tts_runners/whisper_words.py | mots + passages parlés (Silero) |
 | services/worker/worker/steps/assemble.py | `prepare_video` (calage des drames en voix constantes), `RenderPlan.clip_offsets` (début des clips coupé), titre éphémère (boucle, fondu) |
 | services/worker/worker/steps/generate_clip.py | transcription des clips de drame en voix constantes, contrôle « texte » des clips de drame, payload `redo` |
@@ -158,4 +223,4 @@ Fin à +0,35 s : la bouche bouge encore jusqu'à la coupe du plan, la voix ayant
 | services/worker/worker/hooktitle.py, retouch.py | `shown_for`, `fade_filter` ; `HookDisplay`, `Retouch.hook_display` |
 | services/worker/worker/config.py | `DRAMA_LIPSYNC` |
 | apps/dashboard/src/components/library/retouch-editor.tsx, lib/retouch.ts, lib/retouch-types.ts, app/library/retouch-actions.ts | case « Éphémère », curseur, enregistrement |
-| services/worker/tests/test_lipsync.py, test_no_text.py, test_hook_ephemeral.py, test_workflows.py, test_hooktitle.py | tests |
+| services/worker/tests/test_lipsync.py, test_plans.py, test_no_text.py, test_hook_ephemeral.py, test_workflows.py, test_hooktitle.py | tests |

@@ -14,9 +14,11 @@ import { MONTAGE_FORMATS, type MontageFormat, type MontageTemplate } from "@/lib
 import { audioConstants, chooseTrack, measureLoudness, syncTracks } from "@/lib/music-library";
 import {
   RETOUCHABLE_STATUSES,
+  type PlanCorrection,
   type RetouchData,
   type RetouchJob,
   type RetouchPageData,
+  type RetouchPlan,
   type RetouchScene,
   type RetouchState,
 } from "@/lib/retouch-types";
@@ -28,9 +30,17 @@ const isObject = (v: unknown): v is Json => typeof v === "object" && v !== null 
 const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 const UUID = /^[0-9a-f-]{36}$/i;
 
-type TimelineScene = { index: number; speech_start?: number | null; speech_end?: number | null; words?: { text: string; start: number; end: number }[] };
+type TimelineScene = {
+  index: number;
+  start?: number;
+  duration?: number;
+  speech_start?: number | null;
+  speech_end?: number | null;
+  words?: { text: string; start: number; end: number }[];
+};
 type ScriptJson = {
-  scenes?: { index: number; narration?: Json }[];
+  scenes?: { index: number; narration?: Json; lines?: { who?: string; text?: string }[]; characters?: string[]; duration_s?: number }[];
+  cast?: { key?: string; name?: string }[];
   hook_title?: Json;
   metadata?: Record<string, { title?: string }>;
   music_mood?: string | null;
@@ -76,6 +86,16 @@ function retouchOf(value: unknown): RetouchData {
     out.audio = Object.fromEntries(Object.entries(value.audio).filter((e): e is [string, number] => typeof e[1] === "number"));
   }
   if (typeof value.voice === "string") out.voice = value.voice;
+  if (isObject(value.plans)) {
+    out.plans = Object.fromEntries(
+      Object.entries(value.plans).map(([k, list]) => [
+        k,
+        (Array.isArray(list) ? list : []).filter(isObject).map(
+          (c): PlanCorrection => ({ note: typeof c.note === "string" ? c.note : "", clip: c.clip === true, voice: c.voice === true, at: String(c.at ?? "") }),
+        ),
+      ]),
+    );
+  }
   return out;
 }
 
@@ -89,7 +109,7 @@ export async function getRetouchState(videoId: string): Promise<RetouchState> {
       .from("jobs")
       .select("id, type, status, progress, progress_label, error, created_at, finished_at, payload")
       .eq("video_id", videoId)
-      .in("type", ["tts", "assemble", "qa"])
+      .in("type", ["generate_clip", "tts", "assemble", "qa"])
       .order("created_at", { ascending: false })
       .limit(12),
   ]);
@@ -106,7 +126,7 @@ export async function getRetouchState(videoId: string): Promise<RetouchState> {
   };
   const jobs = (rows ?? []) as Row[];
   const last = jobs.find((j) => j.type === "assemble");
-  const order = { tts: 0, assemble: 1, qa: 2 };
+  const order = { generate_clip: 0, tts: 0, assemble: 1, qa: 2 };
   const group = last ? jobs.filter((j) => j.created_at === last.created_at).sort((a, b) => order[a.type] - order[b.type]) : [];
   const qa = group.find((j) => j.type === "qa");
   return {
@@ -157,7 +177,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
   const pid = (v.production_id as string | null) ?? null;
   const lang: VoiceLang = v.lang === "en" ? "en" : "fr";
 
-  const [prod, saved, lastMontage, defaults, catalog, library, constants, state] = await Promise.all([
+  const [prod, saved, lastMontage, defaults, catalog, library, constants, state, clipRows] = await Promise.all([
     pid ? db.from("productions").select("script, series(recipe, music_moods)").eq("id", pid).maybeSingle() : Promise.resolve({ data: null }),
     db.from("montage_templates").select("name, template").eq("is_default", true).maybeSingle(),
     db.from("jobs").select("result").eq("video_id", videoId).eq("type", "assemble").eq("status", "done").order("finished_at", { ascending: false }).limit(1).maybeSingle(),
@@ -166,6 +186,9 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
     syncTracks(),
     audioConstants(),
     getRetouchState(videoId),
+    pid
+      ? db.from("assets").select("id, scene_index, created_at").eq("production_id", pid).eq("kind", "clip").order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as { id: string; scene_index: number | null; created_at: string }[] }),
   ]);
 
   const script = (prod.data?.script ?? {}) as ScriptJson;
@@ -198,6 +221,33 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
       };
     });
 
+  // Tous les plans (repère « Plan N » sur la vidéo, onglet Plans des drames) : où ils sont, qui parle, leur dernier clip
+  const names = new Map((script.cast ?? []).map((c) => [c.key ?? "", c.name ?? c.key ?? ""]));
+  const clipOf = new Map<number, string>();
+  for (const row of (clipRows.data ?? []) as { id: string; scene_index: number | null }[]) {
+    if (row.scene_index !== null && !clipOf.has(row.scene_index)) clipOf.set(row.scene_index, row.id);
+  }
+  const timed = new Map(timeline.map((s) => [s.index, s]));
+  let clock = 0;
+  const plans: RetouchPlan[] = (script.scenes ?? []).map((s, pos) => {
+    const tl = timed.get(s.index);
+    const start = tl && typeof tl.start === "number" ? tl.start : clock;
+    const end = start + (tl && typeof tl.duration === "number" ? tl.duration : Number(s.duration_s ?? 0));
+    clock = end;
+    const line = (s.lines ?? [])[0];
+    return {
+      index: s.index,
+      position: pos,
+      start,
+      end,
+      speaker: line?.who ? (names.get(line.who) ?? line.who) : null,
+      line: (s.lines ?? []).map((l) => l.text ?? "").join(" ").trim(),
+      characters: (s.characters ?? []).map((k) => names.get(k) ?? k),
+      clipAssetId: clipOf.get(s.index) ?? null,
+      corrections: retouch.plans?.[String(s.index)] ?? [],
+    };
+  });
+
   const hookAuto =
     typeof texts.hook === "string" && texts.hook ? texts.hook : cleanHook(langText(script.hook_title, lang) || script.metadata?.[lang]?.title || String(v.title ?? ""));
 
@@ -214,6 +264,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
       title: (v.title as string | null) ?? "Vidéo sans titre",
       lang,
       format,
+      recipe: series?.recipe ?? null,
       voiced,
       channelName: one(v.channels as { name: string } | { name: string }[] | null)?.name ?? null,
       youtubeVideoId: (v.youtube_video_id as string | null) ?? null,
@@ -222,6 +273,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
     hook: { auto: hookAuto, shown: template.hook.formats.includes(format), templateDurationS: template.hook.duration_s ?? null },
     subtitlesShown: voiced && template.subtitles.enabled,
     scenes: scenes.sort((a, b) => a.position - b.position),
+    plans,
     retouch,
     template: { name: (saved.data?.name as string | undefined) ?? "Modèle d’origine", audio: template.audio },
     music: { tracks, constants, current: (v.music_track as string | null) ?? null, auto: autoTrack, error: library.error },

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { AudioLines, CircleCheck, CircleX, Clapperboard, Hash, Info, LoaderCircle, Play, RotateCcw, TriangleAlert, Undo2 } from "lucide-react";
 
 import { fetchRetouchState, retouchVideo, suggestDigits } from "@/app/library/retouch-actions";
+import { PlanBadge, PlansPanel, planAt } from "@/components/library/retouch-plans";
 import { SliderField } from "@/components/montage/fields";
 import { useVideoMix, type LiveMix } from "@/components/montage/use-mix-player";
 import { VideoDecision, isDecidable } from "@/components/production/video-panel";
@@ -115,14 +116,14 @@ function changes(d: RetouchPageData, draft: Draft, before: Draft, trackTitle: (i
   return out;
 }
 
-const STEP: Record<RetouchJob["type"], string> = { tts: "Voix", assemble: "Montage", qa: "Contrôle" };
+const STEP: Record<RetouchJob["type"], string> = { generate_clip: "Clip", tts: "Voix", assemble: "Montage", qa: "Contrôle" };
 
 function JobLine({ job }: { job: RetouchJob }) {
   const text =
     job.status === "running"
       ? (job.label ?? `${job.progress} %`)
       : job.status === "queued"
-        ? job.type === "tts"
+        ? job.type === "tts" || job.type === "generate_clip"
           ? "en file : passe sur la carte graphique après la tâche en cours"
           : "en file : démarre quand le worker a fini sa tâche en cours (un clip dure jusqu’à 10 min)"
         : job.status === "done"
@@ -254,6 +255,19 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
     videoRef.current = node;
     setEl(node);
   }, []);
+  // Temps de lecture : repère « Plan N » sur la vidéo, et le menu de l'onglet Plans qui suit la vidéo
+  const [now, setNow] = React.useState(0);
+  React.useEffect(() => {
+    if (!el) return;
+    const tick = () => setNow(el.currentTime);
+    el.addEventListener("timeupdate", tick);
+    el.addEventListener("seeked", tick);
+    return () => {
+      el.removeEventListener("timeupdate", tick);
+      el.removeEventListener("seeked", tick);
+    };
+  }, [el]);
+  const drama = d.video.recipe === "drama" && d.plans.length > 0;
 
   const c = d.music.constants;
   const locked = Boolean(d.blocked) || state.busy || pending;
@@ -398,6 +412,8 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
       <div className="grid items-start gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <aside className="flex flex-col gap-3 lg:sticky lg:top-20">
           {state.finalAssetId ? (
+            <div className="relative">
+            <PlanBadge plan={planAt(d.plans, now)} />
             <video
               key={state.finalAssetId}
               ref={attachVideo}
@@ -411,6 +427,7 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                 if (listen === "draft" && !e.currentTarget.muted) setListen("current");
               }}
             />
+            </div>
           ) : (
             <p className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">Pas de vidéo montée.</p>
           )}
@@ -519,12 +536,29 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
           ) : null}
         </aside>
 
-        <Tabs defaultValue="textes" className="min-w-0 gap-4">
+        <Tabs defaultValue={drama ? "plans" : "textes"} className="min-w-0 gap-4">
           <TabsList className="w-full">
+            {drama ? <TabsTrigger value="plans">Plans</TabsTrigger> : null}
             <TabsTrigger value="textes">Textes</TabsTrigger>
             <TabsTrigger value="son">Musique et son</TabsTrigger>
             <TabsTrigger value="voix">Voix</TabsTrigger>
           </TabsList>
+
+          {drama ? (
+            <TabsContent value="plans">
+              <PlansPanel
+                videoId={d.video.id}
+                plans={d.plans}
+                now={now}
+                locked={locked}
+                onSeek={seek}
+                onResult={(res) => {
+                  setNotice(res);
+                  if (res.ok) router.refresh();
+                }}
+              />
+            </TabsContent>
+          ) : null}
 
           <TabsContent value="textes" className="flex flex-col gap-6">
             <div className="flex flex-wrap items-center gap-2">

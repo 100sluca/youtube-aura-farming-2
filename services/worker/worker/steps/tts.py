@@ -12,10 +12,13 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from ..drama import assign_voices, character_voices, is_drama, line_text
+from ..lipsync import cached_lines
 from ..models import NarrationTimeline, ScriptV1
+from ..providers.llm import get_llm
 from ..providers.tts import get_engine, resolve_voice, split_voice, tts_catalog
 from ..recipes import recipe_for_production
 from ..settings_store import load_generation_config
+from ..speaker import voice_direction
 from ..timeline import SceneSpeech, estimate_speech_s, mix_speech, plan_timeline, trim_silence
 from .base import Context, Step
 
@@ -38,8 +41,12 @@ class TTSStep(Step):
         out = ctx.video_dir(vid) / "narration.wav"
         # Retouche (Bibliothèque → Retoucher, docs/34) : voix choisie à la main pour cette vidéo, refaite même si elle existe
         forced = str(ctx.job.payload.get("voice") or "").strip()
-        if out.exists() and v["timeline"] and not forced:  # idempotence
+        retake = ctx.job.payload.get("scene")  # Retoucher → Plans (docs/38 §6) : une seule réplique redite
+        if out.exists() and v["timeline"] and not forced and retake is None:  # idempotence
             return {"path": str(out), "skipped": True}
+        if retake is not None:
+            return self._retake(ctx, out, ScriptV1.model_validate(v["script"]), v["lang"],
+                                float(v["voice_speed"] or ctx.settings.kokoro_speed), int(retake))
 
         lang = v["lang"]
         script = ScriptV1.model_validate(v["script"])
@@ -124,6 +131,54 @@ class TTSStep(Step):
             sf.write(str(out), mix_speech(timeline, speeches, rate), rate)
         self._save(ctx, timeline, out, "drama", ", ".join(f"{k}={v}" for k, v in voices.items()))
         return {"duration_s": timeline.duration_s, "words": len(timeline.words), "voices": voices}
+
+    def _retake(self, ctx: Context, out: Any, script: ScriptV1, lang: str, speed: float, index: int) -> dict[str, Any]:
+        """Nouvelle prise d'une réplique d'un drame (Retoucher → Plans, docs/38 §6) : la même voix avec une autre graine,
+        la consigne de Luca en prononciation ou en débit (speaker.voice_direction) ; les autres répliques restent telles
+        que le dernier calage les a découpées (lipsync.cached_lines). La piste et la timeline de l'étape voix sont
+        refaites, le montage recale ensuite les voix sur les bouches (la transcription des répliques inchangées est gardée)."""
+        vid, payload = ctx.job.video_id, ctx.job.payload
+        cached = cached_lines(ctx.settings, vid)
+        if cached is None:
+            raise RuntimeError("répliques de la vidéo introuvables (voix refaite depuis le dernier montage ?) : "
+                               "« Refaire la vidéo » d'abord, puis redire la réplique")
+        speeches, rate, _ = cached
+        scene = next((s for s in script.scenes if s.index == index), None)
+        text = line_text(scene) if scene else ""
+        if not scene or not text:
+            raise RuntimeError(f"le plan {index + 1} n'a pas de réplique à redire")
+        row = ctx.db.fetch_one("select tts_provider, tts_voice from videos where id = %s", (vid,)) or {}
+        if row.get("tts_provider") and row["tts_provider"] != "drama":  # voix unique choisie dans Retoucher
+            voice_id = f"{row['tts_provider']}:{row['tts_voice']}"
+        else:
+            voices = assign_voices(script.cast, list(character_voices(tts_catalog(ctx.settings), lang)))
+            voice_id = voices.get(scene.lines[0].who) or load_generation_config(ctx.settings, ctx.db).voices.get(lang) or ""
+        note = str(payload.get("note") or "").strip()
+        said, factor = voice_direction(get_llm(ctx.settings, ctx.db), text, note) if note else (text, 1.0)
+        take = int(payload.get("take") or 1)
+        ctx.log("tts.nouvelle_prise", scene=index, voix=voice_id, prise=take, consigne=note, lu=said, debit=factor)
+        if ctx.settings.dry_run:
+            out.write_bytes(b"")
+            return {"scene": index, "take": take, "voice": voice_id, "dry_run": True}
+        import numpy as np
+        import soundfile as sf
+
+        engine, voice = split_voice(voice_id)
+        ctx.progress(10, f"Voix · plan {index + 1} · prise {take + 1}")
+        sp = get_engine(ctx.settings, engine).speak_many([said], voice=voice, lang=lang, speed=speed * factor,
+                                                         seed=1234 + 1000 * take)[0]
+        x = trim_silence(sp.samples, sp.rate)
+        if sp.rate != rate:
+            x = np.interp(np.linspace(0, len(x) - 1, int(len(x) * rate / sp.rate)), np.arange(len(x)), x)
+        speeches[index] = np.asarray(x, dtype=np.float32)
+        texts = {s.index: line_text(s) for s in script.scenes}
+        scenes = [SceneSpeech(s.index, s.duration_s, texts[s.index], len(speeches[s.index]) / rate if s.index in speeches else None)
+                  for s in script.scenes]
+        timeline = plan_timeline(scenes, lang)
+        ctx.progress(80, "Piste des répliques")
+        sf.write(str(out), mix_speech(timeline, speeches, rate), rate)
+        self._save(ctx, timeline, out, row.get("tts_provider") or "drama", row.get("tts_voice") or voice_id)
+        return {"scene": index, "take": take, "voice": voice_id, "spoken": said, "speed": factor, "retouch": True}
 
     def _save(self, ctx: Context, timeline: NarrationTimeline, out: Any, provider: str, voice: str) -> None:
         vid = ctx.job.video_id

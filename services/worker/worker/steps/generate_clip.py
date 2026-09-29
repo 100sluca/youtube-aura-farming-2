@@ -26,10 +26,11 @@ from ..keyframe_qc import CLIP_SYSTEM, KeyframeVerdict, check_clip
 from ..media import last_frame
 from ..models import ScriptScene, ScriptV1
 from ..prompts import prompt_text
-from ..providers.llm import get_vision_llm
+from ..providers.llm import get_llm, get_vision_llm
 from ..providers.video import first_last_variant, get_video_provider, quality_variant, text_to_video_fallback
 from ..recipes import is_visual, motion_prompt, recipe_for_production, spec
 from ..settings_store import load_generation_config
+from ..speaker import director_note, locate, shot_members
 from .base import Context, Step
 
 
@@ -127,10 +128,13 @@ class GenerateClipStep(Step):
                 else:
                     ctx.log("clip.flf_indisponible", level="warn", scene=idx, variante=flf, image_suivante=bool(nxt))
 
-        # Drame (docs/35) : le modèle vidéo dit la réplique du plan, avec la voix du personnage ; le style est dans l'image
+        # Drame (docs/35) : le modèle vidéo dit la réplique du plan, avec la voix du personnage ; le style est dans l'image.
+        # Les personnages sont désignés par ce qui se voit et, à plusieurs, par leur place dans l'image (Gemini la lit) ;
+        # une consigne de Luca pour ce plan (Retoucher → Plans : payload « note ») devient une note de réalisation
         style = prod["style_preset"]
         if is_drama(recipe) and image is not None:
-            prompt, style = clip_prompt(script, pos, video_lang(script), prod["style_preset"]), "animation_motion"
+            where, note = self._direction(ctx, script, scene, image)
+            prompt, style = clip_prompt(script, pos, video_lang(script), prod["style_preset"], where, note), "animation_motion"
 
         extra_negative = spec(recipe).video_negative if is_visual(recipe) else ""
         if extra_negative and isinstance(getattr(provider, "negative", None), str):  # n'agit qu'avec CFG > 1 (mélange, 20 passes)
@@ -209,6 +213,23 @@ class GenerateClipStep(Step):
         return {"asset_id": str(asset_id), "provider": provider.name, "from_image": bool(image), "continues": continues,
                 "first_last": bool(end_image), **({"qc": verdict.model_dump()} if verdict else {}),
                 **({"dialogue": {k: dialogue[k] for k in ("expected", "heard", "ratio")}} if dialogue else {})}
+
+    @staticmethod
+    def _direction(ctx: Context, script: ScriptV1, scene: ScriptScene, image: Path) -> tuple[dict[str, str], str]:
+        """Place des personnages dans l'image de départ (à plusieurs) et note de réalisation tirée de la consigne de Luca
+        (payload « note ») ; rien de tout ça en simulation ou sans modèle de vision."""
+        instruction = str(ctx.job.payload.get("note") or "").strip()
+        members = shot_members(script, scene)
+        if ctx.settings.dry_run or (len(members) < 2 and not instruction):
+            return {}, instruction
+        llm = get_vision_llm(ctx.settings, ctx.db) or get_llm(ctx.settings, ctx.db)
+        where = locate(llm, image, members)
+        if where:
+            ctx.log("clip.personnages_places", scene=scene.index, places=where)
+        note = director_note(llm, script, scene, instruction, image, where) if instruction else ""
+        if instruction:
+            ctx.log("clip.consigne", scene=scene.index, consigne=instruction, note=note)
+        return where, note
 
     @staticmethod
     def _dialogue(ctx: Context, clip: Path, scene: ScriptScene, script: ScriptV1) -> dict[str, Any] | None:

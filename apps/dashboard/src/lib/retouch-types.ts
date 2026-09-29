@@ -30,6 +30,28 @@ export interface RetouchData {
   music?: { track: string | null; start_s?: number | null } | null;
   audio?: Partial<Levels>;
   voice?: string | null;
+  plans?: Record<string, PlanCorrection[]>; // consignes données plan par plan (SQL redo_plan, migration 0028)
+}
+
+/** Une correction demandée pour un plan (Retoucher → Plans, docs/38 §6). */
+export interface PlanCorrection {
+  note: string;
+  clip: boolean;
+  voice: boolean;
+  at: string;
+}
+
+/** Un plan de la vidéo montée : où il est, qui parle, son clip, et les corrections déjà demandées. */
+export interface RetouchPlan {
+  index: number; // ScriptScene.index
+  position: number;
+  start: number; // sur la vidéo montée (s)
+  end: number;
+  speaker: string | null; // nom de qui parle ; null : plan sans réplique
+  line: string;
+  characters: string[]; // noms des personnages à l'image
+  clipAssetId: string | null; // le clip tel que le modèle vidéo l'a fait (avec son propre son)
+  corrections: PlanCorrection[];
 }
 
 /** Une scène parlée : ce que dit la voix, ce que le montage automatique affiche, et la retouche enregistrée. */
@@ -45,7 +67,7 @@ export interface RetouchScene {
 
 export interface RetouchJob {
   id: string;
-  type: "tts" | "assemble" | "qa";
+  type: "generate_clip" | "tts" | "assemble" | "qa";
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   progress: number;
   label: string | null;
@@ -71,6 +93,7 @@ export interface RetouchPageData {
     title: string;
     lang: VoiceLang;
     format: MontageFormat;
+    recipe: string | null; // recette de la série (drama : onglet Plans)
     voiced: boolean; // récit narré : sous-titres et voix
     channelName: string | null;
     youtubeVideoId: string | null;
@@ -80,6 +103,7 @@ export interface RetouchPageData {
   hook: { auto: string; shown: boolean; templateDurationS: number | null }; // durée du modèle ; null : toute la vidéo
   subtitlesShown: boolean;
   scenes: RetouchScene[];
+  plans: RetouchPlan[]; // tous les plans, dans l'ordre (repère « Plan N » sur la vidéo, onglet Plans des drames)
   retouch: RetouchData;
   template: { name: string; audio: AudioLayer };
   music: {

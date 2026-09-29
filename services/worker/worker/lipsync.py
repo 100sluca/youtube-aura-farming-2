@@ -45,7 +45,9 @@ SCENE_MIN_S = 1.5
 GAP_MIN = 0.05  # entre deux morceaux de voix
 MERGE_GAP = 0.25  # deux passages parlés plus proches sont une seule phrase (un creux entre deux mots criés n'est pas une pause)
 PHRASE_MIN = 0.12
-SPLIT_TOL = 0.25  # un mot commence une phrase de la bouche s'il débute au plus 0,25 s avant elle
+PAUSE_MIN = 0.1  # un blanc de la réplique de synthèse d'au moins 0,1 s entre deux mots : on peut y couper
+PAUSE_REL = 0.08  # … s'il descend sous 8 % du 90e centile de son énergie (un « k » de « pourquoi » fait moins de 0,1 s)
+PAUSE_HOP = 0.01
 EDGE_FADE = 0.008  # fondu aux bords de chaque morceau : pas de clic à la coupe
 ENERGY_HOP = 0.05  # énergie du son du clip par tranches de 50 ms
 ENERGY_REL = 0.5  # une tranche est forte si son énergie dépasse la moitié du 90e centile du clip (cri, pas l'ambiance)
@@ -65,7 +67,8 @@ class Heard:
     words: tuple[dict[str, Any], ...] = ()
     speech: tuple[Span, ...] = ()
     ratio: float = 0.0
-    energy: tuple[float, ...] = ()  # énergie (RMS) par tranche de ENERGY_HOP, pour les passages que le détecteur rate
+    energy: tuple[float, ...] = ()  # énergie (RMS) par tranche de `hop` : passages que le détecteur rate, vraies pauses
+    hop: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -197,12 +200,54 @@ def voiced(speech: Sequence[Span], a: float, b: float) -> Span:
     return (inside[0][0], inside[-1][1]) if inside else (a, b)
 
 
-def split_point(t: float, speech: Sequence[Span]) -> float:
-    """Où couper la réplique de synthèse avant le mot qui commence à t : au milieu d'une pause proche s'il y en a une
-    (coupe dans le silence), sinon au début du mot."""
-    gaps = [(e1, s2) for (_, e1), (s2, _) in zip(sorted(speech), sorted(speech)[1:], strict=False)]
-    near = [g for g in gaps if g[0] - SPLIT_TOL <= t <= g[1] + SPLIT_TOL]
-    return round((near[0][0] + near[0][1]) / 2, 3) if near else t
+def pauses(speech: Sequence[Span], energy: Sequence[float] = (), hop: float = PAUSE_HOP) -> list[Span]:
+    """Blancs de la réplique de synthèse, entre deux passages parlés : ceux du détecteur (0,2 s et plus) et ceux de son
+    énergie (PAUSE_MIN et plus, sous PAUSE_REL × le 90e centile) ; jamais avant le premier son ni après le dernier."""
+    out = [(e1, s2) for (_, e1), (s2, _) in zip(sorted(speech), sorted(speech)[1:], strict=False) if s2 > e1]
+    if energy:
+        ref = sorted(energy)[int(0.9 * (len(energy) - 1))]
+        loud = [i for i, e in enumerate(energy) if e >= PAUSE_REL * ref]
+        if loud:
+            run: list[int] = []
+            for i in range(loud[0], loud[-1] + 1):
+                if energy[i] < PAUSE_REL * ref:
+                    run.append(i)
+                    continue
+                if len(run) * hop >= PAUSE_MIN:
+                    out.append((round(run[0] * hop, 3), round((run[-1] + 1) * hop, 3)))
+                run = []
+    return sorted(out)
+
+
+def cut_between(before: Span, after: Span, gaps: Sequence[Span]) -> float | None:
+    """Où couper la réplique de synthèse entre deux mots (`before` finit, `after` commence, temps de Whisper, à 0,1-0,3 s
+    près) : au milieu du blanc le plus proche du début d'`after` ; None s'il n'y a pas de blanc (la voix y enchaîne les
+    mots : on ne la coupe pas, sinon « pour|quoi », essai « Madame Figue » du 29/09)."""
+    a, b = before[1] - 0.15, after[0] + 0.2
+    near = [g for g in gaps if g[1] > a and g[0] < b]
+    if not near:
+        return None
+    g = min(near, key=lambda g: abs((g[0] + g[1]) / 2 - after[0]))
+    return round((g[0] + g[1]) / 2, 3)
+
+
+def assign(units: Sequence[Span], mouth: Sequence[Span]) -> list[int]:
+    """Phrase de la bouche de chaque mot de la réplique : celle qu'il chevauche le plus (sinon la plus proche), dans
+    l'ordre de la réplique (un mot n'appartient jamais à une phrase d'avant celle du mot précédent)."""
+    out: list[int] = []
+    for s, e in units:
+        ov = [min(e, m[1]) - max(s, m[0]) for m in mouth]
+        if max(ov) > 0:
+            k = max(range(len(mouth)), key=lambda j: (ov[j], -abs((s + e) / 2 - (mouth[j][0] + mouth[j][1]) / 2)))
+        else:  # mot tombé dans un silence (Whisper l'a mal placé) : la phrase d'avant s'il n'y a encore rien dedans
+            before = [j for j, m in enumerate(mouth) if m[1] <= s]
+            after = [j for j, m in enumerate(mouth) if m[0] >= e]
+            if before and before[-1] > (out[-1] if out else -1):
+                k = before[-1]
+            else:
+                k = after[0] if after else (before[-1] if before else 0)
+        out.append(max(k, out[-1]) if out else k)
+    return out
 
 
 def plan_scene(text: str, lang: str, clip: Heard, tts: Heard, clip_s: float, tts_s: float) -> ScenePlan:
@@ -218,18 +263,27 @@ def plan_scene(text: str, lang: str, clip: Heard, tts: Heard, clip_s: float, tts
         if not mouth or speaking < 0.5 * (tts_speech[-1][1] - tts_speech[0][0]):
             return ScenePlan(0.0, 0.0, mode="none")
         mouth, mode = [(mouth[0][0], mouth[-1][1])], "span"
-    # coupes : le premier mot de chaque phrase de la bouche, retrouvé dans la réplique de synthèse
+    # Phrases de la bouche qui portent des mots de la réplique (un souffle seul n'en est pas une) ; coupe de la réplique de
+    # synthèse avant le premier mot de chacune, dans un de ses blancs ; sans blanc, les deux phrases n'en font qu'une
     ut = unit_times(text, tts.words, lang) if mode == "phrases" else None
     cuts: list[float] = []
     kept: list[Span] = [mouth[0]]
-    for ps, pe in mouth[1:]:
-        k = next((i for i, (s, _) in enumerate(uh or []) if s >= ps - SPLIT_TOL), None)
-        t = split_point(ut[k][0], tts_speech) if ut and k else None
-        if t is None or t <= (cuts[-1] if cuts else tts_speech[0][0]) + 0.1 or t >= tts_speech[-1][1] - 0.1:
-            kept[-1] = (kept[-1][0], pe)  # coupe introuvable : les deux phrases n'en font qu'une
-            continue
-        cuts.append(t)
-        kept.append((ps, pe))
+    if uh and ut and len(mouth) > 1:
+        owner = assign(uh, mouth)
+        used = sorted(set(owner))
+        mouth = [mouth[k] for k in used]
+        firsts = [owner.index(k) for k in used]
+        kept = [mouth[0]]
+        gaps = pauses(tts_speech, tts.energy, tts.hop)
+        for (ps, pe), k in zip(mouth[1:], firsts[1:], strict=True):
+            t = cut_between(ut[k - 1], ut[k], gaps)
+            if t is None or t <= (cuts[-1] if cuts else tts_speech[0][0]) + 0.1 or t >= tts_speech[-1][1] - 0.1:
+                kept[-1] = (kept[-1][0], pe)
+                continue
+            cuts.append(t)
+            kept.append((ps, pe))
+    elif len(mouth) > 1:  # réplique de synthèse non transcrite : une seule pose, de la première à la dernière phrase
+        kept = [(mouth[0][0], mouth[-1][1])]
     bounds = [tts_speech[0][0], *cuts, tts_speech[-1][1]]
     pieces: list[Piece] = []
     prev = 0.0
@@ -339,6 +393,18 @@ def clip_energy(path: Path, hop: float = ENERGY_HOP) -> tuple[float, ...]:
     return tuple(round(float(v), 5) for v in np.sqrt((frames**2).mean(axis=1)))
 
 
+def line_energy(x: Any, rate: int, hop: float = PAUSE_HOP) -> tuple[float, ...]:
+    """Énergie (RMS) d'une réplique de synthèse par tranches de `hop` secondes."""
+    import numpy as np
+
+    n = max(1, int(rate * hop))
+    x = np.asarray(x, dtype=np.float32).reshape(-1)
+    if len(x) < n:
+        return ()
+    frames = x[: len(x) // n * n].reshape(-1, n)
+    return tuple(round(float(v), 5) for v in np.sqrt((frames**2).mean(axis=1)))
+
+
 def _stamp(path: Path) -> dict[str, float]:
     st = path.stat()
     return {"mtime": round(st.st_mtime, 3), "size": st.st_size}
@@ -379,6 +445,33 @@ def _heard(d: dict[str, Any] | None, expected: str) -> Heard:
     text = d.get("heard") if d.get("heard") is not None else d.get("text", "")
     return Heard(tuple(d.get("words") or ()), tuple((float(s), float(e)) for s, e in d.get("speech") or ()),
                  float(d["ratio"]) if d.get("ratio") is not None else heard_ratio(expected, str(text or "")))
+
+
+def _digest(path: Path) -> str:
+    import hashlib
+
+    return hashlib.md5(path.read_bytes()).hexdigest()  # noqa: S324  une empreinte de cache, pas de la sécurité
+
+
+def cached_lines(settings: Any, vid: Any) -> tuple[dict[int, Any], int, NarrationTimeline] | None:
+    """Les répliques de synthèse de la vidéo telles que le dernier calage les a découpées (échantillons par scène), leur
+    fréquence et la timeline de l'étape voix ; None si narration.wav a changé depuis (ou jamais calée). Sert à redire
+    une seule réplique (steps/tts.py, Retoucher → Plans)."""
+    import numpy as np
+    import soundfile as sf
+
+    narration, folder, _, _ = _paths(settings, vid)
+    try:
+        cache = json.loads((folder / "lines.json").read_text(encoding="utf-8"))
+        if not narration.is_file() or cache.get("narration") != _stamp(narration):
+            return None
+        lines = {}
+        for key, name in cache["files"].items():
+            x, _ = sf.read(str(folder / name), dtype="float32")
+            lines[int(key)] = np.asarray(x, dtype=np.float32).reshape(-1)
+        return lines, int(cache["rate"]), NarrationTimeline.model_validate(cache["tts_timeline"])
+    except (OSError, ValueError, KeyError):
+        return None
 
 
 def _cut_lines(narration: Path, tts_timeline: NarrationTimeline, folder: Path) -> tuple[dict[str, str], int]:
@@ -425,8 +518,14 @@ def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, cl
         if timeline.aligner == ALIGNER:  # timeline déjà calée, répliques perdues : on ne peut plus les redécouper
             log.warning("levres.repliques_perdues", video=str(vid))
             return fallback()
+        old = cache
         files, rate = _cut_lines(narration, timeline, folder)
-        cache = {"narration": _stamp(narration), "rate": rate, "tts_timeline": timeline.model_dump(), "files": files, "heard": {}}
+        digests = {k: _digest(folder / name) for k, name in files.items()}
+        # une réplique identique (voix refaite pour un seul plan) garde sa transcription : Whisper ne redit que la nouvelle
+        heard = {k: old["heard"][k] for k, d in digests.items()
+                 if k in (old.get("heard") or {}) and (old.get("digests") or {}).get(k) == d}
+        cache = {"narration": _stamp(narration), "rate": rate, "tts_timeline": timeline.model_dump(), "files": files,
+                 "digests": digests, "heard": heard}
     tts_timeline = NarrationTimeline.model_validate(cache["tts_timeline"])
     files, rate = cache["files"], int(cache["rate"])
 
@@ -479,7 +578,8 @@ def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, cl
             heard = _heard(c.get("dialogue"), text)
             if Path(c["local_path"]).is_file():
                 heard = replace(heard, energy=clip_energy(Path(c["local_path"])))
-            plan = plan_scene(text, lang, heard, _heard(cache["heard"].get(key), text), clip_s, len(line) / rate)
+            said = replace(_heard(cache["heard"].get(key), text), energy=line_energy(line, rate), hop=PAUSE_HOP)
+            plan = plan_scene(text, lang, heard, said, clip_s, len(line) / rate)
             if plan.mode == "none":  # personne ne parle dans le clip : l'ancienne pose (voix 0,15 s après le début)
                 plan = ScenePlan(0.0, old.duration, (Piece((0.0, len(line) / rate), LEAD_IN, 1.0),),
                                  tuple((w.text, w.start - old.start, w.end - old.start) for w in old.words))

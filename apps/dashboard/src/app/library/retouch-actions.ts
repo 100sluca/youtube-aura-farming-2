@@ -66,6 +66,9 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
   const previousVoice = (v.retouch as { voice?: unknown } | null)?.voice;
   const voice = redo ?? (typeof previousVoice === "string" ? previousVoice : null);
   if (voice) retouch.voice = voice;
+  // consignes données plan par plan (onglet Plans, SQL redo_plan) : l'historique reste
+  const plans = (v.retouch as { plans?: unknown } | null)?.plans;
+  if (plans && typeof plans === "object" && !Array.isArray(plans)) retouch.plans = plans as RetouchData["plans"];
 
   const { error: rpcError } = await db.rpc("retouch_video", { p_video: videoId, p_retouch: retouch, p_voice: redo });
   if (rpcError) return { ok: false, message: rpcError.message };
@@ -76,6 +79,37 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
     message: redo
       ? "Nouvelle voix, puis montage et contrôle : quelques minutes (la voix passe sur la carte graphique après la tâche en cours)"
       : "Montage relancé : la vidéo refaite arrive dans une minute environ",
+  };
+}
+
+const planSchema = z.object({
+  scene: z.number().int().min(0).max(999),
+  clip: z.boolean(),
+  voice: z.boolean(),
+  note: z.string().max(600),
+});
+
+/** Corrige un plan (Retoucher → Plans, docs/38 §6) : refait son clip avec la consigne (note de réalisation pour le modèle
+ * vidéo) et/ou redit sa réplique (nouvelle prise), puis remonte la vidéo avec les voix recalées et la contrôle (SQL
+ * redo_plan, migration 0028). */
+export async function redoPlan(videoId: string, input: { scene: number; clip: boolean; voice: boolean; note: string }): Promise<ActionResult> {
+  if (!UUID.test(videoId)) return { ok: false, message: "Vidéo inconnue" };
+  const parsed = planSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: `Correction refusée : ${parsed.error.issues[0]?.message ?? "valeurs invalides"}` };
+  const r = parsed.data;
+  if (!r.clip && !r.voice) return { ok: false, message: "Choisis le clip, la voix ou les deux" };
+  const { error } = await supabaseAdmin().rpc("redo_plan", { p_video: videoId, p_scene: r.scene, p_note: tidy(r.note), p_clip: r.clip, p_voice: r.voice });
+  if (error) {
+    const missing = /redo_plan/.test(error.message) && /(does not exist|could not find)/i.test(error.message);
+    return { ok: false, message: missing ? "Migration 0028 à appliquer (supabase/migrations/0028_corriger_un_plan.sql)" : error.message };
+  }
+  revalidatePath("/library");
+  revalidatePath(`/library/${videoId}/retouche`);
+  return {
+    ok: true,
+    message: r.clip
+      ? "Clip du plan en file : il passe sur la carte graphique après la tâche en cours (≈ 7 min), puis montage et contrôle"
+      : "Nouvelle prise de voix en file, puis montage et contrôle : quelques minutes",
   };
 }
 

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from .models import ScriptV1
 from .recipes import edit_instruction, edit_source
+from .speaker import requirement as speaker_requirement
 
 QC_SYSTEM = """Tu es le contrôleur qualité d'une chaîne YouTube de vidéos réalistes générées par IA. On te montre
 une image clé (image 1), parfois l'image dont elle est tirée (image 2), et la liste des exigences qu'elle doit
@@ -110,8 +111,8 @@ NO_NEW_TEXT = ("Aucun texte n'apparaît sur les images 2 à 4 qui ne soit pas d�
 def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     """Les exigences d'un clip, d'après sa scène (en français, lues par le modèle)."""
     sc = script.scenes[pos]
-    if recipe == "drama":
-        return [NO_NEW_TEXT]
+    if recipe == "drama":  # et, à plusieurs dans le plan, la bonne bouche qui bouge (worker/speaker.py, docs/38 §5)
+        return [NO_NEW_TEXT, *([req] if (req := speaker_requirement(script, sc)) else [])]
     if sc.passage:  # un passage d'une pièce à l'autre transforme l'image : seuls personnes et appareils comptent
         return ["Aucune personne n'apparaît, même au loin ou en reflet.", NO_RIG]
     if recipe == "timelapse" and sc.clip_mode == "flf" and pos < len(script.scenes) - 2:
