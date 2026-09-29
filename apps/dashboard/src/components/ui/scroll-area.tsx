@@ -16,9 +16,11 @@ function ScrollArea({
       className={cn("relative", className)}
       {...props}
     >
+      {/* Radix enveloppe le contenu dans un display: table qui s'élargit dès qu'une ligne est trop large
+          (bande d'images du storyboard) et décale tout le panneau vers la droite : on le tient à la largeur visible. */}
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1 [&>div]:block!"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
