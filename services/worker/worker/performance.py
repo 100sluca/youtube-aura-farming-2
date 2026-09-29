@@ -409,8 +409,10 @@ def video_block(v: VideoFacts) -> str:
     if v.hook_title:
         lines.append(f"  Titre d'accroche affiché : « {v.hook_title} »")
     if v.shots:
-        lines.append(f"  {v.shots} plans (en moyenne {_fmt(v.avg_shot_s, ' s', 1)} chacun) · "
-                     f"voix off : {'oui' if v.narration else 'non'} · musique : {v.music or 'aucune'}")
+        lines.append(
+            f"  {v.shots} plans (en moyenne {_fmt(v.avg_shot_s, ' s', 1)} chacun) · "
+            f"voix off : {'oui' if v.narration else 'non'} · musique : {v.music or 'aucune'}"
+        )
     if v.first_shot:
         lines.append(f"  Premier plan : {v.first_shot}")
     if v.on_screen:
@@ -479,7 +481,9 @@ def build_message(
 
 def sheet_candidates(videos: Sequence[VideoFacts], limit: int = 8) -> list[VideoFacts]:
     """Les vidéos à montrer en images : toutes les jugées s'il y en a peu, sinon les meilleures et les moins bonnes."""
-    judged = sorted((v for v in videos if v.verdict != "trop récente"), key=lambda v: int(v.ref[1:]) if v.ref[1:].isdigit() else 0)
+    judged = sorted(
+        (v for v in videos if v.verdict != "trop récente"), key=lambda v: int(v.ref[1:]) if v.ref[1:].isdigit() else 0
+    )
     if len(judged) <= limit:
         return judged
     return [*judged[: limit // 2], *judged[-(limit - limit // 2) :]]
@@ -505,14 +509,37 @@ def _norm(text: str) -> str:
 
 
 TARGETS: dict[str, LessonTarget] = {
-    "idea": "idea", "ideas": "idea", "idee": "idea", "idée": "idea", "idées": "idea", "sujet": "idea", "sujets": "idea",
-    "script": "script", "scenario": "script", "scénario": "script", "scenariste": "script", "scénariste": "script",
-    "seo": "seo", "titre": "seo", "titres": "seo", "description": "seo", "hashtags": "seo",
-    "production": "production", "montage": "production", "réglage": "production", "reglage": "production",
-    "réglages": "production", "fabrication": "production",
+    "idea": "idea",
+    "ideas": "idea",
+    "idee": "idea",
+    "idée": "idea",
+    "idées": "idea",
+    "sujet": "idea",
+    "sujets": "idea",
+    "script": "script",
+    "scenario": "script",
+    "scénario": "script",
+    "scenariste": "script",
+    "scénariste": "script",
+    "seo": "seo",
+    "titre": "seo",
+    "titres": "seo",
+    "description": "seo",
+    "hashtags": "seo",
+    "production": "production",
+    "montage": "production",
+    "réglage": "production",
+    "reglage": "production",
+    "réglages": "production",
+    "fabrication": "production",
 }
 RECIPES: dict[str, Recipe] = {
-    "timelapse": "timelapse", "chantier": "timelapse", "tour": "tour", "visite": "tour", "story": "story", "récit": "story",
+    "timelapse": "timelapse",
+    "chantier": "timelapse",
+    "tour": "tour",
+    "visite": "tour",
+    "story": "story",
+    "récit": "story",
 }
 
 

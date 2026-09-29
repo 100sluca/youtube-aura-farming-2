@@ -33,8 +33,15 @@ CHUNK = 1024 * 1024
 class ZernioError(RuntimeError):
     """Réponse d'erreur de Zernio (ou de TikTok, relayée par Zernio)."""
 
-    def __init__(self, message: str, *, status: int | None = None, code: str | None = None,
-                 retry_after: float | None = None, body: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        code: str | None = None,
+        retry_after: float | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
@@ -61,13 +68,19 @@ def _retry_after(resp: httpx.Response) -> float | None:
 def _error(resp: httpx.Response, what: str) -> ZernioError:
     body = _json(resp)
     detail = body.get("error") or body.get("message") or resp.reason_phrase
-    return ZernioError(f"Zernio {what} : {resp.status_code} {detail}", status=resp.status_code,
-                       code=body.get("code"), retry_after=_retry_after(resp), body=body)
+    return ZernioError(
+        f"Zernio {what} : {resp.status_code} {detail}",
+        status=resp.status_code,
+        code=body.get("code"),
+        retry_after=_retry_after(resp),
+        body=body,
+    )
 
 
 class ZernioClient:
-    def __init__(self, api_key: str, *, base_url: str = BASE_URL, timeout: float = 60.0,
-                 transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, api_key: str, *, base_url: str = BASE_URL, timeout: float = 60.0, transport: httpx.BaseTransport | None = None
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.http = httpx.Client(
             timeout=httpx.Timeout(timeout, connect=20.0),
@@ -107,13 +120,13 @@ class ZernioClient:
         return self._get(f"/accounts/{account_id}/tiktok/creator-info", "compte TikTok", mediaType="video")
 
     # ---- Fichier ---------------------------------------------------------------------------------------------------
-    def upload_video(self, path: str | Path, on_progress: Callable[[float], None] | None = None,
-                     attempts: int = 3) -> str:
+    def upload_video(self, path: str | Path, on_progress: Callable[[float], None] | None = None, attempts: int = 3) -> str:
         """Envoie le MP4 au stockage de Zernio et renvoie son adresse publique (à mettre dans `mediaItems`)."""
         p = Path(path)
         size = p.stat().st_size
-        resp = self.http.post(f"{self.base_url}/media/presign",
-                              json={"filename": p.name, "contentType": "video/mp4", "size": size})
+        resp = self.http.post(
+            f"{self.base_url}/media/presign", json={"filename": p.name, "contentType": "video/mp4", "size": size}
+        )
         if resp.status_code >= 400:
             raise _error(resp, "adresse d'envoi")
         presigned = _json(resp)
@@ -133,8 +146,9 @@ class ZernioClient:
         for attempt in range(1, attempts + 1):
             try:
                 # Content-Length explicite : le stockage refuse l'envoi « chunked » d'une adresse signée
-                put = self.storage.put(upload_url, content=chunks(),
-                                       headers={"Content-Type": "video/mp4", "Content-Length": str(size)})
+                put = self.storage.put(
+                    upload_url, content=chunks(), headers={"Content-Type": "video/mp4", "Content-Length": str(size)}
+                )
             except httpx.TransportError:
                 if attempt == attempts:
                     raise
@@ -143,8 +157,9 @@ class ZernioClient:
             if put.status_code < 300:
                 return str(public_url)
             if attempt == attempts or put.status_code < 500:
-                raise ZernioError(f"Envoi du fichier refusé par le stockage : {put.status_code} {put.text[:300]}",
-                                  status=put.status_code)
+                raise ZernioError(
+                    f"Envoi du fichier refusé par le stockage : {put.status_code} {put.text[:300]}", status=put.status_code
+                )
             time.sleep(5 * attempt)
         raise AssertionError("inatteignable")
 
@@ -152,8 +167,12 @@ class ZernioClient:
     def create_post(self, body: dict[str, Any], idempotency_key: str) -> tuple[int, dict[str, Any]]:
         """Crée (et programme ou publie) une publication. Renvoie le code HTTP et le corps : 200/201/207/409 sont des
         réponses normales à interpréter (voir le docstring du module) ; les autres codes lèvent ZernioError."""
-        resp = self.http.post(f"{self.base_url}/posts", json=body, headers={"Idempotency-Key": idempotency_key},
-                              timeout=httpx.Timeout(300.0, connect=20.0))  # publishNow : TikTok peut être lent
+        resp = self.http.post(
+            f"{self.base_url}/posts",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=httpx.Timeout(300.0, connect=20.0),
+        )  # publishNow : TikTok peut être lent
         data = _json(resp)
         if resp.status_code == 409 and data.get("code") == "idempotency_conflict":
             raise _error(resp, "publication")  # le même envoi est encore en cours chez Zernio : attendre Retry-After
@@ -165,7 +184,9 @@ class ZernioClient:
         return self._get(f"/posts/{post_id}", "publication").get("post") or {}
 
     # ---- Statistiques (docs/39-tiktok-partout.md) ------------------------------------------------------------------
-    def post_analytics(self, account_id: str, *, days: int = 365, max_pages: int = 20) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def post_analytics(
+        self, account_id: str, *, days: int = 365, max_pages: int = 20
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Chiffres de chaque vidéo sortie sur le compte (publiée par l'appli ou à la main), toutes pages lues, et le
         résumé de la première page (`overview.lastSync` : dernier passage de Zernio chez TikTok). Seules les vidéos
         sorties y figurent : une publication programmée n'apparaît qu'une fois publiée. 366 jours au plus par requête."""
@@ -173,8 +194,17 @@ class ZernioClient:
         posts: list[dict[str, Any]] = []
         overview: dict[str, Any] = {}
         for page in range(1, max_pages + 1):
-            data = self._get("/analytics", "statistiques des vidéos", platform="tiktok", accountId=account_id,
-                             fromDate=since, limit=100, page=page, sortBy="date", order="desc")
+            data = self._get(
+                "/analytics",
+                "statistiques des vidéos",
+                platform="tiktok",
+                accountId=account_id,
+                fromDate=since,
+                limit=100,
+                page=page,
+                sortBy="date",
+                order="desc",
+            )
             if page == 1:
                 overview = data.get("overview") or {}
             posts += [p for p in data.get("posts") or [] if isinstance(p, dict)]
@@ -200,5 +230,9 @@ class ZernioClient:
 
     def account_insights(self, account_id: str) -> dict[str, Any]:
         """Compteurs du compte lus en direct chez TikTok : abonnés, abonnements, j'aime reçus, vidéos."""
-        return self._get("/analytics/tiktok/account-insights", "statistiques du compte", accountId=account_id,
-                         metrics="follower_count,following_count,likes_count,video_count")
+        return self._get(
+            "/analytics/tiktok/account-insights",
+            "statistiques du compte",
+            accountId=account_id,
+            metrics="follower_count,following_count,likes_count,video_count",
+        )

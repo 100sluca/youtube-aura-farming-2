@@ -93,8 +93,11 @@ class TikTokPost:
 def tiktok_entry(item: dict[str, Any], account_id: str | None = None) -> dict[str, Any]:
     """Entrée TikTok de `platformAnalytics` (celle du compte voulu s'il est donné), sinon {}."""
     for p in item.get("platformAnalytics") or []:
-        if isinstance(p, dict) and p.get("platform") == "tiktok" and (not account_id or not p.get("accountId")
-                                                                      or str(p.get("accountId")) == account_id):
+        if (
+            isinstance(p, dict)
+            and p.get("platform") == "tiktok"
+            and (not account_id or not p.get("accountId") or str(p.get("accountId")) == account_id)
+        ):
             return p
     return {}
 
@@ -131,8 +134,15 @@ def parse_post(item: dict[str, Any], account_id: str | None = None) -> TikTokPos
     types_ = _shares(a.get("audienceTypes"))
     countries = _shares(a.get("audienceCountries"))
     # Chiffres TikTok for Business : tous à zéro tant que TikTok ne les a pas remplis (24 à 48 h) → inconnus
-    business = bool(sources or types_ or countries or (watch_ms or 0) > 0 or (total_ms or 0) > 0 or (completion or 0) > 0
-                    or (profile_views or 0) > 0)
+    business = bool(
+        sources
+        or types_
+        or countries
+        or (watch_ms or 0) > 0
+        or (total_ms or 0) > 0
+        or (completion or 0) > 0
+        or (profile_views or 0) > 0
+    )
     saves, reach = _int(a.get("saves")), _int(a.get("reach"))
     zernio_id = item.get("latePostId") or (None if item.get("isExternal") else item.get("postId"))
 
@@ -272,8 +282,12 @@ def parse_insights(resp: dict[str, Any]) -> dict[str, int | None]:
         m = metrics.get(name)
         return _int(m.get("total")) if isinstance(m, dict) else None
 
-    return {"followers": total("follower_count"), "following": total("following_count"), "likes": total("likes_count"),
-            "videos": total("video_count")}
+    return {
+        "followers": total("follower_count"),
+        "following": total("following_count"),
+        "likes": total("likes_count"),
+        "videos": total("video_count"),
+    }
 
 
 def account_info(acc: dict[str, Any]) -> dict[str, Any]:
@@ -288,6 +302,10 @@ def account_info(acc: dict[str, Any]) -> dict[str, Any]:
         "avatar_url": acc.get("profilePicture") or None,
         "profile_url": acc.get("profileUrl") or (f"https://www.tiktok.com/@{acc['username']}" if acc.get("username") else None),
         "business": meta.get("apiFlavor") == "business" if meta.get("apiFlavor") else None,
-        "fallback": {"followers": _int(acc.get("followersCount")), "following": _int(extra.get("followingCount")),
-                     "likes": _int(extra.get("likesCount")), "videos": _int(extra.get("videoCount"))},
+        "fallback": {
+            "followers": _int(acc.get("followersCount")),
+            "following": _int(extra.get("followingCount")),
+            "likes": _int(extra.get("likesCount")),
+            "videos": _int(extra.get("videoCount")),
+        },
     }

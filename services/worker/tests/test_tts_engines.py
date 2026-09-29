@@ -20,11 +20,21 @@ WF_DIR = Path(__file__).parents[1] / "workflows"
 
 
 def _settings(tmp_path, **extra):
-    return SimpleNamespace(**{
-        "kokoro_voice_fr": "ff_siwis", "kokoro_voice_en": "af_heart", "kokoro_speed": 1.05, "kokoro_model_path": tmp_path / "k.onnx",
-        "kokoro_voices_path": tmp_path / "v.bin", "yt2_home": tmp_path, "data_dir": tmp_path / "data", "comfy_workflow_dir": WF_DIR,
-        "comfy_base_url": "http://127.0.0.1:1", "dry_run": False, **extra,
-    })
+    return SimpleNamespace(
+        **{
+            "kokoro_voice_fr": "ff_siwis",
+            "kokoro_voice_en": "af_heart",
+            "kokoro_speed": 1.05,
+            "kokoro_model_path": tmp_path / "k.onnx",
+            "kokoro_voices_path": tmp_path / "v.bin",
+            "yt2_home": tmp_path,
+            "data_dir": tmp_path / "data",
+            "comfy_workflow_dir": WF_DIR,
+            "comfy_base_url": "http://127.0.0.1:1",
+            "dry_run": False,
+            **extra,
+        }
+    )
 
 
 def test_split_voice_keeps_old_kokoro_names():
@@ -118,8 +128,14 @@ class FakeDb:
 
 
 def test_voice_preview_dry_run_writes_result(tmp_path):
-    job = Job(id=uuid4(), type="voice_preview", status="running", priority=5, created_at=datetime.now(UTC),
-              payload={"voice": "kokoro:ff_siwis", "lang": "fr", "text": "  "})
+    job = Job(
+        id=uuid4(),
+        type="voice_preview",
+        status="running",
+        priority=5,
+        created_at=datetime.now(UTC),
+        payload={"voice": "kokoro:ff_siwis", "lang": "fr", "text": "  "},
+    )
     db = FakeDb()
     out = VoicePreviewStep().run(Context(job=job, db=db, settings=_settings(tmp_path, dry_run=True)))  # type: ignore[arg-type]
     assert out["voice"] == "kokoro:ff_siwis" and out["engine"] == "kokoro" and out["text"] == SAMPLES["fr"]

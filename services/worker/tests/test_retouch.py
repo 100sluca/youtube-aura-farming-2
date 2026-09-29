@@ -35,7 +35,17 @@ def test_display_tokens_keep_numbers_whole():
 def test_retime_rewritten_number_takes_the_time_of_the_spoken_words():
     words = distribute_words(CHALANDS, 1.0, 5.0)
     out = retime(words, "Des chalands géants de 1 350 tonnes traversent enfin l'Europe.")
-    assert [w.text for w in out] == ["Des", "chalands", "géants", "de", f"1{NBSP}350", "tonnes", "traversent", "enfin", "l'Europe."]
+    assert [w.text for w in out] == [
+        "Des",
+        "chalands",
+        "géants",
+        "de",
+        f"1{NBSP}350",
+        "tonnes",
+        "traversent",
+        "enfin",
+        "l'Europe.",
+    ]
     spoken = {w.text: w for w in words}
     assert (out[4].start, out[4].end) == (spoken["treize"].start, spoken["cinquante"].end)
     for w in out:  # mots inchangés : même temps que dans la voix
@@ -106,9 +116,17 @@ def test_load_retouch_tolerates_missing_column_and_bad_values():
 
 
 def _script() -> dict:
-    texts = ["Soixante-dix ans de travaux.", CHALANDS, "Un canal pour relier deux fleuves.", "Inauguré en dix-neuf cent quatre-vingt-douze."]
-    return {"scenes": [{"index": i, "duration_s": 5, "visual_prompt": "x", "narration": {"fr": t}} for i, t in enumerate(texts)],
-            "metadata": {"fr": {"title": "Canal", "description": "d"}}, "hook_title": {"fr": "Soixante-dix ans de travaux"}}
+    texts = [
+        "Soixante-dix ans de travaux.",
+        CHALANDS,
+        "Un canal pour relier deux fleuves.",
+        "Inauguré en dix-neuf cent quatre-vingt-douze.",
+    ]
+    return {
+        "scenes": [{"index": i, "duration_s": 5, "visual_prompt": "x", "narration": {"fr": t}} for i, t in enumerate(texts)],
+        "metadata": {"fr": {"title": "Canal", "description": "d"}},
+        "hook_title": {"fr": "Soixante-dix ans de travaux"},
+    }
 
 
 class MontageDb:
@@ -136,8 +154,13 @@ class MontageDb:
 
 
 def _settings(tmp_path: Path) -> Any:
-    return SimpleNamespace(data_dir=tmp_path, effective_sfx_dir=tmp_path, effective_music_library_dir=tmp_path,
-                           effective_music_dir=tmp_path, dry_run=True)
+    return SimpleNamespace(
+        data_dir=tmp_path,
+        effective_sfx_dir=tmp_path,
+        effective_music_library_dir=tmp_path,
+        effective_music_dir=tmp_path,
+        dry_run=True,
+    )
 
 
 def test_prepare_video_applies_retouched_subtitles_and_keeps_the_automatic_text(tmp_path: Path):
@@ -152,17 +175,33 @@ def test_prepare_video_applies_retouched_subtitles_and_keeps_the_automatic_text(
 
 def test_choose_music_forced_by_the_retouch_even_where_the_model_has_none(tmp_path: Path):
     (tmp_path / "music_7.mp3").write_bytes(b"x")
-    row = {"id": "music_7", "file": "music_7.mp3", "title": "Intrigante", "moods": ["mystere"], "formats": ["story"],
-           "weight": 2.0, "enabled": True, "gain_db": 0, "start_s": 3.0, "lufs": -10.0, "missing": False}
+    row = {
+        "id": "music_7",
+        "file": "music_7.mp3",
+        "title": "Intrigante",
+        "moods": ["mystere"],
+        "formats": ["story"],
+        "weight": 2.0,
+        "enabled": True,
+        "gain_db": 0,
+        "start_s": 3.0,
+        "lufs": -10.0,
+        "missing": False,
+    }
     db = MontageDb(None, [row])
     template = MontageTemplate.model_validate({"audio": {"formats": ["timelapse"]}})  # pas de musique sur les récits
     script = ScriptV1.model_validate(_script())
     assert assemble.choose_music(db, _settings(tmp_path), template, "story", script, "pid", None)[0] is None
-    track, why = assemble.choose_music(db, _settings(tmp_path), template, "story", script, "pid", None,
-                                       forced=MusicChoice(track="music_7", start_s=20.0))
+    track, why = assemble.choose_music(
+        db, _settings(tmp_path), template, "story", script, "pid", None, forced=MusicChoice(track="music_7", start_s=20.0)
+    )
     assert track is not None and track.id == "music_7" and track.start_s == 20.0 and "retouche" in why["reason"]
-    assert assemble.choose_music(db, _settings(tmp_path), MontageTemplate(), "story", script, "pid", "music_7",
-                                 forced=MusicChoice(track=None))[0] is None  # « Sans musique »
+    assert (
+        assemble.choose_music(
+            db, _settings(tmp_path), MontageTemplate(), "story", script, "pid", "music_7", forced=MusicChoice(track=None)
+        )[0]
+        is None
+    )  # « Sans musique »
 
 
 def test_level_fix_only_outside_the_tolerance():
@@ -173,8 +212,29 @@ def test_level_fix_only_outside_the_tolerance():
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg absent")
 def test_fix_level_brings_a_quiet_final_back_to_target(tmp_path: Path):
     final = tmp_path / "final.mp4"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x112:r=16:d=6", "-f", "lavfi", "-i",
-                    "sine=f=440:d=6,volume=0.05", "-c:v", "libx264", "-c:a", "aac", "-shortest", str(final)], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:s=64x112:r=16:d=6",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=f=440:d=6,volume=0.05",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(final),
+        ],
+        check=True,
+    )
     assert measure_loudness(final).lufs < -20  # type: ignore[operator]
     assert assemble.fix_level(final) > 5
     assert measure_loudness(final).lufs == pytest.approx(-14.0, abs=1.0)  # type: ignore[arg-type]
@@ -186,8 +246,14 @@ def test_tts_step_redoes_the_voice_chosen_by_the_retouch(tmp_path: Path, monkeyp
 
     (tmp_path / "narration.wav").write_bytes(b"old")
     asked: list[dict] = []
-    monkeypatch.setattr(tts_step, "resolve_voice", lambda settings, voices, lang: (asked.append(voices) or (SimpleNamespace(name="qwen3"), "serena")))
-    monkeypatch.setattr(tts_step, "load_generation_config", lambda settings, db: SimpleNamespace(voices={"fr": "kokoro:ff_siwis"}))
+    monkeypatch.setattr(
+        tts_step,
+        "resolve_voice",
+        lambda settings, voices, lang: asked.append(voices) or (SimpleNamespace(name="qwen3"), "serena"),
+    )
+    monkeypatch.setattr(
+        tts_step, "load_generation_config", lambda settings, db: SimpleNamespace(voices={"fr": "kokoro:ff_siwis"})
+    )
     saved: list[tuple] = []
 
     class Db:
@@ -204,8 +270,14 @@ def test_tts_step_redoes_the_voice_chosen_by_the_retouch(tmp_path: Path, monkeyp
             return 1
 
     def ctx(payload: dict) -> Any:
-        return SimpleNamespace(job=SimpleNamespace(video_id="v", payload=payload), db=Db(), settings=SimpleNamespace(dry_run=True, kokoro_speed=1.0),
-                               video_dir=lambda vid: tmp_path, progress=lambda *a: None, log=lambda *a, **k: None)
+        return SimpleNamespace(
+            job=SimpleNamespace(video_id="v", payload=payload),
+            db=Db(),
+            settings=SimpleNamespace(dry_run=True, kokoro_speed=1.0),
+            video_dir=lambda vid: tmp_path,
+            progress=lambda *a: None,
+            log=lambda *a, **k: None,
+        )
 
     assert tts_step.TTSStep().run(ctx({}))["skipped"] is True  # narration déjà là : rien à refaire
     result = tts_step.TTSStep().run(ctx({"voice": "qwen3:serena", "retouch": True}))

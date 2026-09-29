@@ -21,7 +21,9 @@ NOW = datetime(2026, 9, 29, 1, 0, tzinfo=UTC)
 
 
 def test_caption_is_title_then_description_without_shorts_tag():
-    desc = "Regardez cette grange.\nQuel détail préféré ?\n\n#renovation #loft #Shorts\n\nLieu imaginaire : images générées par IA."
+    desc = (
+        "Regardez cette grange.\nQuel détail préféré ?\n\n#renovation #loft #Shorts\n\nLieu imaginaire : images générées par IA."
+    )
     cap = tp.build_caption("Grange ruinée en loft", desc)
     assert cap.startswith("Grange ruinée en loft\n\nRegardez cette grange.")
     assert "#Shorts" not in cap and "#renovation #loft" in cap
@@ -52,8 +54,9 @@ def test_idempotency_key_is_stable_per_round():
 
 def test_post_body_public_scheduled_without_ai_label_by_default():
     slot = NOW + timedelta(hours=8)
-    body = tp.post_body(caption="c", media_url="https://media.zernio.com/temp/v.mp4", account_id="acc", cfg=TikTokConfig(),
-                        when=slot)
+    body = tp.post_body(
+        caption="c", media_url="https://media.zernio.com/temp/v.mp4", account_id="acc", cfg=TikTokConfig(), when=slot
+    )
     s = body["tiktokSettings"]
     assert body["scheduledFor"] == slot.isoformat() and "publishNow" not in body
     assert s["privacy_level"] == "PUBLIC_TO_EVERYONE" and s["media_type"] == "video"
@@ -72,24 +75,44 @@ def test_post_body_now_draft_and_ai_label_when_asked():
 
 
 def test_parse_config_reads_channels_and_defaults():
-    cfg = parse_config({"channels": {"c1": {"account_id": "a1", "username": "arzak", "enabled": True,
-                                            "enabled_at": "2026-09-29T01:40:00+02:00"}}, "ai_label": "oui"})
+    cfg = parse_config(
+        {
+            "channels": {
+                "c1": {"account_id": "a1", "username": "arzak", "enabled": True, "enabled_at": "2026-09-29T01:40:00+02:00"}
+            },
+            "ai_label": "oui",
+        }
+    )
     assert cfg.for_channel("c1").username == "arzak" and cfg.for_channel("c1").enabled_at.hour == 1
     assert cfg.for_channel("c2") is None
     assert cfg.ai_label is False and cfg.allow_comment is True  # valeur non booléenne : défaut
 
 
 def test_read_create_handles_success_failure_and_duplicate():
-    ok = tp.read_create(201, {"post": {"_id": "p1", "status": "scheduled",
-                                       "platforms": [{"platform": "tiktok", "status": "pending"}]}})
+    ok = tp.read_create(
+        201, {"post": {"_id": "p1", "status": "scheduled", "platforms": [{"platform": "tiktok", "status": "pending"}]}}
+    )
     assert (ok.status, ok.post_id) == ("scheduled", "p1")
-    failed = tp.read_create(207, {"post": {"_id": "p2", "status": "failed", "platforms": [
-        {"platform": "tiktok", "status": "failed", "errorMessage": "TikTok flagged this post (spam_risk)"}]}})
+    failed = tp.read_create(
+        207,
+        {
+            "post": {
+                "_id": "p2",
+                "status": "failed",
+                "platforms": [{"platform": "tiktok", "status": "failed", "errorMessage": "TikTok flagged this post (spam_risk)"}],
+            }
+        },
+    )
     assert failed.status == "failed" and "spam_risk" in failed.error
     dup = tp.read_create(409, {"error": "Duplicate", "existingPostId": "p0"})
     assert (dup.status, dup.post_id) == ("pending", "p0")
-    published = tp.read_post({"_id": "p3", "status": "published", "platforms": [
-        {"platform": "tiktok", "status": "published", "platformPostUrl": "https://www.tiktok.com/@a/video/1"}]})
+    published = tp.read_post(
+        {
+            "_id": "p3",
+            "status": "published",
+            "platforms": [{"platform": "tiktok", "status": "published", "platformPostUrl": "https://www.tiktok.com/@a/video/1"}],
+        }
+    )
     assert published.url.endswith("/video/1")
 
 
@@ -98,14 +121,21 @@ def _fake_zernio(log: list):
         log.append((request.method, request.url.host, request.url.path, dict(request.headers)))
         if request.url.path.endswith("/media/presign"):
             assert json.loads(request.content)["contentType"] == "video/mp4"
-            return httpx.Response(200, json={"uploadUrl": "https://bucket.r2.example/temp/v.mp4?sig=1",
-                                             "publicUrl": "https://media.zernio.com/temp/v.mp4"})
+            return httpx.Response(
+                200,
+                json={
+                    "uploadUrl": "https://bucket.r2.example/temp/v.mp4?sig=1",
+                    "publicUrl": "https://media.zernio.com/temp/v.mp4",
+                },
+            )
         if request.url.host == "bucket.r2.example":
             assert request.headers["content-length"] == str(len(request.read()))
             return httpx.Response(200)
         if request.url.path.endswith("/posts") and request.method == "POST":
-            return httpx.Response(201, json={"post": {"_id": "p1", "status": "scheduled", "platforms": [
-                {"platform": "tiktok", "status": "pending"}]}})
+            return httpx.Response(
+                201,
+                json={"post": {"_id": "p1", "status": "scheduled", "platforms": [{"platform": "tiktok", "status": "pending"}]}},
+            )
         if request.url.path.endswith("/accounts"):
             return httpx.Response(429, headers={"Retry-After": "30"}, json={"error": "Too many", "code": "rate_limited"})
         return httpx.Response(404, json={"error": "Not found"})
@@ -182,8 +212,16 @@ def _run(monkeypatch, video: dict, post: dict):
 
 
 def _video(state: dict) -> dict:
-    return {"id": uuid4(), "channel_id": uuid4(), "title": "t", "description": "d", "scheduled_at": None,
-            "tiktok": state, "local_path": None, "timezone": "Europe/Paris"}
+    return {
+        "id": uuid4(),
+        "channel_id": uuid4(),
+        "title": "t",
+        "description": "d",
+        "scheduled_at": None,
+        "tiktok": state,
+        "local_path": None,
+        "timezone": "Europe/Paris",
+    }
 
 
 def test_step_waits_until_the_scheduled_time(monkeypatch):
@@ -196,8 +234,17 @@ def test_step_waits_until_the_scheduled_time(monkeypatch):
 
 def test_step_records_the_tiktok_link_once_published(monkeypatch):
     video = _video({"status": "scheduled", "post_id": "p1", "scheduled_for": NOW.isoformat(), "round": 1})
-    result, db = _run(monkeypatch, video, {"_id": "p1", "status": "published", "platforms": [
-        {"platform": "tiktok", "status": "published", "platformPostUrl": "https://www.tiktok.com/@arzak/video/9"}]})
+    result, db = _run(
+        monkeypatch,
+        video,
+        {
+            "_id": "p1",
+            "status": "published",
+            "platforms": [
+                {"platform": "tiktok", "status": "published", "platformPostUrl": "https://www.tiktok.com/@arzak/video/9"}
+            ],
+        },
+    )
     assert result["url"].endswith("/video/9") and db.saved[-1]["status"] == "published"
 
 
@@ -205,16 +252,22 @@ def test_step_waits_for_the_link_then_gives_up_after_an_hour(monkeypatch):
     pub = {"_id": "p1", "status": "published", "platforms": [{"platform": "tiktok", "status": "published"}]}
     with pytest.raises(Postpone):
         _run(monkeypatch, _video({"status": "published", "post_id": "p1", "round": 1}), pub)
-    result, _ = _run(monkeypatch, _video({"status": "published", "post_id": "p1", "round": 1,
-                                          "url_checks": step_mod.URL_CHECKS}), pub)
+    result, _ = _run(
+        monkeypatch, _video({"status": "published", "post_id": "p1", "round": 1, "url_checks": step_mod.URL_CHECKS}), pub
+    )
     assert result["status"] == "published" and result["url"] is None
-
-
 
 
 def test_step_fails_loudly_when_tiktok_refuses(monkeypatch):
     video = _video({"status": "publishing", "post_id": "p1", "round": 1})
     with pytest.raises(RuntimeError, match="spam_risk"):
-        _run(monkeypatch, video, {"_id": "p1", "status": "failed", "platforms": [
-            {"platform": "tiktok", "status": "failed", "errorMessage": "TikTok flagged this post (spam_risk)"}]})
+        _run(
+            monkeypatch,
+            video,
+            {
+                "_id": "p1",
+                "status": "failed",
+                "platforms": [{"platform": "tiktok", "status": "failed", "errorMessage": "TikTok flagged this post (spam_risk)"}],
+            },
+        )
     assert video["tiktok"]["status"] == "failed"

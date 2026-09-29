@@ -85,7 +85,13 @@ class SubtitleProfile(BaseModel):
     title_y: int = Field(330, ge=80, le=1400, description="centre vertical du titre, en px depuis le haut")
 
     @field_validator(
-        "text_color", "highlight_color", "outline_color", "shadow_color", "background_color", "title_text_color", "title_box_color"
+        "text_color",
+        "highlight_color",
+        "outline_color",
+        "shadow_color",
+        "background_color",
+        "title_text_color",
+        "title_box_color",
     )
     @classmethod
     def _hex(cls, v: str) -> str:
@@ -307,9 +313,15 @@ def read_face(path: Path) -> FontFace | None:
         pass
     subfamily = names.get(17) or names.get(2) or "Regular"
     return FontFace(
-        path=path, family=names[1], typographic_family=names.get(16) or names[1], subfamily=subfamily, weight=weight,
-        italic=italic or "italic" in subfamily.lower() or "oblique" in subfamily.lower(), units_per_em=upm,
-        win_ascent=win_asc, win_descent=win_desc,
+        path=path,
+        family=names[1],
+        typographic_family=names.get(16) or names[1],
+        subfamily=subfamily,
+        weight=weight,
+        italic=italic or "italic" in subfamily.lower() or "oblique" in subfamily.lower(),
+        units_per_em=upm,
+        win_ascent=win_asc,
+        win_descent=win_desc,
     )
 
 
@@ -525,8 +537,13 @@ class TitleStyle:
 
     @classmethod
     def from_profile(cls, p: SubtitleProfile) -> TitleStyle:
-        return cls(size=p.title_font_size, text_color=p.title_text_color, box_color=p.title_box_color,
-                   box_opacity=p.title_box_opacity, y=p.title_y)
+        return cls(
+            size=p.title_font_size,
+            text_color=p.title_text_color,
+            box_color=p.title_box_color,
+            box_opacity=p.title_box_opacity,
+            y=p.title_y,
+        )
 
 
 def _bold_flag(choice: FontChoice) -> int:
@@ -681,7 +698,13 @@ def build_ass(
         if karaoke or profile.highlight_mode == "none":
             body = _karaoke_text(cap, words, profile) if karaoke else plain
             if shadow_on:
-                dialogue(1, cap.start, cap.end, "Shadow", f"{{{_animation(profile, x + dx, y + dy)}\\blur{profile.shadow_blur:g}}}{plain}")
+                dialogue(
+                    1,
+                    cap.start,
+                    cap.end,
+                    "Shadow",
+                    f"{{{_animation(profile, x + dx, y + dy)}\\blur{profile.shadow_blur:g}}}{plain}",
+                )
             dialogue(2, cap.start, cap.end, "Main", f"{{{_animation(profile, x, y)}}}{body}")
             continue
         # Mode « word » : une tranche par mot prononcé ; l'animation d'entrée ne joue que sur la première

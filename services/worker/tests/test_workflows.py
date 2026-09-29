@@ -53,8 +53,17 @@ def test_image_to_video_workflows_and_t2v_latent():
 
 def test_patch_workflow_sets_inputs_by_title():
     wf = _load("wan22_i2v_4step")
-    out = patch_workflow(wf, prompt="slow dolly in", negative="blurry", seed=42, width=480, height=832, frames=81,
-                         image_name="yt2_scene.png", prefix="yt2/scene_00")
+    out = patch_workflow(
+        wf,
+        prompt="slow dolly in",
+        negative="blurry",
+        seed=42,
+        width=480,
+        height=832,
+        frames=81,
+        image_name="yt2_scene.png",
+        prefix="yt2/scene_00",
+    )
     assert nodes_titled(out, "PROMPT")[0]["inputs"]["text"] == "slow dolly in"
     assert nodes_titled(out, "SEED")[0]["inputs"]["noise_seed"] == 42
     assert nodes_titled(out, "SIZE")[0]["inputs"]["length"] == 81
@@ -94,8 +103,9 @@ def test_minimax_h3_and_qwen_image_2512(tmp_path):
     settings = SimpleNamespace(comfy_workflow_dir=WF_DIR, comfy_base_url="http://127.0.0.1:1", comfy_timeout_s=1, video_size=None)
     assert first_last_variant(settings, "comfy_minimax_h3_i2v") == "comfy_minimax_h3_flf2v"
     video = ComfyVideo(settings, "minimax_h3_i2v")  # jamais moins de 124 images : H3 a appris de 124 à 362
-    info = video.generate(prompt="p", style_preset=None, duration_s=1.5, out_path=tmp_path / "c.mp4",
-                          on_progress=lambda _p: None, dry_run=True)
+    info = video.generate(
+        prompt="p", style_preset=None, duration_s=1.5, out_path=tmp_path / "c.mp4", on_progress=lambda _p: None, dry_run=True
+    )
     assert (video.width, video.height, video.fps) == (480, 832, 24) and round(info.duration_s, 2) == 5.17  # 8 Go
     qwen = patch_workflow(_load("qwen_image_2512"), prompt="x", negative="y", seed=2, width=768, height=1344)
     assert nodes_titled(qwen, "SEED")[0]["inputs"]["steps"] == 8 and nodes_titled(qwen, "PROMPT")[0]["inputs"]["text"] == "x"
@@ -112,7 +122,10 @@ def test_no_text_is_said_in_the_prompt_when_the_negative_is_ignored():
     for name in ("wan22_i2v_4step", "ltxv_2b_i2v", "flux1_schnell_gguf"):
         assert ignores_negative(_load(name)) and not says_no_text(_load(name)), name
     assert full_prompt("Kiwi cries", "animation_motion", True).endswith(f"cinematic lighting. {NO_TEXT}")
-    assert full_prompt("Kiwi cries", "animation_motion", False) == "Kiwi cries, smooth expressive character animation, cinematic lighting"
+    assert (
+        full_prompt("Kiwi cries", "animation_motion", False)
+        == "Kiwi cries, smooth expressive character animation, cinematic lighting"
+    )
 
 
 def test_minimax_h3_20step_is_the_official_setting():

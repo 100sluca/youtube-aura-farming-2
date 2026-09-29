@@ -63,7 +63,9 @@ class SourceDoc:
 
 
 class WikipediaClient:
-    def __init__(self, lang: str = "fr", user_agent: str = DEFAULT_USER_AGENT, timeout_s: float = 20.0, pause_s: float = 0.25) -> None:
+    def __init__(
+        self, lang: str = "fr", user_agent: str = DEFAULT_USER_AGENT, timeout_s: float = 20.0, pause_s: float = 0.25
+    ) -> None:
         self.lang = lang
         self.headers = {"User-Agent": user_agent, "Accept": "application/json"}
         self.timeout_s, self.pause_s = timeout_s, pause_s
@@ -87,8 +89,16 @@ class WikipediaClient:
     def search(self, query: str, limit: int = 8) -> list[str]:
         data = self._get(
             self.api,
-            {"action": "query", "list": "search", "srsearch": query, "srlimit": limit, "srnamespace": 0,
-             "format": "json", "formatversion": 2, "utf8": 1},
+            {
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "srlimit": limit,
+                "srnamespace": 0,
+                "format": "json",
+                "formatversion": 2,
+                "utf8": 1,
+            },
         )
         return [h["title"] for h in data.get("query", {}).get("search", [])]
 
@@ -97,8 +107,15 @@ class WikipediaClient:
             return []
         data = self._get(
             self.api,
-            {"action": "query", "generator": "random", "grnnamespace": 0, "grnlimit": n, "grnfilterredir": "nonredirects",
-             "format": "json", "formatversion": 2},
+            {
+                "action": "query",
+                "generator": "random",
+                "grnnamespace": 0,
+                "grnlimit": n,
+                "grnfilterredir": "nonredirects",
+                "format": "json",
+                "formatversion": 2,
+            },
         )
         return [p["title"] for p in data.get("query", {}).get("pages", [])]
 
@@ -106,9 +123,20 @@ class WikipediaClient:
         """Texte brut de la page (coupé à `chars` sur une fin de phrase), URL canonique, révision, description."""
         data = self._get(
             self.api,
-            {"action": "query", "titles": title, "redirects": 1, "prop": "extracts|info|revisions|description|pageimages",
-             "explaintext": 1, "exsectionformat": "plain", "inprop": "url", "rvprop": "ids",
-             "piprop": "thumbnail", "pithumbsize": 640, "format": "json", "formatversion": 2},
+            {
+                "action": "query",
+                "titles": title,
+                "redirects": 1,
+                "prop": "extracts|info|revisions|description|pageimages",
+                "explaintext": 1,
+                "exsectionformat": "plain",
+                "inprop": "url",
+                "rvprop": "ids",
+                "piprop": "thumbnail",
+                "pithumbsize": 640,
+                "format": "json",
+                "formatversion": 2,
+            },
         )
         pages = data.get("query", {}).get("pages", [])
         if not pages or pages[0].get("missing") or not pages[0].get("extract"):
@@ -117,7 +145,9 @@ class WikipediaClient:
         revs = p.get("revisions") or [{}]
         return SourceDoc(
             title=p["title"],
-            url=p.get("canonicalurl") or p.get("fullurl") or f"https://{self.lang}.wikipedia.org/wiki/{p['title'].replace(' ', '_')}",
+            url=p.get("canonicalurl")
+            or p.get("fullurl")
+            or f"https://{self.lang}.wikipedia.org/wiki/{p['title'].replace(' ', '_')}",
             lang=self.lang,
             extract=clip_text(p["extract"], chars),
             revision=revs[0].get("revid"),
@@ -129,8 +159,15 @@ class WikipediaClient:
         """Titre de la même page dans une autre langue (liens interlangues) ; None si elle n'existe pas."""
         data = self._get(
             self.api,
-            {"action": "query", "titles": title, "redirects": 1, "prop": "langlinks", "lllang": lang,
-             "format": "json", "formatversion": 2},
+            {
+                "action": "query",
+                "titles": title,
+                "redirects": 1,
+                "prop": "langlinks",
+                "lllang": lang,
+                "format": "json",
+                "formatversion": 2,
+            },
         )
         pages = data.get("query", {}).get("pages", [])
         links = (pages[0].get("langlinks") or []) if pages else []
@@ -142,8 +179,16 @@ class WikipediaClient:
         for title in (name, *self.search(name, 1)):
             data = self._get(
                 self.api,
-                {"action": "query", "titles": title, "redirects": 1, "prop": "coordinates|pageprops|info",
-                 "ppprop": "wikibase_item", "inprop": "url", "format": "json", "formatversion": 2},
+                {
+                    "action": "query",
+                    "titles": title,
+                    "redirects": 1,
+                    "prop": "coordinates|pageprops|info",
+                    "ppprop": "wikibase_item",
+                    "inprop": "url",
+                    "format": "json",
+                    "formatversion": 2,
+                },
             )
             pages = data.get("query", {}).get("pages", [])
             if not pages or pages[0].get("missing"):
@@ -151,8 +196,11 @@ class WikipediaClient:
             p = pages[0]
             coords = [c for c in p.get("coordinates") or [] if c.get("globe", "earth") == "earth"]
             return {
-                "title": p["title"], "url": p.get("fullurl"), "qid": (p.get("pageprops") or {}).get("wikibase_item"),
-                "lat": coords[0]["lat"] if coords else None, "lon": coords[0]["lon"] if coords else None,
+                "title": p["title"],
+                "url": p.get("fullurl"),
+                "qid": (p.get("pageprops") or {}).get("wikibase_item"),
+                "lat": coords[0]["lat"] if coords else None,
+                "lon": coords[0]["lon"] if coords else None,
             }
         return None
 
@@ -180,7 +228,14 @@ def _candidates(client: WikipediaClient, config: dict[str, Any], day: date) -> l
         feed = client.featured(day)
         tfa = feed.get("tfa")
         if "tfa" in feeds and tfa:
-            out.append((tfa.get("titles", {}).get("normalized") or tfa.get("title"), "tfa", "Article du jour", tfa.get("description") or ""))
+            out.append(
+                (
+                    tfa.get("titles", {}).get("normalized") or tfa.get("title"),
+                    "tfa",
+                    "Article du jour",
+                    tfa.get("description") or "",
+                )
+            )
         if "onthisday" in feeds:
             max_year = config.get("onthisday_max_year")  # ex. 1995 : les drames récents ne font pas de bonnes histoires
             picked = 0
@@ -190,14 +245,23 @@ def _candidates(client: WikipediaClient, config: dict[str, Any], day: date) -> l
                     continue
                 title = pages[0].get("titles", {}).get("normalized") or pages[0].get("title")
                 text = e.get("text", "")
-                out.append((title, "onthisday", f"{day:%d/%m} {e.get('year')} : {clip_text(text, 140)}", f"{text} {pages[0].get('description') or ''}"))
+                out.append(
+                    (
+                        title,
+                        "onthisday",
+                        f"{day:%d/%m} {e.get('year')} : {clip_text(text, 140)}",
+                        f"{text} {pages[0].get('description') or ''}",
+                    )
+                )
                 picked += 1
                 if picked >= int(config.get("onthisday_max", 4)):
                     break
         if "mostread" in feeds:
             for a in feed.get("mostread", {}).get("articles", [])[: int(config.get("mostread_max", 6))]:
                 title = a.get("titles", {}).get("normalized") or a.get("title")
-                out.append((title, "mostread", f"{a.get('views', 0):,} lectures hier".replace(",", " "), a.get("description") or ""))
+                out.append(
+                    (title, "mostread", f"{a.get('views', 0):,} lectures hier".replace(",", " "), a.get("description") or "")
+                )
     queries = list(config.get("queries", []))
     if queries:
         k = min(len(queries), int(config.get("queries_per_day", 2)))
@@ -275,7 +339,9 @@ def material_text(docs: list[SourceDoc], chars: int = 2500) -> str:
     """Matière numérotée pour le LLM : [n] titre, URL, provenance, puis l'extrait."""
     blocks = []
     for i, d in enumerate(docs, start=1):
-        head = f"[{i}] {d.title} — {d.url}" + (f" · {d.note}" if d.note else "") + (f" · {d.description}" if d.description else "")
+        head = (
+            f"[{i}] {d.title} — {d.url}" + (f" · {d.note}" if d.note else "") + (f" · {d.description}" if d.description else "")
+        )
         blocks.append(head + "\n" + clip_text(d.extract, chars))
     return "\n\n".join(blocks)
 

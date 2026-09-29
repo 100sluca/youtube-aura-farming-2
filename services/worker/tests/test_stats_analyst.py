@@ -67,9 +67,19 @@ SCRIPT = {
     "hook_title": {"fr": "Tu paierais combien pour cette villa ?", "en": "How much?"},
     "music_mood": "luxury",
     "scenes": [
-        {"duration_s": 4.0, "visual_prompt": "Exterior view of a cave villa", "on_screen_text": {"fr": "Entrée · Santorin"}, "narration": {}},
+        {
+            "duration_s": 4.0,
+            "visual_prompt": "Exterior view of a cave villa",
+            "on_screen_text": {"fr": "Entrée · Santorin"},
+            "narration": {},
+        },
         {"duration_s": 1.2, "visual_prompt": "Passage", "on_screen_text": {}, "narration": {}},
-        {"duration_s": 4.0, "visual_prompt": "Vaulted living room", "on_screen_text": {"fr": "Salon · 45 m²"}, "narration": {"fr": ""}},
+        {
+            "duration_s": 4.0,
+            "visual_prompt": "Vaulted living room",
+            "on_screen_text": {"fr": "Salon · 45 m²"},
+            "narration": {"fr": ""},
+        },
     ],
 }
 
@@ -170,7 +180,9 @@ def test_clean_report_maps_refs_normalizes_and_caps():
         ],
         patterns=[Pattern(finding="Rythme", evidence="1 247 contre 72", confidence="bonne")] * 7,
         lessons=[
-            LessonProposal(target="Script", recipe="visite", rule="Change de plan toutes les secondes.", why="V1", confidence="bonne"),
+            LessonProposal(
+                target="Script", recipe="visite", rule="Change de plan toutes les secondes.", why="V1", confidence="bonne"
+            ),
             LessonProposal(target="montage", recipe="tous", rule="Coupe les visites à 20 s.", why="V2"),
             LessonProposal(target="script", rule="change de plan toutes les secondes !", why="doublon"),
             LessonProposal(target="seo", rule="Mets un prix dans le titre.", why="déjà en service"),
@@ -183,7 +195,10 @@ def test_clean_report_maps_refs_normalizes_and_caps():
     assert [d["ref"] for d in report["videos"]] == ["V1"] and report["videos"][0]["verdict"] == "top"
     assert len(report["patterns"]) == 5 and report["patterns"][0]["confidence"] == "moyenne"  # 4 vidéos jugées
     assert len(report["experiments"]) == 3
-    assert [(x.target, x.recipe, x.confidence) for x in lessons] == [("script", "tour", "moyenne"), ("production", None, "faible")]
+    assert [(x.target, x.recipe, x.confidence) for x in lessons] == [
+        ("script", "tour", "moyenne"),
+        ("production", None, "faible"),
+    ]
     assert confidence_cap(2) == "faible" and confidence_cap(12) == "bonne"
 
 

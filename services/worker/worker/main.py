@@ -179,15 +179,24 @@ def main() -> None:
     io_inflight: set = set()
     preview_busy, preview_stop = threading.Event(), threading.Event()
     if preview_types and not args.once:
-        threading.Thread(target=preview_lane, args=(db, settings, preview_types, preview_busy, preview_stop),
-                         name="preview", daemon=True).start()
+        threading.Thread(
+            target=preview_lane, args=(db, settings, preview_types, preview_busy, preview_stop), name="preview", daemon=True
+        ).start()
     stats_types = [t for t in STATS_TYPES if t in io_types]
     stats_busy, stats_stop = threading.Event(), threading.Event()
     if stats_types and not args.once:
-        threading.Thread(target=preview_lane, args=(db, settings, stats_types, stats_busy, stats_stop, "stats"),
-                         name="stats", daemon=True).start()
-    log.info("worker.start", id=settings.worker_id, gpu=gpu_types, io=io_types, preview=preview_types, stats=stats_types,
-             dry_run=settings.dry_run)
+        threading.Thread(
+            target=preview_lane, args=(db, settings, stats_types, stats_busy, stats_stop, "stats"), name="stats", daemon=True
+        ).start()
+    log.info(
+        "worker.start",
+        id=settings.worker_id,
+        gpu=gpu_types,
+        io=io_types,
+        preview=preview_types,
+        stats=stats_types,
+        dry_run=settings.dry_run,
+    )
     started_stamp, last_check, draining, restart = code_stamp(), time.monotonic(), False, False
     # signe de vie pour la barre latérale du dashboard (« Machine », docs/28) : toutes les 30 s, même pendant un clip
     beat = StatusBeat(db, settings.worker_id, settings.comfy_base_url)

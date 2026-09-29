@@ -166,22 +166,45 @@ class MontageTemplate(BaseModel):
     def title_style(self) -> TitleStyle:
         t = self.titles
         return TitleStyle(
-            font_family=t.font_family, bold=t.bold, size=t.size, text_color=t.text_color,
-            transform="uppercase" if t.uppercase else "none", style=t.background, box_color=t.box_color,
-            box_opacity=t.box_opacity, padding=t.padding, outline_color=t.outline_color, outline_width=t.outline_width,
-            x=t.x, y=t.y,
+            font_family=t.font_family,
+            bold=t.bold,
+            size=t.size,
+            text_color=t.text_color,
+            transform="uppercase" if t.uppercase else "none",
+            style=t.background,
+            box_color=t.box_color,
+            box_opacity=t.box_opacity,
+            padding=t.padding,
+            outline_color=t.outline_color,
+            outline_width=t.outline_width,
+            x=t.x,
+            y=t.y,
         )
 
     def hook_style(self, fonts: FontRegistry) -> HookStyle:
         h = self.hook
         choice = fonts.pick(h.font_family, h.bold)
         return HookStyle(
-            size=h.size, width_pct=h.width_pct, bg=h.background != "none", bg_color=h.background_color,
-            text_color=h.text_color, line_spacing=h.line_spacing, radius=h.radius, y=h.y, duration_s=h.duration_s,
-            font_path=str(choice.path) if choice.path else None, x=h.x, align=h.align,
-            bg_mode="block" if h.background == "block" else "plate", bg_opacity=h.background_opacity,
-            pad_x=h.padding_x, pad_y=h.padding_y, outline_color=h.outline_color, outline_width=h.outline_width,
-            uppercase=h.uppercase, fake_bold=choice.synthetic_bold and choice.path is not None,
+            size=h.size,
+            width_pct=h.width_pct,
+            bg=h.background != "none",
+            bg_color=h.background_color,
+            text_color=h.text_color,
+            line_spacing=h.line_spacing,
+            radius=h.radius,
+            y=h.y,
+            duration_s=h.duration_s,
+            font_path=str(choice.path) if choice.path else None,
+            x=h.x,
+            align=h.align,
+            bg_mode="block" if h.background == "block" else "plate",
+            bg_opacity=h.background_opacity,
+            pad_x=h.padding_x,
+            pad_y=h.padding_y,
+            outline_color=h.outline_color,
+            outline_width=h.outline_width,
+            uppercase=h.uppercase,
+            fake_bold=choice.synthetic_bold and choice.path is not None,
         )
 
 
@@ -189,8 +212,10 @@ def subtitle_presets() -> dict[str, dict[str, Any]]:
     """Styles de départ des sous-titres proposés dans l'onglet Montage : les profils intégrés (impact, karaoké, sobre,
     affiche, bd), sans leur position (le style s'applique, la légende reste où on l'a placée)."""
     keep = set(SubtitleLayer.model_fields) - {"enabled", "x", "y"}
-    return {name: SubtitleLayer.model_validate(p.model_dump(include=keep)).model_dump(mode="json", include=keep)
-            for name, p in BUILTIN_PROFILES.items()}
+    return {
+        name: SubtitleLayer.model_validate(p.model_dump(include=keep)).model_dump(mode="json", include=keep)
+        for name, p in BUILTIN_PROFILES.items()
+    }
 
 
 def load_template(db: Any) -> tuple[MontageTemplate, str]:

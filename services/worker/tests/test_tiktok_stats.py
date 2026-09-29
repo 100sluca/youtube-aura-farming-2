@@ -25,19 +25,52 @@ PARIS = ZoneInfo("Europe/Paris")
 def _item(**over):
     """Entrée de GET /analytics telle que Zernio la renvoie pour une publication de l'appli (forme vue le 29/09)."""
     item = {
-        "postId": "z1", "status": "published", "content": "Cabane perchée : 14 jours de timelapse 🌲\n\n#cabane",
-        "scheduledFor": "2026-09-29T07:00:00.000Z", "publishedAt": "2026-09-29T07:00:04.000Z",
-        "analytics": {"views": 1200, "likes": 90, "comments": 4, "shares": 7, "saves": 0, "reach": 0,
-                      "igReelsAvgWatchTime": 0, "igReelsVideoViewTotalTime": 0, "completionRate": 0, "profileViews": 0,
-                      "follows": None, "impressionSources": {}, "audienceTypes": {}, "audienceCountries": {},
-                      "lastUpdated": "2026-09-29T09:10:00.000Z"},
-        "platformAnalytics": [{"platform": "tiktok", "status": "published", "platformPostId": "7551234567890123456",
-                               "accountId": "acc", "accountUsername": "arzakparker", "analytics": None,
-                               "syncStatus": "synced", "platformPostUrl": "https://www.tiktok.com/@arzakparker/video/7551234567890123456"}],
-        "isExternal": False, "syncStatus": "synced", "platformPostUrl": None,
-        "thumbnailUrl": "https://media.zernio.com/media/1790639169489_v9po7hur_final.mp4", "mediaType": "video",
-        "mediaItems": [{"type": "video", "url": "https://media.zernio.com/media/x_final.mp4",
-                        "thumbnail": "https://media.zernio.com/media/x_final.mp4"}],
+        "postId": "z1",
+        "status": "published",
+        "content": "Cabane perchée : 14 jours de timelapse 🌲\n\n#cabane",
+        "scheduledFor": "2026-09-29T07:00:00.000Z",
+        "publishedAt": "2026-09-29T07:00:04.000Z",
+        "analytics": {
+            "views": 1200,
+            "likes": 90,
+            "comments": 4,
+            "shares": 7,
+            "saves": 0,
+            "reach": 0,
+            "igReelsAvgWatchTime": 0,
+            "igReelsVideoViewTotalTime": 0,
+            "completionRate": 0,
+            "profileViews": 0,
+            "follows": None,
+            "impressionSources": {},
+            "audienceTypes": {},
+            "audienceCountries": {},
+            "lastUpdated": "2026-09-29T09:10:00.000Z",
+        },
+        "platformAnalytics": [
+            {
+                "platform": "tiktok",
+                "status": "published",
+                "platformPostId": "7551234567890123456",
+                "accountId": "acc",
+                "accountUsername": "arzakparker",
+                "analytics": None,
+                "syncStatus": "synced",
+                "platformPostUrl": "https://www.tiktok.com/@arzakparker/video/7551234567890123456",
+            }
+        ],
+        "isExternal": False,
+        "syncStatus": "synced",
+        "platformPostUrl": None,
+        "thumbnailUrl": "https://media.zernio.com/media/1790639169489_v9po7hur_final.mp4",
+        "mediaType": "video",
+        "mediaItems": [
+            {
+                "type": "video",
+                "url": "https://media.zernio.com/media/x_final.mp4",
+                "thumbnail": "https://media.zernio.com/media/x_final.mp4",
+            }
+        ],
     }
     item.update(over)
     return item
@@ -57,11 +90,22 @@ def test_app_post_keeps_its_zernio_id_and_basic_counters():
 
 
 def test_business_metrics_once_tiktok_fills_them():
-    a = {"views": 5000, "likes": 300, "comments": 12, "shares": 40, "saves": 25, "reach": 4100, "follows": 9,
-         "profileViews": 60, "igReelsAvgWatchTime": 8400, "igReelsVideoViewTotalTime": 42_000_000, "completionRate": 0.31,
-         "impressionSources": {"forYou": 0.92, "follow": 0.03, "search": 0.05}, "audienceTypes": {"follower": 0.1,
-                                                                                              "nonFollower": 0.9},
-         "audienceCountries": {"FR": 0.8, "BE": 0.1, "other": 0.1}}
+    a = {
+        "views": 5000,
+        "likes": 300,
+        "comments": 12,
+        "shares": 40,
+        "saves": 25,
+        "reach": 4100,
+        "follows": 9,
+        "profileViews": 60,
+        "igReelsAvgWatchTime": 8400,
+        "igReelsVideoViewTotalTime": 42_000_000,
+        "completionRate": 0.31,
+        "impressionSources": {"forYou": 0.92, "follow": 0.03, "search": 0.05},
+        "audienceTypes": {"follower": 0.1, "nonFollower": 0.9},
+        "audienceCountries": {"FR": 0.8, "BE": 0.1, "other": 0.1},
+    }
     p = ts.parse_post(_item(analytics=a), "acc")
     assert (p.avg_watch_s, p.total_watch_s, p.completion_pct) == (8.4, 42000.0, 31.0)
     assert (p.saves, p.reach, p.follows, p.profile_views) == (25, 4100, 9, 60)
@@ -72,8 +116,16 @@ def test_scheduled_failed_and_inbox_drafts_are_skipped():
     assert ts.parse_post(_item(status="scheduled", platformAnalytics=[]), "acc") is None
     failed = _item(platformAnalytics=[{"platform": "tiktok", "status": "failed", "accountId": "acc"}], status="failed")
     assert ts.parse_post(failed, "acc") is None
-    draft = _item(platformAnalytics=[{"platform": "tiktok", "status": "published", "accountId": "acc",
-                                      "platformPostId": "v_inbox_url~v2.7690732634049316896"}])
+    draft = _item(
+        platformAnalytics=[
+            {
+                "platform": "tiktok",
+                "status": "published",
+                "accountId": "acc",
+                "platformPostId": "v_inbox_url~v2.7690732634049316896",
+            }
+        ]
+    )
     assert ts.parse_post(draft, "acc") is None  # brouillon dans la boîte de réception : rien de public
 
 
@@ -84,8 +136,9 @@ def test_hand_made_tiktok_post_is_external():
 
 def test_synced_copy_of_an_app_post_merges_with_it():
     app = ts.parse_post(_item(), "acc")
-    copy = ts.parse_post(_item(postId="ext1", latePostId="z1", isExternal=True,
-                               analytics={**_item()["analytics"], "views": 1300}), "acc")
+    copy = ts.parse_post(
+        _item(postId="ext1", latePostId="z1", isExternal=True, analytics={**_item()["analytics"], "views": 1300}), "acc"
+    )
     orphan = ts.parse_post(_item(postId="ext2", isExternal=True), "acc")  # même vidéo TikTok, lien Zernio perdu
     merged = ts.merge_posts([app, copy, orphan])
     assert len(merged) == 1
@@ -93,26 +146,59 @@ def test_synced_copy_of_an_app_post_merges_with_it():
 
 
 def test_account_insights_and_account_fallback():
-    resp = {"metrics": {"follower_count": {"total": 12}, "following_count": {"total": 3}, "likes_count": {"total": 450},
-                        "video_count": {"total": 6}}, "unavailableMetrics": []}
+    resp = {
+        "metrics": {
+            "follower_count": {"total": 12},
+            "following_count": {"total": 3},
+            "likes_count": {"total": 450},
+            "video_count": {"total": 6},
+        },
+        "unavailableMetrics": [],
+    }
     assert ts.parse_insights(resp) == {"followers": 12, "following": 3, "likes": 450, "videos": 6}
-    acc = {"_id": "acc", "username": "arzakparker", "followersCount": 0, "profileUrl": "https://tiktok.com/@arzakparker",
-           "metadata": {"apiFlavor": "business", "profileData": {"extraData": {"likesCount": 0, "videoCount": 0}}}}
+    acc = {
+        "_id": "acc",
+        "username": "arzakparker",
+        "followersCount": 0,
+        "profileUrl": "https://tiktok.com/@arzakparker",
+        "metadata": {"apiFlavor": "business", "profileData": {"extraData": {"likesCount": 0, "videoCount": 0}}},
+    }
     info = ts.account_info(acc)
     assert info["business"] is True and info["fallback"]["followers"] == 0 and info["username"] == "arzakparker"
 
 
 def test_video_published_by_hand_in_tiktok_is_recognised_by_its_title():
     made = datetime(2026, 9, 28, 10, 0, tzinfo=UTC)
-    videos = {ts.norm_title("Garage sombre en atelier de menuiserie en 25 jours"): {"id": "v1", "created_at": made,
-                                                                                    "tiktok": {"status": "published", "draft": True}}}
-    hand = ts.parse_post(_item(postId="ext7", isExternal=True,
-                               content="Garage sombre en atelier de menuiserie en 25 jours !\n\nDu garage poussiéreux…"), "acc")
+    videos = {
+        ts.norm_title("Garage sombre en atelier de menuiserie en 25 jours"): {
+            "id": "v1",
+            "created_at": made,
+            "tiktok": {"status": "published", "draft": True},
+        }
+    }
+    hand = ts.parse_post(
+        _item(
+            postId="ext7",
+            isExternal=True,
+            content="Garage sombre en atelier de menuiserie en 25 jours !\n\nDu garage poussiéreux…",
+        ),
+        "acc",
+    )
     assert ts.match_by_title(hand, videos)["id"] == "v1"  # brouillon terminé dans l'appli TikTok
-    before = ts.parse_post(_item(postId="ext8", isExternal=True, publishedAt="2026-09-27T10:00:00Z",
-                                 content="Garage sombre en atelier de menuiserie en 25 jours"), "acc")
+    before = ts.parse_post(
+        _item(
+            postId="ext8",
+            isExternal=True,
+            publishedAt="2026-09-27T10:00:00Z",
+            content="Garage sombre en atelier de menuiserie en 25 jours",
+        ),
+        "acc",
+    )
     assert ts.match_by_title(before, videos) is None  # sortie avant la fabrication : une autre vidéo
-    assert ts.match_by_title(ts.parse_post(_item(content="Garage sombre en atelier de menuiserie en 25 jours"), "acc"), videos) is None
+    assert (
+        ts.match_by_title(ts.parse_post(_item(content="Garage sombre en atelier de menuiserie en 25 jours"), "acc"), videos)
+        is None
+    )
 
 
 class _MarkDb:
@@ -184,8 +270,9 @@ def _plan(monkeypatch, busy, backlog=True, candidate="default"):
     local = (datetime.now(UTC) + timedelta(minutes=15)).astimezone(PARIS)
     slot_local = time(local.hour, local.minute)
     video = {"id": uuid4(), "title": "Chalet de luxe"} if candidate == "default" else candidate
-    cfg = parse_config({"channels": {"c1": {"account_id": "acc", "username": "arzakparker", "enabled": True,
-                                            "backlog": backlog}}})
+    cfg = parse_config(
+        {"channels": {"c1": {"account_id": "acc", "username": "arzakparker", "enabled": True, "backlog": backlog}}}
+    )
     monkeypatch.setattr(scheduler, "load_tiktok_config", lambda db: cfg)
     monkeypatch.setattr(scheduler, "zernio_key", lambda s, d: "sk_test")
     slot = datetime.combine(local.date(), slot_local, tzinfo=PARIS).astimezone(UTC)
@@ -250,14 +337,28 @@ def test_backlog_publication_is_scheduled_at_the_empty_slot(monkeypatch, tmp_pat
     final = tmp_path / "final.mp4"
     final.write_bytes(b"\0" * 1024)
     slot = (datetime.now(UTC) + timedelta(minutes=20)).replace(microsecond=0)
-    video = {"id": uuid4(), "channel_id": uuid4(), "title": "Chalet de luxe", "description": "#chalet",
-             "scheduled_at": datetime.now(UTC) - timedelta(days=3), "tiktok": None, "local_path": str(final),
-             "timezone": "Europe/Paris"}
+    video = {
+        "id": uuid4(),
+        "channel_id": uuid4(),
+        "title": "Chalet de luxe",
+        "description": "#chalet",
+        "scheduled_at": datetime.now(UTC) - timedelta(days=3),
+        "tiktok": None,
+        "local_path": str(final),
+        "timezone": "Europe/Paris",
+    }
     sent: list = []
     monkeypatch.setattr(publish_mod, "zernio_key", lambda s, d: "sk_test")
     monkeypatch.setattr(publish_mod, "ZernioClient", lambda key: _PublishClient(sent))
-    job = Job(id=uuid4(), type="tiktok_publish", status="running", priority=55, video_id=video["id"], created_at=NOW,
-              payload={"at": slot.isoformat(), "source": "rattrapage", "account_id": "acc"})
+    job = Job(
+        id=uuid4(),
+        type="tiktok_publish",
+        status="running",
+        priority=55,
+        video_id=video["id"],
+        created_at=NOW,
+        payload={"at": slot.isoformat(), "source": "rattrapage", "account_id": "acc"},
+    )
     ctx = publish_mod.Context(job=job, db=_PublishDb(video), settings=SimpleNamespace())
     with pytest.raises(Postpone):  # programmée : le job revient à l'heure dite
         REGISTRY["tiktok_publish"].run(ctx)
@@ -311,17 +412,35 @@ class _StatsClient:
         return [LIVE_APP, LIVE_NEW]
 
     def post_analytics(self, account_id):
-        hand = _item(postId="ext9", isExternal=True, platformAnalytics=[
-            {"platform": "tiktok", "status": "published", "platformPostId": "7550000000000000001", "accountId": "acc"}])
+        hand = _item(
+            postId="ext9",
+            isExternal=True,
+            platformAnalytics=[
+                {"platform": "tiktok", "status": "published", "platformPostId": "7550000000000000001", "accountId": "acc"}
+            ],
+        )
         return [_item(), hand], {"lastSync": "2026-09-29T09:00:00.000Z"}
 
 
-LIVE_APP = {"id": "7551234567890123456", "message": "Cabane perchée : 14 jours de timelapse 🌲", "likeCount": 95,
-            "commentCount": 4, "shareCount": 7, "createdTime": "2026-09-29T07:00:04.000Z",
-            "permalink": "https://www.tiktok.com/@arzakparker/video/7551234567890123456?utm_campaign=tt4d_open_api"}
-LIVE_NEW = {"id": "7690741999670021398", "message": "Sa mère est dévastée.", "likeCount": 1, "commentCount": 0,
-            "shareCount": 0, "createdTime": "2026-09-29T00:07:30.000Z", "picture": "https://p16.tiktokcdn-eu.com/cover.jpeg?sig=1",
-            "permalink": "https://www.tiktok.com/@arzakparker/video/7690741999670021398?utm_campaign=tt4d_open_api"}
+LIVE_APP = {
+    "id": "7551234567890123456",
+    "message": "Cabane perchée : 14 jours de timelapse 🌲",
+    "likeCount": 95,
+    "commentCount": 4,
+    "shareCount": 7,
+    "createdTime": "2026-09-29T07:00:04.000Z",
+    "permalink": "https://www.tiktok.com/@arzakparker/video/7551234567890123456?utm_campaign=tt4d_open_api",
+}
+LIVE_NEW = {
+    "id": "7690741999670021398",
+    "message": "Sa mère est dévastée.",
+    "likeCount": 1,
+    "commentCount": 0,
+    "shareCount": 0,
+    "createdTime": "2026-09-29T00:07:30.000Z",
+    "picture": "https://p16.tiktokcdn-eu.com/cover.jpeg?sig=1",
+    "permalink": "https://www.tiktok.com/@arzakparker/video/7690741999670021398?utm_campaign=tt4d_open_api",
+}
 
 
 def test_live_posts_show_new_videos_before_zernio_counts_their_views():
@@ -356,11 +475,26 @@ def test_sync_step_records_accounts_posts_and_links_app_videos(monkeypatch):
 def test_analyst_sees_tiktok_numbers_of_the_same_video():
     from worker.performance import facts_from_row, video_block
 
-    row = {"id": uuid4(), "title": "Cabane perchée", "published_at": NOW - timedelta(days=2), "views": 900, "likes": 30,
-           "comments": 2, "tt_views": 1200, "tt_likes": 95, "tt_comments": 4, "tt_shares": 7, "tt_completion_pct": 31.0,
-           "tt_for_you_pct": 92.0}
+    row = {
+        "id": uuid4(),
+        "title": "Cabane perchée",
+        "published_at": NOW - timedelta(days=2),
+        "views": 900,
+        "likes": 30,
+        "comments": 2,
+        "tt_views": 1200,
+        "tt_likes": 95,
+        "tt_comments": 4,
+        "tt_shares": 7,
+        "tt_completion_pct": 31.0,
+        "tt_for_you_pct": 92.0,
+    }
     block = video_block(facts_from_row(row, NOW))
-    assert "TikTok (même vidéo) : vues 1 200 · j'aime 95" in block and "jusqu'au bout 31,0 %" in block and "« Pour toi » 92 %" in block
+    assert (
+        "TikTok (même vidéo) : vues 1 200 · j'aime 95" in block
+        and "jusqu'au bout 31,0 %" in block
+        and "« Pour toi » 92 %" in block
+    )
     assert "TikTok" not in video_block(facts_from_row({**row, "tt_views": None}, NOW))  # pas sortie sur TikTok
 
 

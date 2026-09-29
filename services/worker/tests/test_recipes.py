@@ -27,21 +27,32 @@ from worker.steps.storyboard import edit_chain_closure
 
 def _script(n: int = 6, **extra) -> ScriptV1:
     scenes = [
-        {"index": i, "duration_s": 5, "visual_prompt": f"stage {i}", "motion_prompt": f"move {i}", "sfx": "excavator, birds",
-         "narration": {"fr": "une phrase"}, "edit_prompt": f"edit {i}" if i % 2 else None}
+        {
+            "index": i,
+            "duration_s": 5,
+            "visual_prompt": f"stage {i}",
+            "motion_prompt": f"move {i}",
+            "sfx": "excavator, birds",
+            "narration": {"fr": "une phrase"},
+            "edit_prompt": f"edit {i}" if i % 2 else None,
+        }
         for i in range(n)
     ]
-    return ScriptV1.model_validate({
-        "scenes": scenes,
-        "metadata": {"fr": {"title": "t", "description": "d"}},
-        "hook_title": {"fr": "« Personne ne voulait de ce terrain. »"},
-        "design_bible": "an abandoned stone farmhouse on a hill, seen from the lower meadow",
-        **extra,
-    })
+    return ScriptV1.model_validate(
+        {
+            "scenes": scenes,
+            "metadata": {"fr": {"title": "t", "description": "d"}},
+            "hook_title": {"fr": "« Personne ne voulait de ce terrain. »"},
+            "design_bible": "an abandoned stone farmhouse on a hill, seen from the lower meadow",
+            **extra,
+        }
+    )
 
 
-FINISHED = ("A restored stone farmhouse with a new slate roof, oak front door, tall black-framed windows, a stone "
-            "terrace with a glass railing, a lawn and an olive tree, the whole house in the middle of the picture")
+FINISHED = (
+    "A restored stone farmhouse with a new slate roof, oak front door, tall black-framed windows, a stone "
+    "terrace with a glass railing, a lawn and an olive tree, the whole house in the middle of the picture"
+)
 
 
 def _timelapse(n: int = 10) -> ScriptV1:
@@ -63,7 +74,7 @@ def test_timelapse_is_built_backwards_from_the_finished_building():
     assert done.edit_prompt is None and edit_source(s, n - 2) is None  # le fini : la seule image générée
     assert [edit_source(s, i) for i in range(n - 2)] == list(range(1, n - 1))  # chaque étape retouche la SUIVANTE
     assert edit_source(s, n - 1) == n - 2 and reveal.edit_prompt  # le crépuscule retouche le fini
-    assert keyframe_order(s)[0] == n - 2 and keyframe_order(s)[1:n - 1] == list(range(n - 3, -1, -1))
+    assert keyframe_order(s)[0] == n - 2 and keyframe_order(s)[1 : n - 1] == list(range(n - 3, -1, -1))
     assert [sc.clip_mode for sc in s.scenes] == ["flf"] * (n - 1) + ["i2v"]  # le fini → le crépuscule, puis la révélation
     assert {sc.transition for sc in s.scenes} == {"cut"}
     assert all(not sc.narration and not sc.continues_previous for sc in s.scenes)
@@ -137,7 +148,9 @@ def test_lint_catches_a_script_that_starts_with_the_finished_building():
 def test_backward_edits_carry_the_target_description():
     s = normalize_script(_timelapse(), "timelapse")
     s.scenes[2].visual_prompt = "The bare timber frame of the new roof on the old stone walls"
-    assert "The result shows: The bare timber frame of the new roof on the old stone walls." in edit_instruction(s, 2, "timelapse")
+    assert "The result shows: The bare timber frame of the new roof on the old stone walls." in edit_instruction(
+        s, 2, "timelapse"
+    )
 
 
 def test_lint_reports_missing_hook_title_bible_counter_and_unknown_sfx():
@@ -159,7 +172,9 @@ def test_prompts_carry_the_bible_the_frame_lock_and_the_scale():
     n = len(s.scenes)
     assert image_prompt(s, n - 2, "timelapse").startswith(FINISHED + ", the whole construction is fully visible")
     assert image_prompt(s, n - 2, "timelapse").endswith(s.design_bible)
-    s.scenes[n - 2].visual_prompt = "A cabin on a cliff above the ocean, vertical framing, fixed camera on a tripod, wide angle shot"
+    s.scenes[
+        n - 2
+    ].visual_prompt = "A cabin on a cliff above the ocean, vertical framing, fixed camera on a tripod, wide angle shot"
     assert "tripod" not in image_prompt(s, n - 2, "timelapse").lower()  # sinon le modèle dessine un trépied (essai du 25/09)
     back = edit_instruction(s, 3, "timelapse")
     assert back.startswith(EARLIER) and WORKER_SCALE in back and back.endswith(KEEP_FRAME)
@@ -203,8 +218,9 @@ def test_llm_quirks_are_absorbed():
     # Gemini a renvoyé le titre d'accroche en texte seul (sortie réelle du 25/09) : rangé sous « fr »
     s = _script(hook_title="Le plus beau toit-terrasse de Paris")
     assert s.hook_title == {"fr": "Le plus beau toit-terrasse de Paris"}
-    assert ScriptV1.model_validate({**s.model_dump(), "scenes": [
-        {**sc.model_dump(), "on_screen_text": "Jour 1"} for sc in s.scenes]}).scenes[0].on_screen_text == {"fr": "Jour 1"}
+    assert ScriptV1.model_validate(
+        {**s.model_dump(), "scenes": [{**sc.model_dump(), "on_screen_text": "Jour 1"} for sc in s.scenes]}
+    ).scenes[0].on_screen_text == {"fr": "Jour 1"}
     # … et il recopie parfois la bible du lieu dans chaque visual_prompt : pas deux fois dans l'image
     s.scenes[0].visual_prompt = f"A bare cliff. Design Bible: {s.design_bible}"
     assert image_prompt(s, 0, "tour").count(s.design_bible) == 1

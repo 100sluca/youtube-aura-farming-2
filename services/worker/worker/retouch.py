@@ -145,8 +145,29 @@ def forced_music(tracks: Sequence[Track], choice: MusicChoice) -> tuple[Track | 
 _INNER_SPACE = re.compile(r"(?<=\d)[  ](?=\d)")
 _NUMBER = re.compile(r"\d[\d ,.]*")
 # Symboles et grands nombres gardés avec leur nombre, dans la même légende (« 30 % », « 2 milliards », « 170 km »)
-_GLUED = {"%", "€", "$", "£", "°", "°c", "m€", "md€", "mds€", "million", "millions", "milliard", "milliards", "km", "km²",
-          "km/h", "m", "m²", "cm", "mm", "kg"}
+_GLUED = {
+    "%",
+    "€",
+    "$",
+    "£",
+    "°",
+    "°c",
+    "m€",
+    "md€",
+    "mds€",
+    "million",
+    "millions",
+    "milliard",
+    "milliards",
+    "km",
+    "km²",
+    "km/h",
+    "m",
+    "m²",
+    "cm",
+    "mm",
+    "kg",
+}
 
 
 def display_tokens(text: str) -> list[str]:

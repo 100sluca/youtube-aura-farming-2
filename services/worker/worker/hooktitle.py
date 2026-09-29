@@ -144,7 +144,9 @@ def render_image(text: str, style: HookStyle = DEFAULT_STYLE, canvas_w: int = 10
     fill = _rgba(style.bg_color, style.bg_opacity)
     text_fill = _rgba(style.text_color)
     if style.bg and style.bg_mode == "block":
-        draw.rounded_rectangle((left, stroke, left + block_w, stroke + block_h), radius=min(style.radius, block_h // 2), fill=fill)
+        draw.rounded_rectangle(
+            (left, stroke, left + block_w, stroke + block_h), radius=min(style.radius, block_h // 2), fill=fill
+        )
     y = stroke
     for line, w in zip(lines, widths, strict=True):
         line_w = w + 2 * pad_x

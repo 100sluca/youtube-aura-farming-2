@@ -63,6 +63,7 @@ PREVIEW_MAX_CHARS = 600  # steps/voice_preview.py : texte tronqué au-delà
 # Fichier du banc
 # ---------------------------------------------------------------------------------------------------------------------
 
+
 def load_bench(folder: Path) -> dict[str, Any]:
     p = folder / "results.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -82,11 +83,16 @@ def safe_name(voice_id: str) -> str:
 # Mesures : VRAM (toute la carte) et RAM (arbre de processus du moteur)
 # ---------------------------------------------------------------------------------------------------------------------
 
+
 def gpu_used_mb() -> int | None:
     if shutil.which("nvidia-smi") is None:
         return None
-    r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-                       capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    r = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+        capture_output=True,
+        text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
     lines = r.stdout.strip().splitlines()
     return int(lines[0]) if lines and lines[0].strip().isdigit() else None
 
@@ -213,10 +219,18 @@ def _processes() -> list[tuple[int, int]]:
     from ctypes import wintypes
 
     class Entry(ctypes.Structure):
-        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
-                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
-                    ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
-                    ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
 
     k32 = _k32()
     snap = k32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
@@ -256,11 +270,18 @@ def _peak_working_set(handle: int) -> int:
     from ctypes import wintypes
 
     class Counters(ctypes.Structure):
-        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
-                    ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
-                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                    ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
 
     c = Counters()
     c.cb = ctypes.sizeof(Counters)
@@ -276,11 +297,17 @@ def ram_gb() -> tuple[float, float, float] | None:
     import ctypes
 
     class Status(ctypes.Structure):
-        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
 
     s = Status()
     s.dwLength = ctypes.sizeof(Status)
@@ -293,8 +320,9 @@ def machine() -> dict[str, Any]:
     """Carte graphique, processeur, RAM totale et libre au lancement (conditions du banc)."""
     info: dict[str, Any] = {}
     if shutil.which("nvidia-smi"):
-        r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True
+        )
         if r.stdout.strip():
             name, _, total = r.stdout.strip().splitlines()[0].partition(",")
             info["gpu"] = f"{name.strip()} {round(int(total) / 1024)} Go"
@@ -315,6 +343,7 @@ def machine() -> dict[str, Any]:
 # ---------------------------------------------------------------------------------------------------------------------
 # 1. run : faire parler les voix
 # ---------------------------------------------------------------------------------------------------------------------
+
 
 def cmd_run(args: argparse.Namespace) -> None:
     from worker.config import Settings, utf8_console
@@ -343,14 +372,27 @@ def cmd_run(args: argparse.Namespace) -> None:
         if not installed(settings, spec, engine):
             print(f"  {v['id']} : moteur non installé, ignoré")
             continue
-        voices.append({**v, "engine": engine, "name": name, "spec": spec,
-                       "gpu": engine != "kokoro" and bool(spec.get("gpu", True)),
-                       "reloads": spec.get("runtime") == "venv"})  # Kokoro reste chargé dans le worker
+        voices.append(
+            {
+                **v,
+                "engine": engine,
+                "name": name,
+                "spec": spec,
+                "gpu": engine != "kokoro" and bool(spec.get("gpu", True)),
+                "reloads": spec.get("runtime") == "venv",
+            }
+        )  # Kokoro reste chargé dans le worker
     if not voices:
         sys.exit("aucune voix à essayer")
     bench["engines"] = bench.get("engines", {}) | {
-        v["engine"]: {"label": v["spec"].get("label", v["engine"]), "license": v["spec"].get("license", ""),
-                      "gpu": v["gpu"], "reloads": v["reloads"]} for v in voices}
+        v["engine"]: {
+            "label": v["spec"].get("label", v["engine"]),
+            "license": v["spec"].get("license", ""),
+            "gpu": v["gpu"],
+            "reloads": v["reloads"],
+        }
+        for v in voices
+    }
     save_bench(folder, bench)
     print(f"Banc : {folder}\n{len(voices)} voix · {len(text)} caractères · vitesse {bench['speed']}")
     if args.direct:
@@ -382,8 +424,9 @@ def channel_speed(settings: Any, lang: str) -> float:
         return float(settings.kokoro_speed)
 
 
-def run_via_worker(settings: Any, voices: list[dict[str, Any]], lang: str, text: str, bench: dict[str, Any],
-                   folder: Path) -> None:
+def run_via_worker(
+    settings: Any, voices: list[dict[str, Any]], lang: str, text: str, bench: dict[str, Any], folder: Path
+) -> None:
     """Un job voice_preview par essai, priorité 5 comme le bouton « Écouter » : le worker les prend l'un après l'autre
     entre deux jobs de sa voie GPU. Moteurs sur la carte d'abord : ils vident ComfyUI, et les moteurs sur le processeur
     passent ensuite avec la RAM libérée. Un essai « Bonjour. » par moteur mesure le chargement du modèle."""
@@ -399,10 +442,17 @@ def run_via_worker(settings: Any, voices: list[dict[str, Any]], lang: str, text:
         plan.append((v, "narration"))
     jobs = []
     for v, kind in plan:
-        payload = {"voice": v["id"], "lang": lang, "text": WARMUP[lang] if kind == "warmup" else text,
-                   "speed": bench["speed"], "bench": folder.name}
-        row = db.fetch_one("insert into jobs (type, priority, max_attempts, payload) values ('voice_preview', 5, 1, %s) "
-                           "returning id", (Jsonb(payload),))
+        payload = {
+            "voice": v["id"],
+            "lang": lang,
+            "text": WARMUP[lang] if kind == "warmup" else text,
+            "speed": bench["speed"],
+            "bench": folder.name,
+        }
+        row = db.fetch_one(
+            "insert into jobs (type, priority, max_attempts, payload) values ('voice_preview', 5, 1, %s) returning id",
+            (Jsonb(payload),),
+        )
         assert row
         jobs.append({"id": row["id"], "voice": v, "kind": kind})
     print(f"{len(jobs)} essais en file (panneau Tâches : « Essai de voix ») ; le worker les prend entre deux clips.")
@@ -413,9 +463,14 @@ def run_via_worker(settings: Any, voices: list[dict[str, Any]], lang: str, text:
     ram: ProcessRam | None = None
     last_note = 0.0
     while pending:
-        rows = {r["id"]: r for r in db.fetch_all(
-            "select id, status::text as status, created_at, started_at, finished_at, result, error, progress_label "
-            "from jobs where id = any(%s)", (list(pending),))}
+        rows = {
+            r["id"]: r
+            for r in db.fetch_all(
+                "select id, status::text as status, created_at, started_at, finished_at, result, error, progress_label "
+                "from jobs where id = any(%s)",
+                (list(pending),),
+            )
+        }
         # les essais finis d'abord : leurs relevés sont clos avant d'en ouvrir pour l'essai suivant
         for jid in list(pending):
             r = rows[jid]
@@ -435,13 +490,17 @@ def run_via_worker(settings: Any, voices: list[dict[str, Any]], lang: str, text:
             current = pending[running["id"]]
             v = current["voice"]
             vram = VramWindow().__enter__() if v["gpu"] else None
-            ram = ProcessRam(exe_dir=Path(settings.yt2_home) / v["spec"].get("dir", f"tts/{v['engine']}")).__enter__() \
-                if v["reloads"] else None
+            ram = (
+                ProcessRam(exe_dir=Path(settings.yt2_home) / v["spec"].get("dir", f"tts/{v['engine']}")).__enter__()
+                if v["reloads"]
+                else None
+            )
             print(f"→ {v['id']} · {current['kind']}", flush=True)
         if not current and time.monotonic() - last_note > 60:
             last_note = time.monotonic()
-            busy = db.fetch_one("select type::text as type, progress_label from jobs where status = 'running' "
-                                "and locked_by like '%%/gpu' limit 1")
+            busy = db.fetch_one(
+                "select type::text as type, progress_label from jobs where status = 'running' and locked_by like '%%/gpu' limit 1"
+            )
             if busy:
                 print(f"  en attente : le worker finit « {busy['type']} » ({busy['progress_label'] or '…'})", flush=True)
         time.sleep(0.3)
@@ -454,14 +513,21 @@ def _close(*samplers: Any) -> None:
             s.__exit__(None, None, None)
 
 
-def record_worker_job(job: dict[str, Any], row: dict[str, Any], vram: VramWindow | None, ram: ProcessRam | None,
-                      bench: dict[str, Any], folder: Path) -> None:
+def record_worker_job(
+    job: dict[str, Any], row: dict[str, Any], vram: VramWindow | None, ram: ProcessRam | None, bench: dict[str, Any], folder: Path
+) -> None:
     v = job["voice"]
     res = row["result"] or {}
     wait_s = round((row["started_at"] - row["created_at"]).total_seconds(), 1) if row["started_at"] else None
-    measures = {"mode": "worker", "job": str(row["id"]), "elapsed_s": res.get("elapsed_s"), "wait_s": wait_s,
-                "vram_mb": vram.delta_mb if vram else None, "ram_mb": ram.peak_mb if ram else None,
-                "error": (row["error"] or "")[-400:] if row["status"] != "done" else ""}
+    measures = {
+        "mode": "worker",
+        "job": str(row["id"]),
+        "elapsed_s": res.get("elapsed_s"),
+        "wait_s": wait_s,
+        "vram_mb": vram.delta_mb if vram else None,
+        "ram_mb": ram.peak_mb if ram else None,
+        "error": (row["error"] or "")[-400:] if row["status"] != "done" else "",
+    }
     if job["kind"] == "warmup":
         bench["warmups"][v["engine"]] = {**measures, "voice": v["id"], "audio_s": res.get("duration_s")}
         print(f"   chargement {v['engine']} : {res.get('elapsed_s')} s {measures['error']}", flush=True)
@@ -470,11 +536,18 @@ def record_worker_job(job: dict[str, Any], row: dict[str, Any], vram: VramWindow
     if row["status"] == "done" and res.get("path") and Path(res["path"]).exists():
         shutil.copyfile(res["path"], out)
     bench["voices"][v["id"]] = {
-        **measures, "engine": v["engine"], "label": v.get("label", v["id"]), "gpu": v["gpu"], "reloads": v["reloads"],
-        "file": out.name if out.exists() else "", "audio_s": res.get("duration_s"), "rate": wav_rate(out),
+        **measures,
+        "engine": v["engine"],
+        "label": v.get("label", v["id"]),
+        "gpu": v["gpu"],
+        "reloads": v["reloads"],
+        "file": out.name if out.exists() else "",
+        "audio_s": res.get("duration_s"),
+        "rate": wav_rate(out),
     }
-    print(f"   {res.get('duration_s')} s de voix en {res.get('elapsed_s')} s (attente {wait_s} s) {measures['error']}",
-          flush=True)
+    print(
+        f"   {res.get('duration_s')} s de voix en {res.get('elapsed_s')} s (attente {wait_s} s) {measures['error']}", flush=True
+    )
 
 
 def wav_rate(path: Path) -> int | None:
@@ -486,8 +559,15 @@ def wav_rate(path: Path) -> int | None:
         return w.getframerate()
 
 
-def run_direct(settings: Any, catalog: dict[str, Any], voices: list[dict[str, Any]], lang: str, text: str,
-               bench: dict[str, Any], folder: Path) -> None:
+def run_direct(
+    settings: Any,
+    catalog: dict[str, Any],
+    voices: list[dict[str, Any]],
+    lang: str,
+    text: str,
+    bench: dict[str, Any],
+    folder: Path,
+) -> None:
     """Moteurs lancés par le banc, avec le protocole des tts_runners (Kokoro compris) : une phrase d'échauffement,
     puis la narration scène par scène, comme l'étape « voix » des productions (un texte par scène, modèle chargé une
     fois). Un moteur sur la carte ne doit pas croiser un clip : machine au repos, ou worker sans job GPU. Les moteurs
@@ -511,38 +591,78 @@ def run_direct(settings: Any, catalog: dict[str, Any], voices: list[dict[str, An
                 engine_dir = Path(settings.yt2_home) / spec.get("dir", f"tts/{v['engine']}")
                 python = Path(spec["python"]) if spec.get("python") else engine_dir / "venv" / "Scripts" / "python.exe"
                 cmd, options = [str(RUNNERS_DIR / spec.get("runner", f"{v['engine']}.py"))], spec.get("options") or {}
-            request = {"texts": [WARMUP[lang], *bench["scenes"]], "voice": v["name"],
-                       "voice_params": (voice_entry(catalog, v["id"]) or {}).get("params") or {}, "lang": lang,
-                       "speed": float(bench["speed"]), "out_dir": str(work), "engine_dir": str(engine_dir),
-                       "home": str(settings.yt2_home), "options": options}
+            request = {
+                "texts": [WARMUP[lang], *bench["scenes"]],
+                "voice": v["name"],
+                "voice_params": (voice_entry(catalog, v["id"]) or {}).get("params") or {},
+                "lang": lang,
+                "speed": float(bench["speed"]),
+                "out_dir": str(work),
+                "engine_dir": str(engine_dir),
+                "home": str(settings.yt2_home),
+                "options": options,
+            }
             (work / "request.json").write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
             print(f"→ {v['id']}", flush=True)
-            row = _direct_once(settings, python, [*cmd, str(work / "request.json")], engine_dir, work, v, bench, folder,
-                               len(request["texts"]))
+            row = _direct_once(
+                settings, python, [*cmd, str(work / "request.json")], engine_dir, work, v, bench, folder, len(request["texts"])
+            )
         bench["voices"][v["id"]] = row
         save_bench(folder, bench)
-        print(f"   chargement {row.get('load_s')} s · narration {row.get('synth_s')} s → {row.get('audio_s')} s de voix "
-              f"· RAM {row.get('ram_mb')} Mo · VRAM {row.get('vram_mb')} Mo {row.get('error', '')}", flush=True)
+        print(
+            f"   chargement {row.get('load_s')} s · narration {row.get('synth_s')} s → {row.get('audio_s')} s de voix "
+            f"· RAM {row.get('ram_mb')} Mo · VRAM {row.get('vram_mb')} Mo {row.get('error', '')}",
+            flush=True,
+        )
 
 
-def _direct_once(settings: Any, python: Path, argv: list[str], engine_dir: Path, work: Path, v: dict[str, Any],
-                 bench: dict[str, Any], folder: Path, n_texts: int) -> dict[str, Any]:
+def _direct_once(
+    settings: Any,
+    python: Path,
+    argv: list[str],
+    engine_dir: Path,
+    work: Path,
+    v: dict[str, Any],
+    bench: dict[str, Any],
+    folder: Path,
+    n_texts: int,
+) -> dict[str, Any]:
     import numpy as np
     import soundfile as sf
 
     from worker.providers.tts import _stretch
     from worker.timeline import trim_silence
 
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
-           "HF_HOME": str(Path(settings.yt2_home) / "tts" / "hf-cache"), "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
-    row: dict[str, Any] = {"mode": "direct", "engine": v["engine"], "label": v.get("label", v["id"]), "gpu": v["gpu"],
-                           "reloads": v["reloads"], "error": ""}
+    env = {
+        **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+        "HF_HOME": str(Path(settings.yt2_home) / "tts" / "hf-cache"),
+        "HF_HUB_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+    }
+    row: dict[str, Any] = {
+        "mode": "direct",
+        "engine": v["engine"],
+        "label": v.get("label", v["id"]),
+        "gpu": v["gpu"],
+        "reloads": v["reloads"],
+        "error": "",
+    }
     marks: dict[int, float] = {}
     with (work / "runner.log").open("w", encoding="utf-8") as log, VramWindow() as vram:
         t0 = time.perf_counter()
-        proc = subprocess.Popen([str(python), *argv], stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8",
-                                errors="replace", env=env, cwd=str(engine_dir if engine_dir.is_dir() else work),
-                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proc = subprocess.Popen(
+            [str(python), *argv],
+            stdout=subprocess.PIPE,
+            stderr=log,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            cwd=str(engine_dir if engine_dir.is_dir() else work),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
         with ProcessRam(pid=proc.pid) as ram:
             assert proc.stdout is not None
             for line in proc.stdout:
@@ -567,9 +687,16 @@ def _direct_once(settings: Any, python: Path, argv: list[str], engine_dir: Path,
     gap = np.zeros(int(0.3 * rate), dtype=np.float32)  # à l'écoute, un temps entre deux scènes, comme au montage
     out = folder / f"{safe_name(v['id'])}.wav"
     sf.write(str(out), np.concatenate([p for s in scenes for p in (s, gap)][:-1]), rate, subtype="PCM_16")
-    row.update(load_s=round(marks[1] - t0, 2), synth_s=round(synth_s, 2), rate=int(rate), file=out.name,
-               audio_s=round(sum(len(s) for s in scenes) / rate, 2),  # voix seule, sans les temps entre scènes
-               vram_mb=vram.delta_mb if v["gpu"] else None, ram_mb=ram.peak_mb, per_scene=True)
+    row.update(
+        load_s=round(marks[1] - t0, 2),
+        synth_s=round(synth_s, 2),
+        rate=int(rate),
+        file=out.name,
+        audio_s=round(sum(len(s) for s in scenes) / rate, 2),  # voix seule, sans les temps entre scènes
+        vram_mb=vram.delta_mb if v["gpu"] else None,
+        ram_mb=ram.peak_mb,
+        per_scene=True,
+    )
     return row
 
 
@@ -599,6 +726,7 @@ def kokoro_runner(request_path: str) -> None:
 # ---------------------------------------------------------------------------------------------------------------------
 # Mesures dérivées : ce que coûte un Short, une semaine
 # ---------------------------------------------------------------------------------------------------------------------
+
 
 def derive(bench: dict[str, Any]) -> list[dict[str, Any]]:
     """Une ligne par voix : chargement, calcul de la narration, débit, coût d'un Short et d'une semaine (21 Shorts).
@@ -635,6 +763,7 @@ def derive(bench: dict[str, Any]) -> list[dict[str, Any]]:
 # 2. eval : intelligibilité (Whisper) et variation de hauteur
 # ---------------------------------------------------------------------------------------------------------------------
 
+
 def cmd_eval(args: argparse.Namespace) -> None:
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -647,8 +776,9 @@ def cmd_eval(args: argparse.Namespace) -> None:
 
         # Whisper prend ≈ 1,5 Go : pendant un clip MiniMax H3 la machine est au bord, on attend qu'il y ait de la place
         while (ram := ram_gb()) and (ram[1] < args.min_free_gb or ram[2] < 2 * args.min_free_gb):
-            print(f"RAM libre {ram[1]:.1f} Go, mémoire réservable {ram[2]:.1f} Go : trop juste, nouvel essai dans 60 s",
-                  flush=True)
+            print(
+                f"RAM libre {ram[1]:.1f} Go, mémoire réservable {ram[2]:.1f} Go : trop juste, nouvel essai dans 60 s", flush=True
+            )
             time.sleep(60)
         t0 = time.perf_counter()
         model = WhisperModel(args.whisper, device="cpu", compute_type="int8", cpu_threads=args.threads)
@@ -659,15 +789,24 @@ def cmd_eval(args: argparse.Namespace) -> None:
             continue
         t1 = time.perf_counter()
         if not r.get("transcript") or args.force:
-            segments, _info = model.transcribe(str(path), language=bench.get("lang", "fr"), beam_size=5,
-                                               temperature=0.0, condition_on_previous_text=False, vad_filter=False)
+            segments, _info = model.transcribe(
+                str(path),
+                language=bench.get("lang", "fr"),
+                beam_size=5,
+                temperature=0.0,
+                condition_on_previous_text=False,
+                vad_filter=False,
+            )
             r["transcript"] = " ".join(s.text.strip() for s in segments).strip()
         score(bench, r)
         if r.get("f0_std_st") is None or args.force:
             r["f0_median_hz"], r["f0_std_st"] = pitch_stats(path)
         save_bench(folder, bench)
-        print(f"{vid:<24} WER {r['wer']:.1%} · CER {r['cer']:.1%} · hauteur {r['f0_median_hz']} Hz ± {r['f0_std_st']} "
-              f"demi-tons ({time.perf_counter() - t1:.0f} s)", flush=True)
+        print(
+            f"{vid:<24} WER {r['wer']:.1%} · CER {r['cer']:.1%} · hauteur {r['f0_median_hz']} Hz ± {r['f0_std_st']} "
+            f"demi-tons ({time.perf_counter() - t1:.0f} s)",
+            flush=True,
+        )
 
 
 # Ce que Whisper écrit autrement sans que la voix se trompe : abréviation, homophone d'un mot rare (« chalands » est
@@ -762,14 +901,14 @@ def pitch_stats(path: Path) -> tuple[float | None, float | None]:
     taus = np.arange(tau_max + 1)
     f0 = []
     for start in range(0, len(x) - frame - tau_max, hop):
-        seg = x[start:start + frame + tau_max]
+        seg = x[start : start + frame + tau_max]
         if np.sqrt(np.mean(seg[:frame] ** 2)) < gate:
             continue
         cs = np.concatenate([[0.0], np.cumsum(seg**2)])
         r = np.fft.irfft(np.conj(np.fft.rfft(seg[:frame], nfft)) * np.fft.rfft(seg, nfft), nfft)[: tau_max + 1]
         diff = cs[frame] + (cs[taus + frame] - cs[taus]) - 2 * r
         cmnd = diff[1:] * np.arange(1, tau_max + 1) / np.maximum(np.cumsum(diff[1:]), 1e-12)
-        below = np.nonzero(cmnd[tau_min - 1:] < 0.15)[0]
+        below = np.nonzero(cmnd[tau_min - 1 :] < 0.15)[0]
         if not len(below):
             continue
         t = below[0] + tau_min - 1
@@ -789,15 +928,25 @@ def pitch_stats(path: Path) -> tuple[float | None, float | None]:
 # ---------------------------------------------------------------------------------------------------------------------
 
 COLUMNS = [  # (clé, titre, format)
-    ("voice", "Voix", "{}"), ("engine_label", "Moteur", "{}"), ("where", "Calcul", "{}"),
-    ("load_s", "Chargement (s)", "{:.1f}"), ("synth_s", "Narration : calcul (s)", "{:.1f}"),
-    ("audio_s", "Voix obtenue (s)", "{:.1f}"), ("chars_per_s", "Caractères / s (calcul)", "{:.0f}"),
+    ("voice", "Voix", "{}"),
+    ("engine_label", "Moteur", "{}"),
+    ("where", "Calcul", "{}"),
+    ("load_s", "Chargement (s)", "{:.1f}"),
+    ("synth_s", "Narration : calcul (s)", "{:.1f}"),
+    ("audio_s", "Voix obtenue (s)", "{:.1f}"),
+    ("chars_per_s", "Caractères / s (calcul)", "{:.0f}"),
     ("chars_per_s_total", "Caractères / s (chargement compris)", "{:.0f}"),
-    ("x_realtime", "× temps réel", "{:.1f}"), ("per_1000_s", "1 000 caractères (s)", "{:.0f}"),
-    ("short_s", "Un Short (s)", "{:.0f}"), ("week_min", "Semaine, 21 Shorts (min)", "{:.0f}"),
-    ("speech_cps", "Débit (car. / s de voix)", "{:.1f}"), ("vram_mb", "VRAM (Mo)", "{:.0f}"),
-    ("ram_mb", "RAM (Mo)", "{:.0f}"), ("wer", "Mots mal compris (WER)", "{:.1%}"), ("cer", "CER", "{:.1%}"),
-    ("f0_std_st", "Variation de hauteur (demi-tons)", "{:.1f}"), ("f0_median_hz", "Hauteur (Hz)", "{:.0f}"),
+    ("x_realtime", "× temps réel", "{:.1f}"),
+    ("per_1000_s", "1 000 caractères (s)", "{:.0f}"),
+    ("short_s", "Un Short (s)", "{:.0f}"),
+    ("week_min", "Semaine, 21 Shorts (min)", "{:.0f}"),
+    ("speech_cps", "Débit (car. / s de voix)", "{:.1f}"),
+    ("vram_mb", "VRAM (Mo)", "{:.0f}"),
+    ("ram_mb", "RAM (Mo)", "{:.0f}"),
+    ("wer", "Mots mal compris (WER)", "{:.1%}"),
+    ("cer", "CER", "{:.1%}"),
+    ("f0_std_st", "Variation de hauteur (demi-tons)", "{:.1f}"),
+    ("f0_median_hz", "Hauteur (Hz)", "{:.0f}"),
 ]
 
 
@@ -859,14 +1008,23 @@ def render_html(bench: dict[str, Any], rows: list[dict[str, Any]], folder: Path)
     head_cells = "".join(f'<th data-k="{k}">{html.escape(t)}</th>' for k, t, _ in COLUMNS[1:])
     body = []
     for d in rows:
-        cells = "".join(f'<td data-v="{html.escape(str(d.get(k, "")))}">{html.escape(fmt(d.get(k), s))}</td>'
-                        for k, _, s in COLUMNS[1:])
+        cells = "".join(
+            f'<td data-v="{html.escape(str(d.get(k, "")))}">{html.escape(fmt(d.get(k), s))}</td>' for k, _, s in COLUMNS[1:]
+        )
         audio = f'<audio controls preload="none" src="{html.escape(d["file"])}"></audio>' if d.get("file") else "échec"
         errs = " · ".join(f"{a or '∅'} → {b or '∅'}" for _, a, b in d.get("errors") or [])
-        detail = (f'<details><summary>Ce que Whisper entend</summary><p>{html.escape(d.get("transcript", ""))}</p>'
-                  f'<p class="err">{html.escape(errs) or "aucun écart"}</p></details>') if d.get("transcript") else ""
-        body.append(f'<tr><td data-v="{html.escape(d["voice"])}"><b>{html.escape(d.get("label") or d["voice"])}</b>'
-                    f'<br><code>{html.escape(d["voice"])}</code>{audio}{detail}</td>{cells}</tr>')
+        detail = (
+            (
+                f"<details><summary>Ce que Whisper entend</summary><p>{html.escape(d.get('transcript', ''))}</p>"
+                f'<p class="err">{html.escape(errs) or "aucun écart"}</p></details>'
+            )
+            if d.get("transcript")
+            else ""
+        )
+        body.append(
+            f'<tr><td data-v="{html.escape(d["voice"])}"><b>{html.escape(d.get("label") or d["voice"])}</b>'
+            f"<br><code>{html.escape(d['voice'])}</code>{audio}{detail}</td>{cells}</tr>"
+        )
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Banc des voix</title>
@@ -885,12 +1043,12 @@ td audio {{ display:block; width:260px; height:32px; margin-top:6px; }}
 code {{ color:var(--mute); font-size:12px; }} details {{ margin-top:4px; color:var(--mute); }} .err {{ color:var(--accent); }}
 </style></head><body>
 <h1>Banc d'essai des voix · {html.escape(folder.name)}</h1>
-<p>{html.escape(m.get('gpu', ''))} · {html.escape(m.get('cpu', ''))} · RAM {html.escape(m.get('ram', ''))}.
-Même texte ({len(bench['text'])} caractères) pour toutes les voix, vitesse {str(bench.get('speed')).replace('.', ',')}. Un Short = chargement + calcul ;
+<p>{html.escape(m.get("gpu", ""))} · {html.escape(m.get("cpu", ""))} · RAM {html.escape(m.get("ram", ""))}.
+Même texte ({len(bench["text"])} caractères) pour toutes les voix, vitesse {str(bench.get("speed")).replace(".", ",")}. Un Short = chargement + calcul ;
 semaine = 21 Shorts. WER : part des mots que Whisper n'entend pas comme écrits. Cliquer un titre pour trier.</p>
-<blockquote>{html.escape(bench['text'])}</blockquote>
+<blockquote>{html.escape(bench["text"])}</blockquote>
 <div class="wrap"><table><thead><tr><th data-k="voice">Voix</th>{head_cells}</tr></thead>
-<tbody>{''.join(body)}</tbody></table></div>
+<tbody>{"".join(body)}</tbody></table></div>
 <script>
 document.querySelectorAll('th').forEach((th, i) => th.addEventListener('click', () => {{
   const tb = th.closest('table').tBodies[0], asc = th.dataset.asc !== '1';

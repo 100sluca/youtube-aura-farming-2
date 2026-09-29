@@ -42,7 +42,9 @@ def _hit(prompt: str, label: str, volume: float = 0.8, seconds: float = 3.0) -> 
 
 TAGS: dict[str, SfxTag] = {
     # Chantier : engins et outils (fonds bouclés)
-    "excavator": _bed("heavy excavator engine rumbling and hydraulic arm digging soil, construction site, field recording", "pelleteuse"),
+    "excavator": _bed(
+        "heavy excavator engine rumbling and hydraulic arm digging soil, construction site, field recording", "pelleteuse"
+    ),
     "bulldozer": _bed("bulldozer diesel engine pushing earth and rocks, tracks clanking, construction site", "bulldozer"),
     "chainsaw": _bed("chainsaw cutting branches in overgrown garden, bursts of revving, outdoor", "tronçonneuse"),
     "lawn_mower": _bed("petrol lawn mower and brush cutter clearing tall grass, outdoor", "débroussailleuse"),
@@ -92,10 +94,23 @@ TAGS: dict[str, SfxTag] = {
     "splash": _hit("person diving into a swimming pool, big splash", "plongeon", 0.6, 3.0),
 }
 ALIASES = {
-    "digger": "excavator", "mower": "lawn_mower", "brush_cutter": "lawn_mower", "hammering": "hammer",
-    "saw_cut": "saw", "circular_saw": "saw", "mixer": "concrete_mixer", "concrete": "concrete_mixer",
-    "footsteps": "footsteps_stone", "water": "pool_water", "waves": "ocean", "crickets": "night",
-    "door": "door_open", "boom": "impact", "sparkle": "shimmer", "swoosh": "whoosh", "transition": "whoosh",
+    "digger": "excavator",
+    "mower": "lawn_mower",
+    "brush_cutter": "lawn_mower",
+    "hammering": "hammer",
+    "saw_cut": "saw",
+    "circular_saw": "saw",
+    "mixer": "concrete_mixer",
+    "concrete": "concrete_mixer",
+    "footsteps": "footsteps_stone",
+    "water": "pool_water",
+    "waves": "ocean",
+    "crickets": "night",
+    "door": "door_open",
+    "boom": "impact",
+    "sparkle": "shimmer",
+    "swoosh": "whoosh",
+    "transition": "whoosh",
 }
 TRANSITION_TAG = "whoosh"
 WHOOSH_TRANSITIONS = frozenset({"whip", "push"})  # passages qui « déplacent » la caméra : un whoosh les accompagne
@@ -168,7 +183,9 @@ def plan_cues(
             if spec.kind == "hit":
                 path = resolve(tag, f"{key}:{i}")
                 if path:
-                    cues.append(SfxCue(path, round(starts[i] + 0.05, 3), min(spec.seconds, durations[i]), spec.volume, False, 0.05))
+                    cues.append(
+                        SfxCue(path, round(starts[i] + 0.05, 3), min(spec.seconds, durations[i]), spec.volume, False, 0.05)
+                    )
                 continue
             run = open_runs.get(tag)
             if run and run[1] == i - 1:
@@ -182,7 +199,9 @@ def plan_cues(
         path = resolve(tag, f"{key}:{a}")
         if path:
             start, end = starts[a], starts[b] + durations[b]
-            cues.append(SfxCue(path, round(start, 3), round(end - start, 3), TAGS[tag].volume, True, min(FADE_S, (end - start) / 4)))
+            cues.append(
+                SfxCue(path, round(start, 3), round(end - start, 3), TAGS[tag].volume, True, min(FADE_S, (end - start) / 4))
+            )
     whoosh = TAGS[TRANSITION_TAG]
     for i, (kind, dur) in enumerate(transitions):
         if kind not in WHOOSH_TRANSITIONS or i + 1 >= len(starts):

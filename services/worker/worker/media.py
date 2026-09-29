@@ -32,9 +32,24 @@ def _nvenc_works() -> bool:
         if "h264_nvenc" not in listed:
             return False
         proc = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1",
-             "-c:v", "h264_nvenc", "-f", "null", "-"],
-            capture_output=True, timeout=60,
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=256x256:d=0.1",
+                "-c:v",
+                "h264_nvenc",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            timeout=60,
         )
         return proc.returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -45,8 +60,7 @@ def video_encode_args(mode: str = "auto") -> list[str]:
     """Arguments de codec vidéo : NVENC (qualité constante 19) si disponible, sinon libx264 CRF 18."""
     if mode not in _ENCODER:
         if mode == "nvenc" or (mode == "auto" and _nvenc_works()):
-            _ENCODER[mode] = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0",
-                              "-profile:v", "high"]
+            _ENCODER[mode] = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0", "-profile:v", "high"]
         else:
             _ENCODER[mode] = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-profile:v", "high"]
     return list(_ENCODER[mode])
@@ -114,7 +128,11 @@ def measure_loudness(path: Path, timeout: int = 180) -> Loudness:
     try:
         r = subprocess.run(
             ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128=framelog=quiet:peak=true", "-f", "null", "-"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError):
         return Loudness(None, None, None)
@@ -129,7 +147,9 @@ def contact_sheet(rows: list[list[Path]], selected: list[int | None], out: Path,
         for c, img in enumerate(row):
             inputs += ["-i", str(img)]
             box = ",drawbox=x=0:y=0:w=iw:h=ih:color=0x00E676:t=10" if selected[r] == c else ""
-            cells.append(f"[{n}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=increase,crop={cell_w}:{cell_h},setsar=1{box}[c{n}]")
+            cells.append(
+                f"[{n}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=increase,crop={cell_w}:{cell_h},setsar=1{box}[c{n}]"
+            )
             layout.append(f"{c * cell_w}_{r * cell_h}")
             n += 1
     if n == 0:
@@ -137,7 +157,12 @@ def contact_sheet(rows: list[list[Path]], selected: list[int | None], out: Path,
     if n == 1:
         graph = cells[0].replace("[c0]", "[out]")
     else:
-        graph = ";".join(cells) + ";" + "".join(f"[c{i}]" for i in range(n)) + f"xstack=inputs={n}:layout={'|'.join(layout)}:fill=0x202020[out]"
+        graph = (
+            ";".join(cells)
+            + ";"
+            + "".join(f"[c{i}]" for i in range(n))
+            + f"xstack=inputs={n}:layout={'|'.join(layout)}:fill=0x202020[out]"
+        )
     run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", str(out)])
     return out
 
@@ -145,8 +170,23 @@ def contact_sheet(rows: list[list[Path]], selected: list[int | None], out: Path,
 def last_frame(video: Path, out: Path, offset_s: float = 0.05) -> Path:
     """Dernière image d'un clip en PNG : point de départ du clip suivant quand la scène le prolonge."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    run(["ffmpeg", "-y", "-v", "error", "-sseof", f"-{max(0.02, offset_s):.3f}", "-i", str(video),
-         "-frames:v", "1", "-update", "1", str(out)])
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-sseof",
+            f"-{max(0.02, offset_s):.3f}",
+            "-i",
+            str(video),
+            "-frames:v",
+            "1",
+            "-update",
+            "1",
+            str(out),
+        ]
+    )
     if not out.exists() or out.stat().st_size == 0:  # clip trop court pour le seek : on inverse et on prend la première
         run(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-vf", "reverse", "-frames:v", "1", "-update", "1", str(out)])
     if not out.exists() or out.stat().st_size == 0:
@@ -158,7 +198,10 @@ def probe_duration(path: Path) -> float | None:
     try:
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
-            capture_output=True, text=True, timeout=30, check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
         ).stdout
         return float(json.loads(out)["format"]["duration"])
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):

@@ -73,12 +73,16 @@ class SeoStep(Step):
                 f"Accroche : {v['hook']}",
                 f"Prémisse : {v['premise']}",
                 *(
-                    [f"Vidéo sans voix (format visuel) ; titre d'accroche gravé à l'écran : « {script.hook_title.get(lang, '')} ». "  # type: ignore[call-overload]
-                     "Ce qu'on voit, scène par scène :",
-                     *[f"  {s.index + 1}. {s.visual_prompt[:160]}" for s in script.scenes]]
-                    if visual else
-                    ["Narration, scène par scène :",
-                     *[f"  {s.index + 1}. {speaker_line(script, s) or s.narration.get(lang, '')}" for s in script.scenes]]  # type: ignore[call-overload]
+                    [
+                        f"Vidéo sans voix (format visuel) ; titre d'accroche gravé à l'écran : « {script.hook_title.get(lang, '')} ». "  # type: ignore[call-overload]
+                        "Ce qu'on voit, scène par scène :",
+                        *[f"  {s.index + 1}. {s.visual_prompt[:160]}" for s in script.scenes],
+                    ]
+                    if visual
+                    else [
+                        "Narration, scène par scène :",
+                        *[f"  {s.index + 1}. {speaker_line(script, s) or s.narration.get(lang, '')}" for s in script.scenes],
+                    ]  # type: ignore[call-overload]
                 ),
                 "Textes à l'écran : " + " | ".join(t for s in script.scenes if (t := s.on_screen_text.get(lang))),
                 f"Brouillon de l'agent script : titre « {draft.title if draft else ''} », tags {draft.tags if draft else []}",
@@ -93,8 +97,9 @@ class SeoStep(Step):
         ctx.progress(30, "Appel LLM")
         system = prompt_text(ctx.db, "seo", DEFAULT_PROMPT)  # version active (onglet Agents, worker/prompts.py)
         pack = get_llm(ctx.settings, ctx.db).complete_json(system, user, SeoPack)
-        title, description, tags = finalize(pack, sources=v.get("sources") or [], lang=lang, ai_note=visual,
-                                            map_credit=any(s.is_map for s in script.scenes))
+        title, description, tags = finalize(
+            pack, sources=v.get("sources") or [], lang=lang, ai_note=visual, map_credit=any(s.is_map for s in script.scenes)
+        )
         ctx.db.execute(
             "update videos set title = %s, description = %s, tags = %s, seo = %s where id = %s",
             (title, description, tags, Jsonb(pack.model_dump()), vid),
@@ -186,7 +191,10 @@ AI_NOTE = {
 
 
 def finalize(
-    pack: SeoPack, sources: list[dict[str, Any]] | None = None, lang: str = "fr", ai_note: bool = False,
+    pack: SeoPack,
+    sources: list[dict[str, Any]] | None = None,
+    lang: str = "fr",
+    ai_note: bool = False,
     map_credit: bool = False,
 ) -> tuple[str, str, list[str]]:
     title = pick_title(pack)

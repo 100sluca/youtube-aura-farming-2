@@ -22,17 +22,31 @@ APP_PASSWORD = "abcdefghijklmnop"
 
 
 def env(**over: Any) -> SimpleNamespace:
-    base = {"alert_email_to": "luca@example.com", "notify_on_review": True, "smtp_user": "", "smtp_pass": "", "smtp_host": "",
-            "smtp_port": 465, "resend_api_key": None, "dashboard_url": "http://localhost:3000/", "credentials_key": KEY,
-            "dry_run": False}
+    base = {
+        "alert_email_to": "luca@example.com",
+        "notify_on_review": True,
+        "smtp_user": "",
+        "smtp_pass": "",
+        "smtp_host": "",
+        "smtp_port": 465,
+        "resend_api_key": None,
+        "dashboard_url": "http://localhost:3000/",
+        "credentials_key": KEY,
+        "dry_run": False,
+    }
     return SimpleNamespace(**{**base, **over})
 
 
 class FakeDb:
     """app_settings.notifications, le mot de passe chiffré, la boîte d'envoi et la vidéo ; garde les écritures."""
 
-    def __init__(self, notifications: dict | None = None, password: str | None = None, alerts: list[dict] | None = None,
-                 video: dict | None = None) -> None:
+    def __init__(
+        self,
+        notifications: dict | None = None,
+        password: str | None = None,
+        alerts: list[dict] | None = None,
+        video: dict | None = None,
+    ) -> None:
         self.notifications, self.password, self.video = notifications, password, video
         self.alerts = alerts or []
         self.executed: list[tuple[str, Any]] = []
@@ -78,8 +92,15 @@ def alert(kind: str, video_id: Any = None) -> dict:
 
 
 def video(vid: Any, poster: str | None = None, status: str = "review") -> dict:
-    return {"id": vid, "title": MIRROR, "status": status, "duration_s": 31.6, "channel_name": "Chaîne de test",
-            "series_name": "Maisons de rêve", "poster": poster}
+    return {
+        "id": vid,
+        "title": MIRROR,
+        "status": status,
+        "duration_s": 31.6,
+        "channel_name": "Chaîne de test",
+        "series_name": "Maisons de rêve",
+        "poster": poster,
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -92,9 +113,18 @@ def fresh_pause(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_env_is_the_fallback_and_the_db_settings_win():
     cfg = notify.load_notify_config(env(smtp_user="bot@gmail.com", smtp_pass="abcd efgh ijkl mnop"), None)
-    assert (cfg.email_to, cfg.sender, cfg.password) == ("luca@example.com", "bot@gmail.com", APP_PASSWORD)  # espaces de Google ôtés
+    assert (cfg.email_to, cfg.sender, cfg.password) == (
+        "luca@example.com",
+        "bot@gmail.com",
+        APP_PASSWORD,
+    )  # espaces de Google ôtés
     assert (cfg.host, cfg.port, cfg.dashboard_url, cfg.on_video_ready, cfg.source) == (
-        "smtp.gmail.com", 465, "http://localhost:3000", True, "env")
+        "smtp.gmail.com",
+        465,
+        "http://localhost:3000",
+        True,
+        "env",
+    )
     assert not notify.load_notify_config(env(), None).can_send  # ni mot de passe ni Resend
     db = FakeDb({"email_to": "moi@gmail.com", "on_video_ready": False, "sender": ""}, password=APP_PASSWORD)
     cfg = notify.load_notify_config(env(), db)
@@ -243,8 +273,13 @@ def test_ssl_on_465_and_starttls_on_587(monkeypatch):
     assert notify.send_email(cfg, notify.Mail("Objet", "texte"))[0]
     sent = ("send", '"YouTube 2.0" <bot@gmail.com>', "luca@example.com", "Objet")  # nom entre guillemets : il a un point
     assert FakeSmtp.calls == [
-        ("connect", "Ssl", "smtp.gmail.com", 465), ("login", "bot@gmail.com", "pw"), sent,
-        ("connect", "Plain", "smtp.gmail.com", 587), ("starttls",), ("login", "bot@gmail.com", "pw"), sent,
+        ("connect", "Ssl", "smtp.gmail.com", 465),
+        ("login", "bot@gmail.com", "pw"),
+        sent,
+        ("connect", "Plain", "smtp.gmail.com", 587),
+        ("starttls",),
+        ("login", "bot@gmail.com", "pw"),
+        sent,
     ]
 
 
@@ -254,8 +289,9 @@ def test_a_refused_password_is_explained_and_a_missing_one_too(monkeypatch):
             raise smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
 
     monkeypatch.setattr(notify.smtplib, "SMTP_SSL", Refused)
-    ok, message = notify.send_email(notify.load_notify_config(env(smtp_user="bot@gmail.com", smtp_pass="pw"), None),
-                                    notify.Mail("Objet", "texte"))
+    ok, message = notify.send_email(
+        notify.load_notify_config(env(smtp_user="bot@gmail.com", smtp_pass="pw"), None), notify.Mail("Objet", "texte")
+    )
     assert not ok and "(535)" in message and "mot de passe d'application" in message
     ok, message = notify.send_email(notify.load_notify_config(env(), None), notify.Mail("Objet", "texte"))
     assert not ok and message.startswith("Envoi pas encore réglé")

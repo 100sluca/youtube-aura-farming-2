@@ -139,7 +139,9 @@ def script_listing(script: ScriptV1, recipe: str, lang: str, target: int) -> str
             lines.append("  (passage vers la pièce suivante, filmé par le code : rien à écrire)")
             continue
         head = f"{'>>> ' if s.index == target else ''}Scène {shot_number(script, s.index)} [{s.role or '—'}, {s.duration_s:g} s"
-        head += (", prolonge le plan précédent]" if s.continues_previous else "]") + (" À RÉINVENTER" if s.index == target else "")
+        head += (", prolonge le plan précédent]" if s.continues_previous else "]") + (
+            " À RÉINVENTER" if s.index == target else ""
+        )
         parts = [f"image : {s.visual_prompt}"]
         if s.motion_prompt:
             parts.append(f"mouvement : {s.motion_prompt}")
@@ -150,20 +152,25 @@ def script_listing(script: ScriptV1, recipe: str, lang: str, target: int) -> str
         if ost := s.on_screen_text.get(lang, ""):  # type: ignore[call-overload]
             parts.append(f"texte à l'écran : {ost}")
         if recipe == "tour":
-            parts.append(f"{'intérieur' if s.interior else 'extérieur'}, niveau {s.floor if s.floor is not None else '?'}"
-                         + (f", mène à : {s.leads_to}" if s.leads_to else ""))
+            parts.append(
+                f"{'intérieur' if s.interior else 'extérieur'}, niveau {s.floor if s.floor is not None else '?'}"
+                + (f", mène à : {s.leads_to}" if s.leads_to else "")
+            )
         if recipe == "timelapse" and s.edit_prompt:
             parts.append(f"retouche : {s.edit_prompt}")
         if recipe == "drama":
-            parts.append(f"personnages à l'image : {s.characters or '—'}"
-                         + "".join(f" ; réplique de {ln.who} ({ln.tone or '—'}) : « {ln.text} »" for ln in s.lines))
+            parts.append(
+                f"personnages à l'image : {s.characters or '—'}"
+                + "".join(f" ; réplique de {ln.who} ({ln.tone or '—'}) : « {ln.text} »" for ln in s.lines)
+            )
         if s.sfx:
             parts.append(f"bruitages : {s.sfx}")
         lines.append(head + "\n    " + "\n    ".join(parts))
     hook = script.hook_title.get(lang, "")  # type: ignore[call-overload]
     extra = [
         "Personnages (cast) : " + " ; ".join(f"{m.key} = {m.name} ({m.role or '—'}) : {m.look}" for m in script.cast)
-        if script.cast else "",
+        if script.cast
+        else "",
         f"Titre d'accroche : {hook}" if hook else "",
         f"Bible du lieu (ajoutée à chaque image) : {script.design_bible}" if script.design_bible else "",
         f"Vue par les fenêtres : {script.view}" if script.view else "",
@@ -172,8 +179,18 @@ def script_listing(script: ScriptV1, recipe: str, lang: str, target: int) -> str
     return "\n".join([*lines, *(e for e in extra if e)])
 
 
-def rewrite_request(brief: dict[str, Any], script: ScriptV1, recipe: str, pos: int, note: str, rejected: list[dict[str, Any]],
-                    langs: list[str], consignes: str, rules: str = "", dossier: str = "") -> str:
+def rewrite_request(
+    brief: dict[str, Any],
+    script: ScriptV1,
+    recipe: str,
+    pos: int,
+    note: str,
+    rejected: list[dict[str, Any]],
+    langs: list[str],
+    consignes: str,
+    rules: str = "",
+    dossier: str = "",
+) -> str:
     """Message de l'agent scene_rewrite : le cadre, le script, la scène visée, ce qu'en dit Luca, les versions écartées."""
     old = script.scenes[pos]
     lang = langs[0] if langs else "fr"
@@ -190,7 +207,11 @@ def rewrite_request(brief: dict[str, Any], script: ScriptV1, recipe: str, pos: i
         said = (v.get("narration") or {}).get(lang)
         tried.append(f"- {name} : image « {v.get('visual_prompt') or ''} »" + (f" ; narration « {said} »" if said else ""))
     nxt = script.scenes[pos + 1] if pos + 1 < len(script.scenes) else None
-    budget = f", narration de {max(4, round(old.duration_s * 2))} à {scene_words_max(old.duration_s)} mots" if narrated else ", sans voix"
+    budget = (
+        f", narration de {max(4, round(old.duration_s * 2))} à {scene_words_max(old.duration_s)} mots"
+        if narrated
+        else ", sans voix"
+    )
     parts = [
         f"SÉRIE : {brief['series_name']}\nBrief : {brief.get('series_brief') or '—'}" if brief.get("series_name") else "",
         f"CONCEPT : {brief.get('title') or '—'}\nAccroche : {brief.get('hook') or '—'}\nAngle : {brief.get('angle') or '—'}\n"
@@ -204,7 +225,8 @@ def rewrite_request(brief: dict[str, Any], script: ScriptV1, recipe: str, pos: i
         f"CE QU'EN DIT LUCA : « {note} »" if note else f"POURQUOI : {DEFAULT_REASON}",
         "VERSIONS DE CETTE SCÈNE DÉJÀ ÉCARTÉES (n'y reviens pas, même autrement cadrées) :\n" + "\n".join(tried),
         "La scène suivante prolonge ce plan : elle partira de la dernière image de ton clip."
-        if nxt is not None and nxt.continues_previous and not nxt.passage else "",
+        if nxt is not None and nxt.continues_previous and not nxt.passage
+        else "",
         FORMAT_HINTS.get(recipe, ""),
         f"Langues de la narration et du texte à l'écran : {langs}" if narrated else f"Langues du texte à l'écran : {langs}",
     ]
@@ -255,8 +277,9 @@ def same_plan(a: str, b: str) -> bool:
     return bool(wa and wb) and len(wa & wb) / len(wa | wb) >= SAME_PLAN
 
 
-def scene_issues(new: ScriptScene, old: ScriptScene, rejected: list[dict[str, Any]], shot: int, langs: list[str],
-                 narrated: bool) -> list[str]:
+def scene_issues(
+    new: ScriptScene, old: ScriptScene, rejected: list[dict[str, Any]], shot: int, langs: list[str], narrated: bool
+) -> list[str]:
     """Ce que le correcteur du script ne voit pas : une image déjà écartée, une narration perdue."""
     issues: list[str] = []
     if any(same_plan(new.visual_prompt, t) for t in [old.visual_prompt, *(str(r.get("visual_prompt") or "") for r in rejected)]):
@@ -287,8 +310,16 @@ def new_issues(before: list[str], after: list[str], shot: int) -> list[str]:
     return [i for i in after if i not in before and (mine.search(i) or _shape(i) not in shapes)]
 
 
-def reinvent_scene(db: Any, llm: LLM, pid: UUID | str, script: ScriptV1, recipe: str, index: int, note: str = "",
-                   dossier: Callable[[list[dict[str, Any]]], str] | None = None) -> tuple[ScriptV1, dict[str, Any]]:
+def reinvent_scene(
+    db: Any,
+    llm: LLM,
+    pid: UUID | str,
+    script: ScriptV1,
+    recipe: str,
+    index: int,
+    note: str = "",
+    dossier: Callable[[list[dict[str, Any]]], str] | None = None,
+) -> tuple[ScriptV1, dict[str, Any]]:
     """Le script où seule la scène `index` est réinventée, et ce qu'il faut en garder (job, dashboard) : la scène, son
     numéro vu par Luca, l'idée du nouveau plan, la remarque, les écarts restants, les versions d'avant et d'après.
     `dossier` : lecture des pages sources d'une série documentaire (aucune lecture sans lui)."""
@@ -302,12 +333,16 @@ def reinvent_scene(db: Any, llm: LLM, pid: UUID | str, script: ScriptV1, recipe:
     narrated = brief.get("format") == "A_voiceover" and not has_prompt(recipe)  # un drame n'a pas de narration écrite
     key = f"script_{recipe}" if has_prompt(recipe) else "script_shots"  # récit : le réalisateur, qui écrit les plans
     consignes = _WHOLE_SCRIPT.sub("", prompt_text(db, key, code_prompts().get(key, ""))).strip()
-    rules = "" if has_prompt(recipe) else (f"{prompt_text(db, 'rules_storytelling', RULES)}\n\n"
-                                           f"{prompt_text(db, 'rules_images', IMAGE_RULES)}")
+    rules = (
+        ""
+        if has_prompt(recipe)
+        else (f"{prompt_text(db, 'rules_storytelling', RULES)}\n\n{prompt_text(db, 'rules_images', IMAGE_RULES)}")
+    )
     rejected = rejected_versions(db, pid, index)
     sources = brief.get("sources") or []
-    user = rewrite_request(brief, script, recipe, pos, note, rejected, langs, consignes, rules,
-                           dossier(sources) if dossier and sources else "")
+    user = rewrite_request(
+        brief, script, recipe, pos, note, rejected, langs, consignes, rules, dossier(sources) if dossier and sources else ""
+    )
     system = prompt_text(db, "scene_rewrite", REWRITE_PROMPT)
     shot = shot_number(script, index)
     before = _lint(script, recipe, brief, langs)
@@ -322,10 +357,20 @@ def reinvent_scene(db: Any, llm: LLM, pid: UUID | str, script: ScriptV1, recipe:
             best = (candidate, answer.idea.strip(), issues)
         if not issues:
             break
-        request = (f"{user}\n\nTa scène pose ces problèmes, corrige-les en gardant ton idée si elle tient :\n- "
-                   + "\n- ".join(issues) + f"\n\nScène proposée :\n{answer.scene.model_dump_json(exclude_none=True)}")
+        request = (
+            f"{user}\n\nTa scène pose ces problèmes, corrige-les en gardant ton idée si elle tient :\n- "
+            + "\n- ".join(issues)
+            + f"\n\nScène proposée :\n{answer.scene.model_dump_json(exclude_none=True)}"
+        )
     assert best is not None
     new_script, idea, issues = best
-    entry = {"scene": index, "shot": shot, "note": note, "idea": idea, "issues": issues,
-             "before": version(old), "after": version(new_script.scenes[pos])}
+    entry = {
+        "scene": index,
+        "shot": shot,
+        "note": note,
+        "idea": idea,
+        "issues": issues,
+        "before": version(old),
+        "after": version(new_script.scenes[pos]),
+    }
     return new_script, entry

@@ -108,8 +108,19 @@ class ImportChannelStep(Step):
                                            youtube_video_id, published_at, youtube_publish_at, thumbnail_url)
                        values (%s, %s, 'imported', %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        on conflict (youtube_video_id) do nothing returning id""",
-                    (cid, channel["lang"], v["status"], v["title"], v["description"], v["tags"], v["duration_s"],
-                     v["youtube_video_id"], v["published_at"], v["youtube_publish_at"], v["thumbnail_url"]),
+                    (
+                        cid,
+                        channel["lang"],
+                        v["status"],
+                        v["title"],
+                        v["description"],
+                        v["tags"],
+                        v["duration_s"],
+                        v["youtube_video_id"],
+                        v["published_at"],
+                        v["youtube_publish_at"],
+                        v["thumbnail_url"],
+                    ),
                 )
                 if not row:
                     continue

@@ -37,11 +37,24 @@ def local_frames(video: Path, work: Path) -> list[Path]:
     out: list[Path] = []
     for i, t in enumerate(frame_times(probe_duration(video))):
         target = work / f"{i}.jpg"
-        run([
-            "ffmpeg", "-y", "-v", "error", "-ss", f"{t:.2f}", "-i", str(video), "-frames:v", "1",
-            "-vf", f"scale={CELL_W}:{CELL_H}:force_original_aspect_ratio=increase,crop={CELL_W}:{CELL_H}",
-            str(target),
-        ], timeout=120)
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-v",
+                "error",
+                "-ss",
+                f"{t:.2f}",
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale={CELL_W}:{CELL_H}:force_original_aspect_ratio=increase,crop={CELL_W}:{CELL_H}",
+                str(target),
+            ],
+            timeout=120,
+        )
         if target.exists():
             out.append(target)
     return out

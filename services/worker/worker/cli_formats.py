@@ -42,9 +42,21 @@ def hook_preview(args: argparse.Namespace) -> None:
         print("attention :", issue)
     if args.image:  # le titre posé sur une image 1080×1920, comme dans le montage
         subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-i", str(Path(args.image).resolve()), "-i", str(png), "-filter_complex",
-             f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg];[bg][1:v]overlay=(W-w)/2:{style.y}",
-             "-frames:v", "1", str(out.resolve())],
+            [
+                "ffmpeg",
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                str(Path(args.image).resolve()),
+                "-i",
+                str(png),
+                "-filter_complex",
+                f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg];[bg][1:v]overlay=(W-w)/2:{style.y}",
+                "-frames:v",
+                "1",
+                str(out.resolve()),
+            ],
             check=True,
         )
     print(f"Aperçu : {out}")
@@ -59,9 +71,11 @@ def _missing_model(exc: Exception) -> None:
     import re
 
     names = sorted(set(re.findall(r"'([^']+\.(?:safetensors|gguf))' not in", str(exc))))
-    sys.exit(f"Modèle absent de ComfyUI : {', '.join(names) or str(exc)[:300]}\n"
-             "→ powershell -ExecutionPolicy Bypass -File scripts\\download_models.ps1 -Formats -ComfyModels <dossier models> "
-             "(docs/15 §5), puis redémarrer ComfyUI.")
+    sys.exit(
+        f"Modèle absent de ComfyUI : {', '.join(names) or str(exc)[:300]}\n"
+        "→ powershell -ExecutionPolicy Bypass -File scripts\\download_models.ps1 -Formats -ComfyModels <dossier models> "
+        "(docs/15 §5), puis redémarrer ComfyUI."
+    )
 
 
 def sfx_list(_: argparse.Namespace) -> None:

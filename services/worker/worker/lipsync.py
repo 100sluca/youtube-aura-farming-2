@@ -300,7 +300,9 @@ def plan_scene(text: str, lang: str, clip: Heard, tts: Heard, clip_s: float, tts
     return ScenePlan(head, duration, tuple(pieces), tuple(words), mode)
 
 
-def _mapped_words(text: str, lang: str, tts_words: Sequence[dict[str, Any]], pieces: Sequence[Piece]) -> list[tuple[str, float, float]]:
+def _mapped_words(
+    text: str, lang: str, tts_words: Sequence[dict[str, Any]], pieces: Sequence[Piece]
+) -> list[tuple[str, float, float]]:
     """Mots affichés de la réplique aux instants où la voix calée les dit (sous-titres)."""
 
     def where(t: float) -> float:
@@ -332,9 +334,28 @@ def stretch(x: Any, rate: int, factor: float, work: Path) -> Any:
     if abs(factor - 1.0) >= 0.02 and len(x) > rate // 20:
         src, dst = work / "piece.wav", work / "piece_out.wav"
         sf.write(str(src), x, rate, subtype="FLOAT")
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-af", f"atempo={1 / factor:.5f}", "-ar", str(rate),
-                        "-ac", "1", "-c:a", "pcm_f32le", str(dst)], check=True, capture_output=True,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                str(src),
+                "-af",
+                f"atempo={1 / factor:.5f}",
+                "-ar",
+                str(rate),
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_f32le",
+                str(dst),
+            ],
+            check=True,
+            capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
         x, _ = sf.read(str(dst), dtype="float32")
         x = np.asarray(x, dtype=np.float32).reshape(-1)
     return np.pad(x, (0, max(0, n - len(x))))[:n]
@@ -358,11 +379,11 @@ def scene_voice(line: Any, rate: int, plan: ScenePlan, work: Path) -> Any:
 
     out = np.zeros(int(round(plan.duration * rate)) + 1, dtype=np.float32)
     for p in plan.pieces:
-        seg = np.asarray(line, dtype=np.float32)[int(round(p.src[0] * rate)):int(round(p.src[1] * rate))]
+        seg = np.asarray(line, dtype=np.float32)[int(round(p.src[0] * rate)) : int(round(p.src[1] * rate))]
         y = _faded(stretch(seg, rate, p.factor, work), rate)
         a = int(round(p.at * rate))
         m = max(0, min(len(y), len(out) - a))
-        out[a:a + m] += y[:m]
+        out[a : a + m] += y[:m]
     return out
 
 
@@ -383,8 +404,11 @@ def clip_energy(path: Path, hop: float = ENERGY_HOP) -> tuple[float, ...]:
     """Énergie (RMS) du son d'un clip par tranches de `hop` secondes ; vide si le clip n'a pas de son."""
     import numpy as np
 
-    proc = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
-                          capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+        capture_output=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
     x = np.frombuffer(proc.stdout, dtype=np.float32) if proc.returncode == 0 else np.zeros(0, dtype=np.float32)
     n = int(16000 * hop)
     if len(x) < n:
@@ -443,8 +467,11 @@ def _heard(d: dict[str, Any] | None, expected: str) -> Heard:
     if not d:
         return Heard()
     text = d.get("heard") if d.get("heard") is not None else d.get("text", "")
-    return Heard(tuple(d.get("words") or ()), tuple((float(s), float(e)) for s, e in d.get("speech") or ()),
-                 float(d["ratio"]) if d.get("ratio") is not None else heard_ratio(expected, str(text or "")))
+    return Heard(
+        tuple(d.get("words") or ()),
+        tuple((float(s), float(e)) for s, e in d.get("speech") or ()),
+        float(d["ratio"]) if d.get("ratio") is not None else heard_ratio(expected, str(text or "")),
+    )
 
 
 def _digest(path: Path) -> str:
@@ -489,13 +516,20 @@ def _cut_lines(narration: Path, tts_timeline: NarrationTimeline, folder: Path) -
         if sc.speech_start is None or sc.speech_end is None or sc.speech_end <= sc.speech_start:
             continue
         name = f"scene_{sc.index:02d}.wav"
-        sf.write(str(folder / name), x[int(round(sc.speech_start * rate)):int(round(sc.speech_end * rate))], rate)
+        sf.write(str(folder / name), x[int(round(sc.speech_start * rate)) : int(round(sc.speech_end * rate))], rate)
         files[str(sc.index)] = name
     return files, int(rate)
 
 
-def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, clips: Sequence[dict[str, Any]],
-               timeline: NarrationTimeline | None) -> LipSync | None:
+def sync_drama(
+    db: Any,
+    settings: Any,
+    vid: Any,
+    script: ScriptV1,
+    lang: str,
+    clips: Sequence[dict[str, Any]],
+    timeline: NarrationTimeline | None,
+) -> LipSync | None:
     """Répliques de synthèse calées sur la bouche des clips d'un drame en voix constantes ; None si c'est impossible
     (voix pas encore faite, Whisper absent) : le montage garde alors la narration telle quelle. `clips[i]` : la ligne
     d'assets du clip de la scène i (id, local_path, duration_s, dialogue)."""
@@ -509,6 +543,7 @@ def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, cl
 
     def fallback() -> LipSync | None:  # calage impossible cette fois : celui du montage d'avant, s'il y en a un
         return last_sync(settings, vid, timeline)
+
     cache: dict[str, Any] = {}
     try:
         cache = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.is_file() else {}
@@ -522,17 +557,29 @@ def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, cl
         files, rate = _cut_lines(narration, timeline, folder)
         digests = {k: _digest(folder / name) for k, name in files.items()}
         # une réplique identique (voix refaite pour un seul plan) garde sa transcription : Whisper ne redit que la nouvelle
-        heard = {k: old["heard"][k] for k, d in digests.items()
-                 if k in (old.get("heard") or {}) and (old.get("digests") or {}).get(k) == d}
-        cache = {"narration": _stamp(narration), "rate": rate, "tts_timeline": timeline.model_dump(), "files": files,
-                 "digests": digests, "heard": heard}
+        heard = {
+            k: old["heard"][k]
+            for k, d in digests.items()
+            if k in (old.get("heard") or {}) and (old.get("digests") or {}).get(k) == d
+        }
+        cache = {
+            "narration": _stamp(narration),
+            "rate": rate,
+            "tts_timeline": timeline.model_dump(),
+            "files": files,
+            "digests": digests,
+            "heard": heard,
+        }
     tts_timeline = NarrationTimeline.model_validate(cache["tts_timeline"])
     files, rate = cache["files"], int(cache["rate"])
 
     # Transcriptions manquantes, en un seul appel (le modèle se charge une fois) : clips sans passages parlés, répliques
     texts = {sc.index: line_text(sc) for sc in script.scenes}
-    todo_clips = [c for sc, c in zip(script.scenes, clips, strict=True)
-                  if texts[sc.index] and not (c.get("dialogue") or {}).get("speech") and Path(c["local_path"]).is_file()]
+    todo_clips = [
+        c
+        for sc, c in zip(script.scenes, clips, strict=True)
+        if texts[sc.index] and not (c.get("dialogue") or {}).get("speech") and Path(c["local_path"]).is_file()
+    ]
     todo_lines = [k for k in files if k not in cache["heard"]]
     if todo_clips or todo_lines:
         paths = [Path(c["local_path"]) for c in todo_clips] + [folder / files[k] for k in todo_lines]
@@ -544,14 +591,22 @@ def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, cl
         if results is None:
             log.warning("levres.whisper_absent", raison="environnement tts/eval non installé : install_tts.ps1 -Engine eval")
             return fallback()
-        for c, r in zip(todo_clips, results[:len(todo_clips)], strict=True):
+        for c, r in zip(todo_clips, results[: len(todo_clips)], strict=True):
             sc = next(s for s in script.scenes if s.index == c["scene_index"])
-            c["dialogue"] = {"expected": texts[sc.index], "heard": r["text"], "words": r["words"],
-                             "speech": r.get("speech") or [], "ratio": heard_ratio(texts[sc.index], r["text"])}
+            c["dialogue"] = {
+                "expected": texts[sc.index],
+                "heard": r["text"],
+                "words": r["words"],
+                "speech": r.get("speech") or [],
+                "ratio": heard_ratio(texts[sc.index], r["text"]),
+            }
             if c.get("id"):  # gardé avec le clip : un nouveau montage ne le retranscrit pas
-                db.execute("update assets set meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('dialogue', %s::jsonb) "
-                           "where id = %s", (json.dumps(c["dialogue"], ensure_ascii=False), c["id"]))
-        for k, r in zip(todo_lines, results[len(todo_clips):], strict=True):
+                db.execute(
+                    "update assets set meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('dialogue', %s::jsonb) "
+                    "where id = %s",
+                    (json.dumps(c["dialogue"], ensure_ascii=False), c["id"]),
+                )
+        for k, r in zip(todo_lines, results[len(todo_clips) :], strict=True):
             cache["heard"][k] = {"text": r["text"], "words": r["words"], "speech": r.get("speech") or []}
         cache_file.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
 
@@ -581,15 +636,26 @@ def sync_drama(db: Any, settings: Any, vid: Any, script: ScriptV1, lang: str, cl
             said = replace(_heard(cache["heard"].get(key), text), energy=line_energy(line, rate), hop=PAUSE_HOP)
             plan = plan_scene(text, lang, heard, said, clip_s, len(line) / rate)
             if plan.mode == "none":  # personne ne parle dans le clip : l'ancienne pose (voix 0,15 s après le début)
-                plan = ScenePlan(0.0, old.duration, (Piece((0.0, len(line) / rate), LEAD_IN, 1.0),),
-                                 tuple((w.text, w.start - old.start, w.end - old.start) for w in old.words))
+                plan = ScenePlan(
+                    0.0,
+                    old.duration,
+                    (Piece((0.0, len(line) / rate), LEAD_IN, 1.0),),
+                    tuple((w.text, w.start - old.start, w.end - old.start) for w in old.words),
+                )
             report[plan.mode if plan.mode in report else "none"].append(sc.index)
             voice = scene_voice(line, rate, plan, Path(tmp))
-            parts.append(voice[:int(round(plan.duration * rate))])
+            parts.append(voice[: int(round(plan.duration * rate))])
             words = [WordTiming(text=w, start=round(t + a, 3), end=round(t + b, 3)) for w, a, b in plan.words]
-            scenes.append(SceneTiming(index=sc.index, start=round(t, 3), duration=plan.duration,
-                                      speech_start=round(t + plan.pieces[0].at, 3), speech_end=round(t + plan.pieces[-1].end, 3),
-                                      words=words))
+            scenes.append(
+                SceneTiming(
+                    index=sc.index,
+                    start=round(t, 3),
+                    duration=plan.duration,
+                    speech_start=round(t + plan.pieces[0].at, 3),
+                    speech_end=round(t + plan.pieces[-1].end, 3),
+                    words=words,
+                )
+            )
             heads.append(plan.head)
             t += plan.duration
     sf.write(str(track), np.clip(np.concatenate(parts), -1.0, 1.0), rate)

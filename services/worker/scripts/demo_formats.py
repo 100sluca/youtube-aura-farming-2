@@ -52,8 +52,11 @@ def main() -> None:
     utf8_console()
     ap = argparse.ArgumentParser()
     ap.add_argument("script")
-    ap.add_argument("--recipe", choices=["timelapse", "tour", "drama"],
-                    help="défaut : drama si le script a une distribution (cast), tour s'il a une vue (view), sinon timelapse")
+    ap.add_argument(
+        "--recipe",
+        choices=["timelapse", "tour", "drama"],
+        help="défaut : drama si le script a une distribution (cast), tour s'il a une vue (view), sinon timelapse",
+    )
     ap.add_argument("--series", help="slug de la série (défaut : celle de la recette)")
     ap.add_argument("--lang", default="fr")
     ap.add_argument("--keyframes", help="motif des images clés d'un essai à reprendre (une par scène, passages exceptés)")
@@ -71,8 +74,10 @@ def main() -> None:
 
     settings = Settings()
     db = Db(settings.database_url)
-    series = db.fetch_one("select id, slug, recipe, format, target_duration_s, style_preset from series where slug = %s",
-                          (args.series or SERIES[recipe],))
+    series = db.fetch_one(
+        "select id, slug, recipe, format, target_duration_s, style_preset from series where slug = %s",
+        (args.series or SERIES[recipe],),
+    )
     if not series:
         raise SystemExit(f"série introuvable : {args.series or SERIES[recipe]}")
     if series["recipe"] != recipe:
@@ -81,8 +86,10 @@ def main() -> None:
     title = meta.title if meta else Path(args.script).stem
     # Drame : la prémisse est la description de la vidéo, les temps visuels sont les répliques (« Kiwi : … »)
     premise = (meta.description if meta else None) if recipe == "drama" else script.design_bible
-    beats = [sc.narration.get(args.lang, "") if recipe == "drama" else sc.on_screen_text.get(args.lang, "")  # type: ignore[call-overload]
-             for sc in script.scenes]
+    beats = [
+        sc.narration.get(args.lang, "") if recipe == "drama" else sc.on_screen_text.get(args.lang, "")  # type: ignore[call-overload]
+        for sc in script.scenes
+    ]
     concept = db.fetch_one(
         """insert into concepts (title, hook, premise, visual_beats, source, status, series_id)
            values (%s, %s, %s, %s, 'manual', 'used', %s) returning id""",
@@ -92,8 +99,15 @@ def main() -> None:
         """insert into productions (concept_id, series_id, channel_id, format, target_duration_s, style_preset, status, script, lint)
            values (%s, %s, (select id from channels where is_active order by created_at limit 1), %s, %s, %s, 'draft', %s, %s)
            returning id""",
-        (concept["id"], series["id"], series["format"], round(script.duration_s), series["style_preset"],
-         Jsonb(script.model_dump()), Jsonb(issues)),
+        (
+            concept["id"],
+            series["id"],
+            series["format"],
+            round(script.duration_s),
+            series["style_preset"],
+            Jsonb(script.model_dump()),
+            Jsonb(issues),
+        ),
     )
     pdir = settings.data_dir / "productions" / str(prod["id"])
     if keys:  # storyboard repris : chaque image contrôlée comme le ferait le worker
@@ -107,18 +121,36 @@ def main() -> None:
         for i, dst in copied.items():
             s_pos = edit_source(script, i)
             verdict = check_keyframe(qc, dst, script, i, recipe, copied.get(s_pos) if s_pos is not None else None) if qc else None
-            db.add_asset(production_id=prod["id"], kind="storyboard", scene_index=i, local_path=str(dst), width=768,
-                         height=1344, selected=True,
-                         meta={"provider": "essai", "source": str(keys[with_image.index(i)]),
-                               **({"qc": verdict.model_dump()} if verdict else {})})
+            db.add_asset(
+                production_id=prod["id"],
+                kind="storyboard",
+                scene_index=i,
+                local_path=str(dst),
+                width=768,
+                height=1344,
+                selected=True,
+                meta={
+                    "provider": "essai",
+                    "source": str(keys[with_image.index(i)]),
+                    **({"qc": verdict.model_dump()} if verdict else {}),
+                },
+            )
             print(f"image {i} :", "contrôle OK" if verdict and verdict.ok else verdict.problems if verdict else "non contrôlée")
     if clips:
         (pdir / "clips").mkdir(parents=True, exist_ok=True)
         for i, src in enumerate(clips):
             dst = pdir / "clips" / f"scene_{i:02d}.mp4"
             shutil.copy2(src, dst)
-            db.add_asset(production_id=prod["id"], kind="clip", scene_index=i, local_path=str(dst), width=480, height=832,
-                         duration_s=probe_duration(dst), meta={"provider": "essai", "source": str(src)})
+            db.add_asset(
+                production_id=prod["id"],
+                kind="clip",
+                scene_index=i,
+                local_path=str(dst),
+                width=480,
+                height=832,
+                duration_s=probe_duration(dst),
+                meta={"provider": "essai", "source": str(src)},
+            )
     db.enqueue("script", production_id=prod["id"], priority=50)  # le script existe : le job crée la vidéo et le storyboard
     print(f"Production {prod['id']} ({series['slug']}) : en file. Storyboard à valider dans le dashboard (Création).")
 

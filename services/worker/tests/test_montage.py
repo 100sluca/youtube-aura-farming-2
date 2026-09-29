@@ -38,8 +38,20 @@ def test_defaults_file_matches_the_code():
 def test_origin_template_reproduces_the_previous_look():
     t = MontageTemplate()
     impact = BUILTIN_PROFILES["impact"]
-    same = ("font_family", "font_size", "bold", "text_transform", "highlight_mode", "highlight_color", "outline_width",
-            "shadow_opacity", "max_words", "max_chars", "animation", "background")
+    same = (
+        "font_family",
+        "font_size",
+        "bold",
+        "text_transform",
+        "highlight_mode",
+        "highlight_color",
+        "outline_width",
+        "shadow_opacity",
+        "max_words",
+        "max_chars",
+        "animation",
+        "background",
+    )
     assert all(getattr(t.profile(), k) == getattr(impact, k) for k in same)
     assert (t.subtitles.x, t.subtitles.y) == (540, round(0.52 * 1920))  # « center » du profil impact
     # Titre d'accroche sur toutes les vidéos ; textes à l'écran sur les chantiers et les visites seulement (Luca, 28/09)
@@ -53,10 +65,12 @@ def test_origin_template_reproduces_the_previous_look():
 
 
 def test_subtitles_and_titles_follow_the_template_positions():
-    t = MontageTemplate.model_validate({
-        "subtitles": {"x": 300, "y": 1500, "background": "box", "background_padding": 20},
-        "titles": {"x": 700, "y": 400, "background": "outline", "outline_width": 5, "uppercase": False},
-    })
+    t = MontageTemplate.model_validate(
+        {
+            "subtitles": {"x": 300, "y": 1500, "background": "box", "background_padding": 20},
+            "titles": {"x": 700, "y": 400, "background": "outline", "outline_width": 5, "uppercase": False},
+        }
+    )
     ass = build_ass([WORDS], t.profile(), [(0.0, 1.0, "Salon")], title_style=t.title_style())
     assert all("\\pos(300,1500)" in d for d in _dialogues(ass, 2))
     main = _style(ass, "Main")
@@ -87,8 +101,12 @@ def test_title_font_is_copied_next_to_the_subtitles_and_stale_fonts_removed(tmp_
 
 @pytest.mark.skipif(not (WIN_FONTS / "segoeuib.ttf").is_file(), reason="polices Windows absentes")
 def test_font_pick_prefers_the_exact_family_and_the_right_weight():
-    fonts = FontRegistry.scan(*(WIN_FONTS / n for n in ("segoeui.ttf", "segoeuib.ttf", "seguisb.ttf", "seguibl.ttf", "arial.ttf",
-                                                           "arialbd.ttf", "ariblk.ttf")))
+    fonts = FontRegistry.scan(
+        *(
+            WIN_FONTS / n
+            for n in ("segoeui.ttf", "segoeuib.ttf", "seguisb.ttf", "seguibl.ttf", "arial.ttf", "arialbd.ttf", "ariblk.ttf")
+        )
+    )
     assert fonts.pick("Segoe UI", True).path.name == "segoeuib.ttf"
     assert fonts.pick("Segoe UI", False).path.name == "segoeui.ttf"
     assert fonts.pick("Segoe UI Black", True).path.name == "seguibl.ttf"
@@ -118,23 +136,31 @@ def test_hook_alignment_and_backgrounds():
 
 
 def test_apply_template_shows_layers_per_format(tmp_path):
-    script = ScriptV1.model_validate({
-        "scenes": [{"index": i, "duration_s": 3, "visual_prompt": "v", "motion_prompt": "m"} for i in range(4)],
-        "metadata": {"fr": {"title": "Ce miroir cachait un dressing 😱", "description": "d"}},
-    })
+    script = ScriptV1.model_validate(
+        {
+            "scenes": [{"index": i, "duration_s": 3, "visual_prompt": "v", "motion_prompt": "m"} for i in range(4)],
+            "metadata": {"fr": {"title": "Ce miroir cachait un dressing 😱", "description": "d"}},
+        }
+    )
     assert hook_text(script, "fr") == "Ce miroir cachait un dressing"  # récit écrit sans titre d'accroche : titre de la vidéo
 
     def plan() -> RenderPlan:
-        return RenderPlan(clips=[Path("c.mp4")] * 4, clip_durations=[3.0] * 4, scene_durations=[3.0] * 4,
-                          words_by_scene=[WORDS], titles=[(0.0, 3.0, "1 an plus tard")])
+        return RenderPlan(
+            clips=[Path("c.mp4")] * 4,
+            clip_durations=[3.0] * 4,
+            scene_durations=[3.0] * 4,
+            words_by_scene=[WORDS],
+            titles=[(0.0, 3.0, "1 an plus tard")],
+        )
 
     pytest.importorskip("PIL")
     story = plan()
     apply_template(story, MontageTemplate(), "story", hook=hook_text(script, "fr"), workdir=tmp_path, fonts=FontRegistry())
     # d'origine, un récit : titre d'accroche et sous-titres, pas de texte à l'écran en plus
     assert story.hook_png and story.hook_png.exists() and story.words_by_scene and story.titles == []
-    custom = MontageTemplate.model_validate({"hook": {"formats": ["tour"]}, "subtitles": {"enabled": False},
-                                             "titles": {"formats": ["story"]}})
+    custom = MontageTemplate.model_validate(
+        {"hook": {"formats": ["tour"]}, "subtitles": {"enabled": False}, "titles": {"formats": ["story"]}}
+    )
     other = plan()
     apply_template(other, custom, "story", hook=hook_text(script, "fr"), workdir=tmp_path, fonts=FontRegistry())
     assert other.hook_png is None and other.words_by_scene == [] and other.titles == [(0.0, 3.0, "1 an plus tard")]
@@ -159,8 +185,9 @@ def test_load_template_falls_back_to_the_origin():
 
 
 def _preview_ctx(tmp_path, payload, dry_run):
-    settings = SimpleNamespace(data_dir=tmp_path, fonts_dir=Path(__file__).parent.parent / "assets" / "fonts",
-                               video_encoder="cpu", dry_run=dry_run)
+    settings = SimpleNamespace(
+        data_dir=tmp_path, fonts_dir=Path(__file__).parent.parent / "assets" / "fonts", video_encoder="cpu", dry_run=dry_run
+    )
     job = SimpleNamespace(id=uuid4(), payload=payload)
     return SimpleNamespace(job=job, db=_Db(None), settings=settings, progress=lambda *a, **k: None)
 
@@ -213,7 +240,11 @@ def test_preview_lane_runs_jobs_while_the_main_loop_is_busy(monkeypatch):
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg absent")
 def test_montage_preview_real_render(tmp_path):
     pytest.importorskip("PIL")
-    payload = {"template": {"hook": {"formats": ["story"], "y": 300}, "titles": {"font_family": "Bebas Neue", "bold": False}},
-               "recipe": "story", "duration_s": 3, "texts": {"hook": "Regarde ce qui se cache derrière"}}
+    payload = {
+        "template": {"hook": {"formats": ["story"], "y": 300}, "titles": {"font_family": "Bebas Neue", "bold": False}},
+        "recipe": "story",
+        "duration_s": 3,
+        "texts": {"hook": "Regarde ce qui se cache derrière"},
+    }
     res = MontagePreviewStep().run(_preview_ctx(tmp_path, payload, dry_run=False))
     assert Path(res["path"]).stat().st_size > 10_000 and Path(res["poster"]).stat().st_size > 5_000

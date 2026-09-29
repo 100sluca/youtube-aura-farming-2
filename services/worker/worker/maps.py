@@ -97,13 +97,23 @@ class Place:
         return [p for line in self.lines for p in line] or [(self.lon, self.lat)]
 
     def to_json(self) -> dict[str, Any]:
-        return {"name": self.name, "lon": self.lon, "lat": self.lat, "source": self.source,
-                "lines": [[list(p) for p in line] for line in self.lines]}
+        return {
+            "name": self.name,
+            "lon": self.lon,
+            "lat": self.lat,
+            "source": self.source,
+            "lines": [[list(p) for p in line] for line in self.lines],
+        }
 
     @classmethod
     def from_json(cls, d: dict[str, Any]) -> Place:
-        return cls(name=d["name"], lon=float(d["lon"]), lat=float(d["lat"]), source=d.get("source", "wikipedia"),
-                   lines=[[(float(p[0]), float(p[1])) for p in line] for line in d.get("lines") or []])
+        return cls(
+            name=d["name"],
+            lon=float(d["lon"]),
+            lat=float(d["lat"]),
+            source=d.get("source", "wikipedia"),
+            lines=[[(float(p[0]), float(p[1])) for p in line] for line in d.get("lines") or []],
+        )
 
 
 def label_of(name: str) -> str:
@@ -308,8 +318,9 @@ def chain(lines: list[list[LonLat]], start: LonLat | None = None, gap: float | N
     def head(i: int, rev: bool) -> LonLat:
         return pieces[i][-1] if rev else pieces[i][0]
 
-    anchor = start or max((p for line in pieces for p in (line[0], line[-1])),
-                          key=lambda p: _dist(p, ((x0 + x1) / 2, (y0 + y1) / 2)))
+    anchor = start or max(
+        (p for line in pieces for p in (line[0], line[-1])), key=lambda p: _dist(p, ((x0 + x1) / 2, (y0 + y1) / 2))
+    )
     i, rev = min(ends, key=lambda e: _dist(head(*e), anchor))
     used = {i}
     strokes = [pieces[i][::-1] if rev else list(pieces[i])]
@@ -368,8 +379,11 @@ def blend_view(a: View, b: View, u: float) -> View:
     au-dessus du lieu pendant la descente) ; la longitude prend le plus court chemin."""
     uz, uc = smoothstep(u), smoothstep(min(1.0, u * 1.6))
     dlon = (b.lon - a.lon + 180.0) % 360.0 - 180.0
-    return View(lon=a.lon + dlon * uc, lat=a.lat + (b.lat - a.lat) * uc,
-                scale=math.exp(math.log(a.scale) + (math.log(b.scale) - math.log(a.scale)) * uz))
+    return View(
+        lon=a.lon + dlon * uc,
+        lat=a.lat + (b.lat - a.lat) * uc,
+        scale=math.exp(math.log(a.scale) + (math.log(b.scale) - math.log(a.scale)) * uz),
+    )
 
 
 @dataclass
@@ -419,8 +433,13 @@ def make_plan(place: Place, ends: list[Place], context: list[Place], rivers: lis
     if context and wide_scale < final * 0.5:  # une vraie vue large : pause sur les grands repères, puis on plonge
         wx0, wy0, wx1, wy1 = bbox(subject + [(p.lon, p.lat) for p in context])
         wide = View((wx0 + wx1) / 2, (wy0 + wy1) / 2, wide_scale)
-        keys = [(0.0, start), (0.30, wide), (0.42, View(wide.lon, wide.lat, wide.scale * 1.06)), (0.72, target),
-                (1.0, View(target.lon, target.lat, target.scale * 1.05))]
+        keys = [
+            (0.0, start),
+            (0.30, wide),
+            (0.42, View(wide.lon, wide.lat, wide.scale * 1.06)),
+            (0.72, target),
+            (1.0, View(target.lon, target.lat, target.scale * 1.05)),
+        ]
         return Plan(place, ends, context, strokes, keys, trace=(0.62, 0.92), context_show=(0.24, 0.52), rivers=rivers)
     keys = [(0.0, start), (0.55, target), (1.0, View(target.lon, target.lat, target.scale * 1.06))]
     return Plan(place, ends, [], strokes, keys, trace=(0.45, 0.88), rivers=rivers)
@@ -511,8 +530,9 @@ def level(view: View) -> float:
     return min(float(MAX_ZOOM), max(1.0, math.log2(max(k, 1e-9)) + ZOOM_BIAS))
 
 
-def project(view: View, lon: np.ndarray, lat: np.ndarray, cx: float = W / 2,
-            cy: float = H * CENTER_Y) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def project(
+    view: View, lon: np.ndarray, lat: np.ndarray, cx: float = W / 2, cy: float = H * CENTER_Y
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Orthographique : (x, y) à l'écran et visibilité (face visible du globe)."""
     phi0, lam0 = math.radians(view.lat), math.radians(view.lon)
     phi, dlam = np.radians(lat), np.radians(lon) - lam0
@@ -525,7 +545,9 @@ def project(view: View, lon: np.ndarray, lat: np.ndarray, cx: float = W / 2,
 class Renderer:
     """Dessine les images d'une scène carte (numpy + Pillow)."""
 
-    def __init__(self, plan: Plan, tiles: TileCache, font_path: Path | None, credit: str = "", size: tuple[int, int] = (W, H)) -> None:
+    def __init__(
+        self, plan: Plan, tiles: TileCache, font_path: Path | None, credit: str = "", size: tuple[int, int] = (W, H)
+    ) -> None:
         self.plan, self.tiles, self.credit = plan, tiles, credit
         self.w, self.h = size
         self.k = self.w / W  # rendu plus petit (essais) : même cadrage, échelle réduite d'autant
@@ -557,7 +579,9 @@ class Renderer:
         c = np.sqrt(np.clip(1.0 - rho2, 0.0, 1.0))
         phi0, lam0 = math.radians(view.lat), math.radians(view.lon)
         lat = np.arcsin(np.clip(c * np.float32(math.sin(phi0)) + y * np.float32(math.cos(phi0)), -1.0, 1.0))
-        lon = np.float32(lam0) + np.arctan2(np.broadcast_to(x, rho2.shape), c * np.float32(math.cos(phi0)) - y * np.float32(math.sin(phi0)))
+        lon = np.float32(lam0) + np.arctan2(
+            np.broadcast_to(x, rho2.shape), c * np.float32(math.cos(phi0)) - y * np.float32(math.sin(phi0))
+        )
         return lat, lon, inside, np.sqrt(rho2)
 
     def _mercator(self, lat: np.ndarray, lon: np.ndarray, z: int, view: View) -> tuple[np.ndarray, np.ndarray]:
@@ -579,7 +603,9 @@ class Renderer:
         mosaic = np.empty((mh, mw, 3), dtype=np.uint8)
         for ty in range(ty0, ty1 + 1):
             for tx in range(tx0, tx1 + 1):
-                mosaic[(ty - ty0) * TILE : (ty - ty0 + 1) * TILE, (tx - tx0) * TILE : (tx - tx0 + 1) * TILE] = self.tiles.tile(z, tx, ty)
+                mosaic[(ty - ty0) * TILE : (ty - ty0 + 1) * TILE, (tx - tx0) * TILE : (tx - tx0 + 1) * TILE] = self.tiles.tile(
+                    z, tx, ty
+                )
         u = np.clip(px - (tx0 * TILE + 0.5), 0, mw - 1.001)
         v = np.clip(py - (ty0 * TILE + 0.5), 0, mh - 1.001)
         x0, y0 = u.astype(np.int32), v.astype(np.int32)
@@ -651,7 +677,9 @@ class Renderer:
     def font(self, size: int) -> Any:
         if size not in self._fonts:
             try:
-                self._fonts[size] = ImageFont.truetype(str(self.font_path), size) if self.font_path else ImageFont.load_default(size)
+                self._fonts[size] = (
+                    ImageFont.truetype(str(self.font_path), size) if self.font_path else ImageFont.load_default(size)
+                )
             except OSError:
                 self._fonts[size] = ImageFont.load_default(size)
         return self._fonts[size]
@@ -702,16 +730,25 @@ class Renderer:
                     inner += [p for p in run if box[0] < p[0] < box[2] and box[1] < p[1] < box[3]]
             if inner:
                 others = avoid + [xy for _, xy in spots]
-                best = max(inner, key=lambda q: min((math.hypot(q[0] - o[0], q[1] - o[1]) for o in others), default=0.0)) \
-                    if others else inner[len(inner) // 2]
+                best = (
+                    max(inner, key=lambda q: min((math.hypot(q[0] - o[0], q[1] - o[1]) for o in others), default=0.0))
+                    if others
+                    else inner[len(inner) // 2]
+                )
                 spots.append((river.name, best))
         layer = Image.alpha_composite(layer, sharp.reduce(2))
         d = ImageDraw.Draw(layer)
         font = self.font(40)
         for name, (x, y) in spots:
             left, top, right, bottom = d.textbbox((0, 0), name, font=font, stroke_width=5)
-            d.text((x - (right - left) / 2, y - (bottom - top) - 16), name, font=font, fill=(*RIVER, alpha), stroke_width=5,
-                   stroke_fill=(6, 14, 30, alpha))
+            d.text(
+                (x - (right - left) / 2, y - (bottom - top) - 16),
+                name,
+                font=font,
+                fill=(*RIVER, alpha),
+                stroke_width=5,
+                stroke_fill=(6, 14, 30, alpha),
+            )
         return layer
 
     def _partial(self, p: float) -> tuple[list[list[LonLat]], LonLat | None]:
@@ -736,8 +773,16 @@ class Renderer:
             break
         return out, tip
 
-    def _label(self, draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str, size: int, color: tuple[int, int, int],
-               alpha: int, dot: int) -> None:
+    def _label(
+        self,
+        draw: ImageDraw.ImageDraw,
+        xy: tuple[float, float],
+        text: str,
+        size: int,
+        color: tuple[int, int, int],
+        alpha: int,
+        dot: int,
+    ) -> None:
         x, y = xy
         font = self.font(size)
         draw.ellipse((x - dot - 3, y - dot - 3, x + dot + 3, y + dot + 3), fill=(10, 12, 20, alpha))
@@ -840,19 +885,36 @@ def prepare(spec: MapSpec, resolver: GeoResolver) -> Plan:
     ends = [p for n in spec.ends[:2] if (p := resolver.resolve(n, shape=False))]
     context = [p for n in spec.context[:3] if (p := resolver.resolve(n, shape=False))]
     rivers = [p for n in spec.lines[:3] if (p := resolver.resolve(n, shape=True))]
-    log.info("maps.plan", place=place.name, source=place.source, pieces=len(place.lines), ends=[e.name for e in ends],
-             context=[c.name for c in context], lines=[(r.name, len(r.lines)) for r in rivers])
+    log.info(
+        "maps.plan",
+        place=place.name,
+        source=place.source,
+        pieces=len(place.lines),
+        ends=[e.name for e in ends],
+        context=[c.name for c in context],
+        lines=[(r.name, len(r.lines)) for r in rivers],
+    )
     return make_plan(place, ends, context, rivers)
 
 
-def _renderer(plan: Plan, cache_root: Path, user_agent: str, font_path: Path | None, lang: str,
-              size: tuple[int, int]) -> Renderer:
+def _renderer(
+    plan: Plan, cache_root: Path, user_agent: str, font_path: Path | None, lang: str, size: tuple[int, int]
+) -> Renderer:
     tiles = TileCache(cache_root / "tiles" / TILE_SET, user_agent=user_agent)
     return Renderer(plan, tiles, font_path, CREDIT.get(lang, CREDIT["en"]), size=size)
 
 
-def render_clip(plan: Plan, out: Path, duration_s: float, *, cache_root: Path, user_agent: str = DEFAULT_USER_AGENT,
-                font_path: Path | None = None, lang: str = "fr", size: tuple[int, int] = (W, H)) -> float:
+def render_clip(
+    plan: Plan,
+    out: Path,
+    duration_s: float,
+    *,
+    cache_root: Path,
+    user_agent: str = DEFAULT_USER_AGENT,
+    font_path: Path | None = None,
+    lang: str = "fr",
+    size: tuple[int, int] = (W, H),
+) -> float:
     """Clip MP4 de la scène (1080×1920, 30 i/s) ; renvoie sa durée."""
     r = _renderer(plan, cache_root, user_agent, font_path, lang, size)
     n = max(2, round(duration_s * FPS))
@@ -863,9 +925,33 @@ def render_clip(plan: Plan, out: Path, duration_s: float, *, cache_root: Path, u
         fetched = r.tiles.prefetch(wanted)
         log.info("maps.tiles", wanted=len(wanted), downloaded=fetched, missing=r.tiles.missing)
         out.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{r.w}x{r.h}", "-r", str(FPS),
-               "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p",
-               "-movflags", "+faststart", str(out)]
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            f"{r.w}x{r.h}",
+            "-r",
+            str(FPS),
+            "-i",
+            "-",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "17",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(out),
+        ]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         assert proc.stdin is not None
         try:
@@ -882,9 +968,18 @@ def render_clip(plan: Plan, out: Path, duration_s: float, *, cache_root: Path, u
     return n / FPS
 
 
-def render_still(plan: Plan, out: Path, *, cache_root: Path, user_agent: str = DEFAULT_USER_AGENT,
-                 font_path: Path | None = None, lang: str = "fr", duration_s: float = 6.0, at: float = 0.97,
-                 size: tuple[int, int] = (W, H)) -> Path:
+def render_still(
+    plan: Plan,
+    out: Path,
+    *,
+    cache_root: Path,
+    user_agent: str = DEFAULT_USER_AGENT,
+    font_path: Path | None = None,
+    lang: str = "fr",
+    duration_s: float = 6.0,
+    at: float = 0.97,
+    size: tuple[int, int] = (W, H),
+) -> Path:
     """Image du storyboard : la fin de la scène, tout tracé."""
     r = _renderer(plan, cache_root, user_agent, font_path, lang, size)
     try:

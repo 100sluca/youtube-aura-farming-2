@@ -74,8 +74,13 @@ def parse_config(value: dict[str, Any] | None) -> TikTokConfig:
         if isinstance(c, dict)
     }
     flag = lambda k, d: bool(v[k]) if isinstance(v.get(k), bool) else d  # noqa: E731
-    return TikTokConfig(channels=channels, allow_comment=flag("allow_comment", True), allow_duet=flag("allow_duet", True),
-                        allow_stitch=flag("allow_stitch", True), ai_label=flag("ai_label", False))
+    return TikTokConfig(
+        channels=channels,
+        allow_comment=flag("allow_comment", True),
+        allow_duet=flag("allow_duet", True),
+        allow_stitch=flag("allow_stitch", True),
+        ai_label=flag("ai_label", False),
+    )
 
 
 def load_tiktok_config(db: Any | None) -> TikTokConfig:

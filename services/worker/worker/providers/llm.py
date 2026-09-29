@@ -133,8 +133,9 @@ class AnthropicLLM:
     def complete_json(self, system: str, user: str, schema: type[T], images: Sequence[Path] = ()) -> T:
         content: Any = user
         if images:
-            content = [{"type": "image", "source": {"type": "base64", "media_type": m, "data": d}}
-                       for m, d in map(encode_image, images)] + [{"type": "text", "text": user}]
+            content = [
+                {"type": "image", "source": {"type": "base64", "media_type": m, "data": d}} for m, d in map(encode_image, images)
+            ] + [{"type": "text", "text": user}]
         msg = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
@@ -271,7 +272,9 @@ class KeyedLLM:
         self.last_key = 1  # numéro de la clé qui a répondu en dernier
 
     def complete_json(self, system: str, user: str, schema: type[T], images: Sequence[Path] = ()) -> T:
-        order = sorted(self.clients, key=lambda c: _cooling(("key", self.name, c[0])) or _cooling(("quota", self.name, self.model, c[0])))
+        order = sorted(
+            self.clients, key=lambda c: _cooling(("key", self.name, c[0])) or _cooling(("quota", self.name, self.model, c[0]))
+        )
         last: Exception | None = None
         for fp, client in order:
             try:
@@ -314,7 +317,11 @@ class FallbackLLM:
             for i, provider in enumerate(chain):
                 model = str(getattr(provider, "model", "?"))
                 try:
-                    out = provider.complete_json(system, user, schema, images) if images else provider.complete_json(system, user, schema)
+                    out = (
+                        provider.complete_json(system, user, schema, images)
+                        if images
+                        else provider.complete_json(system, user, schema)
+                    )
                     key = getattr(provider, "last_key", 1)
                     self.used.append(f"{provider.name}:{model}" + (f" (clé {key})" if key > 1 else ""))
                     return out
@@ -324,8 +331,14 @@ class FallbackLLM:
                     if kind in ("overload", "model"):
                         _cool(("model", provider.name, model), seconds)
                     transient = transient or kind == "overload" or (kind == "quota" and seconds <= 60)
-                    log.warning("llm.choix_suivant" if i + 1 < len(chain) else "llm.chaine_epuisee", provider=provider.name,
-                                model=model, choix=i + 1, raison=kind, error=str(exc)[:300])
+                    log.warning(
+                        "llm.choix_suivant" if i + 1 < len(chain) else "llm.chaine_epuisee",
+                        provider=provider.name,
+                        model=model,
+                        choix=i + 1,
+                        raison=kind,
+                        error=str(exc)[:300],
+                    )
             if round_no or not transient:
                 break
             log.warning("llm.second_tour", wait_s=SECOND_ROUND_WAIT_S)
@@ -399,5 +412,7 @@ def test_provider(settings: Settings, db: Any | None, name: str, model: str | No
     p = build_provider(name, cfg, settings, model, key=key)
     if not p:
         raise RuntimeError(f"{name} : pas de clé enregistrée")
-    out = p.complete_json("Réponds uniquement en JSON.", 'Renvoie {"ok": true, "model_hint": "<ton nom de modèle si tu le connais>"}', _Ping)
+    out = p.complete_json(
+        "Réponds uniquement en JSON.", 'Renvoie {"ok": true, "model_hint": "<ton nom de modèle si tu le connais>"}', _Ping
+    )
     return f"{name} · {getattr(p, 'model', '?')}{f' · clé {key_index}' if key_index else ''} répond ({'ok' if out.ok else 'réponse inattendue'})"

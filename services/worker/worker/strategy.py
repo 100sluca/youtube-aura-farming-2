@@ -123,7 +123,9 @@ def _group(rows: Sequence[VideoPerf], key: Callable[[VideoPerf], Iterable[str] |
                 n=len(items),
                 median_views_d7=round(med, 1),
                 mean_view_pct=round(statistics.fmean(pcts), 1) if pcts else None,
-                subs_per_1k_views=round(sum(i.subscribers_gained for i in items) * 1000 / total_views, 2) if total_views else None,
+                subs_per_1k_views=round(sum(i.subscribers_gained for i in items) * 1000 / total_views, 2)
+                if total_views
+                else None,
                 engagement_rate_pct=(
                     round(sum(i.likes + i.comments + i.shares for i in items) * 100 / total_views, 2) if total_views else None
                 ),

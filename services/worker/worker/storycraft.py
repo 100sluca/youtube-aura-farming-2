@@ -66,10 +66,24 @@ MAP_FORBIDDEN_ROLES = ("hook", "loop")  # l'accroche montre le sujet de près ; 
 
 # Rôle des scènes (lint_script, rôles historiques du storytelling) selon le temps du récit ; la première scène de
 # contexte devient la révélation (« reveal » : la première réponse concrète, avant 12 s), la dernière scène la boucle.
-PART_ROLES = {"hook": "setup", "promise": "setup", "context": "setup", "conflict": "escalation", "twist": "escalation",
-              "payoff": "payoff", "ending": "payoff"}
-PART_NAMES = {"hook": "accroche", "promise": "promesse", "context": "contexte", "conflict": "conflit",
-              "twist": "renversement", "payoff": "réponse", "ending": "chute"}
+PART_ROLES = {
+    "hook": "setup",
+    "promise": "setup",
+    "context": "setup",
+    "conflict": "escalation",
+    "twist": "escalation",
+    "payoff": "payoff",
+    "ending": "payoff",
+}
+PART_NAMES = {
+    "hook": "accroche",
+    "promise": "promesse",
+    "context": "contexte",
+    "conflict": "conflit",
+    "twist": "renversement",
+    "payoff": "réponse",
+    "ending": "chute",
+}
 
 AND_THEN = {
     "fr": re.compile(r"(^\W*(ensuite|puis|après ça|après cela|et après)\b)|\bet (ensuite|puis)\b", re.I),
@@ -204,8 +218,10 @@ def lint_story(draft: StoryDraft, lang: str = "fr", target_s: float | None = Non
     if parts[-1] != "ending":
         issues.append("le récit doit finir par la chute (part « ending ») : la dernière phrase, écrite en premier")
     if "promise" not in parts[:PROMISE_WITHIN]:
-        issues.append("pas de promesse juste après l'accroche (part « promise ») : une phrase qui annonce ce qu'on va "
-                      "découvrir sans le donner, tenue par la réponse")
+        issues.append(
+            "pas de promesse juste après l'accroche (part « promise ») : une phrase qui annonce ce qu'on va "
+            "découvrir sans le donner, tenue par la réponse"
+        )
     if "context" not in parts:
         issues.append("pas de contexte (part « context ») : qui, où, quand, ce que le héros veut et pourquoi ça compte")
     if "conflict" not in parts:
@@ -217,28 +233,36 @@ def lint_story(draft: StoryDraft, lang: str = "fr", target_s: float | None = Non
     lens = [len(said_words(s, lang)) for _, s in tagged]
     and_then = sorted({i + 1 for i, s in tagged if AND_THEN.get(lang, AND_THEN["fr"]).search(s)})
     if and_then:
-        issues.append(f"« et ensuite » ou « puis » (temps {', '.join(map(str, and_then))}) : c'est une liste ; chaque "
-                      "temps est une conséquence (« donc », « alors ») ou un obstacle (« mais », « sauf que ») du précédent")
+        issues.append(
+            f"« et ensuite » ou « puis » (temps {', '.join(map(str, and_then))}) : c'est une liste ; chaque "
+            "temps est une conséquence (« donc », « alors ») ou un obstacle (« mais », « sauf que ») du précédent"
+        )
     opening = [k for (i, _), k in zip(tagged, lens, strict=True) if beats[i].part in ("hook", "promise")]
     if sum(opening) > HOOK_PROMISE_WORDS_MAX:
-        issues.append(f"accroche et promesse : {sum(opening)} mots dits, {HOOK_PROMISE_WORDS_MAX} au plus (6 s) : "
-                      "une phrase chacune, le sujet tout de suite")
+        issues.append(
+            f"accroche et promesse : {sum(opening)} mots dits, {HOOK_PROMISE_WORDS_MAX} au plus (6 s) : "
+            "une phrase chacune, le sujet tout de suite"
+        )
     if len(lens) >= 8:
         need = max(2, math.ceil(RHYTHM_SHARE * len(lens)))
         short = sum(1 for n in lens if n <= SHORT_SENTENCE)
         long = sum(1 for n in lens if n >= LONG_SENTENCE)
         if short < need or long < need:
-            issues.append(f"rythme monotone : {len(lens)} phrases dont {short} courtes ({SHORT_SENTENCE} mots ou moins) "
-                          f"et {long} longues ({LONG_SENTENCE} mots ou plus) ; il en faut au moins {need} de chaque, "
-                          "alternées (une phrase qui claque après une phrase qui déroule)")
+            issues.append(
+                f"rythme monotone : {len(lens)} phrases dont {short} courtes ({SHORT_SENTENCE} mots ou moins) "
+                f"et {long} longues ({LONG_SENTENCE} mots ou plus) ; il en faut au moins {need} de chaque, "
+                "alternées (une phrase qui claque après une phrase qui déroule)"
+            )
     if tagged and lens[-1] > ENDING_WORDS_MAX:
         issues.append(f"chute de {lens[-1]} mots : {ENDING_WORDS_MAX} au plus, sèche, sans morale ni formule de fin")
     if target_s:
         numbers = len(_NUMBER.findall(" ".join(b.text for b in beats)))
         limit = max(NUMBERS_MIN, round(target_s / 10 * NUMBERS_PER_10S))
         if numbers > limit:
-            issues.append(f"{numbers} nombres dans le récit : {limit} au plus ; garde ceux qui servent l'idée centrale, "
-                          "coupe les dates qui ne font que dater et les chiffres secondaires")
+            issues.append(
+                f"{numbers} nombres dans le récit : {limit} au plus ; garde ceux qui servent l'idée centrale, "
+                "coupe les dates qui ne font que dater et les chiffres secondaires"
+            )
     for lang_key, title in (draft.hook_title or {}).items():
         issues += lint_hook_title(title, lang_key) if lang_key == lang else []
     if lang not in (draft.hook_title or {}):
@@ -247,12 +271,16 @@ def lint_story(draft: StoryDraft, lang: str = "fr", target_s: float | None = Non
         lo, aim, hi = word_budget(target_s)
         total = sum(lens)
         if total < lo:
-            issues.append(f"{total} mots dits pour {target_s:g} s, trop court : le récit est raccourci, on ne comprend pas ; "
-                          f"vise {aim} mots (entre {lo} et {hi}) : ajoute environ {aim - total} mots de contexte (qui, où, "
-                          "pourquoi ça compte) ou un rebondissement du dossier, sans délayer")
+            issues.append(
+                f"{total} mots dits pour {target_s:g} s, trop court : le récit est raccourci, on ne comprend pas ; "
+                f"vise {aim} mots (entre {lo} et {hi}) : ajoute environ {aim - total} mots de contexte (qui, où, "
+                "pourquoi ça compte) ou un rebondissement du dossier, sans délayer"
+            )
         elif total > hi:
-            issues.append(f"{total} mots dits pour {target_s:g} s, trop long ; vise {aim} mots (entre {lo} et {hi}) : "
-                          f"retire environ {total - aim} mots, en coupant ce qui ne sert pas l'idée centrale")
+            issues.append(
+                f"{total} mots dits pour {target_s:g} s, trop long ; vise {aim} mots (entre {lo} et {hi}) : "
+                f"retire environ {total - aim} mots, en coupant ce qui ne sert pas l'idée centrale"
+            )
     if not shared:
         return issues
 
@@ -276,8 +304,10 @@ def lint_story(draft: StoryDraft, lang: str = "fr", target_s: float | None = Non
     starts = estimated_starts(chunks)
     ctx = next((k for k, c in enumerate(chunks) if c.part == "context"), None)
     if ctx is not None and starts[ctx] > REVEAL_DEADLINE_S:
-        issues.append(f"le contexte commence vers {starts[ctx]:.0f} s : avant {REVEAL_DEADLINE_S:.0f} s (accroche d'une "
-                      "phrase, promesse d'une phrase)")
+        issues.append(
+            f"le contexte commence vers {starts[ctx]:.0f} s : avant {REVEAL_DEADLINE_S:.0f} s (accroche d'une "
+            "phrase, promesse d'une phrase)"
+        )
     return issues
 
 
@@ -310,9 +340,11 @@ def scenes_listing(chunks: Sequence[Chunk]) -> str:
     """Les scènes à filmer, telles que le réalisateur les reçoit."""
     lines = []
     for c, start in zip(chunks, estimated_starts(chunks), strict=True):
-        lines.append(f"index {c.index} · {c.role} · {c.duration_s:g} s (à {start:.0f} s) · temps {c.beat + 1} "
-                     f"({PART_NAMES.get(c.part, c.part)})\n   narration : « {c.text} »"
-                     + (f"\n   à montrer (conteur) : {c.show}" if c.show else ""))
+        lines.append(
+            f"index {c.index} · {c.role} · {c.duration_s:g} s (à {start:.0f} s) · temps {c.beat + 1} "
+            f"({PART_NAMES.get(c.part, c.part)})\n   narration : « {c.text} »"
+            + (f"\n   à montrer (conteur) : {c.show}" if c.show else "")
+        )
     return "\n".join(lines)
 
 
@@ -326,15 +358,19 @@ def missing_shots(chunks: Sequence[Chunk], shots: ShotList) -> list[int]:
     return [c.index for c in chunks if c.index not in have]
 
 
-def build_script(draft: StoryDraft, chunks: Sequence[Chunk], shots: ShotList, lang: str, langs: Sequence[str],
-                 title: str = "") -> ScriptV1:
+def build_script(
+    draft: StoryDraft, chunks: Sequence[Chunk], shots: ShotList, lang: str, langs: Sequence[str], title: str = ""
+) -> ScriptV1:
     """Le ScriptV1 d'un récit : la narration du conteur, mot pour mot, scène par scène, et les plans du réalisateur.
     Une scène sans plan prend ce que le conteur voulait y montrer ; une seule scène carte, jamais sur l'accroche ni sur
     la boucle (proposée là, elle passe à la révélation : le contexte qui dit où c'est) ; la première scène et la boucle
     sont des coupes ; un texte à l'écran de plus de 5 mots est retiré (il est facultatif)."""
     by_index = {s.index: s for s in shots.shots}
-    maps = [(c, by_index[c.index].map) for c in chunks
-            if c.index in by_index and by_index[c.index].map and by_index[c.index].map.place.strip()]  # type: ignore[union-attr]
+    maps = [
+        (c, by_index[c.index].map)
+        for c in chunks
+        if c.index in by_index and by_index[c.index].map and by_index[c.index].map.place.strip()
+    ]  # type: ignore[union-attr]
     map_at: dict[int, MapSpec] = {}
     if maps:
         where, spec = next(((c, m) for c, m in maps if c.role not in MAP_FORBIDDEN_ROLES), maps[0])
@@ -354,25 +390,30 @@ def build_script(draft: StoryDraft, chunks: Sequence[Chunk], shots: ShotList, la
                 text = (shot.narration.get(other) or "").strip()  # type: ignore[call-overload]
                 if other != lang and text:
                     narration[other] = text
-            on_screen = {k: v.strip() for k, v in shot.on_screen_text.items()
-                         if v and v.strip() and len(words(v)) <= ON_SCREEN_WORDS_MAX}
+            on_screen = {
+                k: v.strip() for k, v in shot.on_screen_text.items() if v and v.strip() and len(words(v)) <= ON_SCREEN_WORDS_MAX
+            }
         visual = (shot.visual_prompt.strip() if shot and shot.visual_prompt.strip() else "") or c.show or c.text
-        scenes.append(ScriptScene(
-            index=c.index,
-            role=c.role,  # type: ignore[arg-type]
-            duration_s=c.duration_s,
-            continues_previous=bool(shot and shot.continues_previous) and c.index > 0 and c.role != "loop",
-            visual_prompt=visual,
-            motion_prompt=(shot.motion_prompt or "").strip() or None if shot else None,
-            narration=narration,  # type: ignore[arg-type]
-            on_screen_text=on_screen,  # type: ignore[arg-type]
-            map=map_at.get(c.index),
-        ))
+        scenes.append(
+            ScriptScene(
+                index=c.index,
+                role=c.role,  # type: ignore[arg-type]
+                duration_s=c.duration_s,
+                continues_previous=bool(shot and shot.continues_previous) and c.index > 0 and c.role != "loop",
+                visual_prompt=visual,
+                motion_prompt=(shot.motion_prompt or "").strip() or None if shot else None,
+                narration=narration,  # type: ignore[arg-type]
+                on_screen_text=on_screen,  # type: ignore[arg-type]
+                map=map_at.get(c.index),
+            )
+        )
     metadata = dict(shots.metadata)
     if lang not in metadata:
         name = (draft.hook_title.get(lang) or title or draft.ending or "Histoire vraie")[:100]  # type: ignore[call-overload]
         metadata[lang] = LangMetadata(title=name, description=" ".join(b.text for b in draft.beats[:2])[:5000])  # type: ignore[index]
-    loop_note = (shots.loop_note or "").strip() or f"La dernière phrase (« {draft.ending} ») renvoie à l'accroche ; le dernier plan reprend le premier."
+    loop_note = (
+        shots.loop_note or ""
+    ).strip() or f"La dernière phrase (« {draft.ending} ») renvoie à l'accroche ; le dernier plan reprend le premier."
     return ScriptV1(
         scenes=scenes,
         loop_note=loop_note,
@@ -392,17 +433,20 @@ def told_story(script: dict | None, lang: str = "fr") -> str:
     beats = story.get("beats") if isinstance(story, dict) else None
     if beats:
         return " ".join(str(b.get("text") or "") for b in beats if isinstance(b, dict)).strip()
-    return " ".join(str((s.get("narration") or {}).get(lang) or "") for s in script.get("scenes") or []
-                    if isinstance(s, dict)).strip()
+    return " ".join(
+        str((s.get("narration") or {}).get(lang) or "") for s in script.get("scenes") or [] if isinstance(s, dict)
+    ).strip()
 
 
 def polish_request(issues: Sequence[str]) -> str:
     """Message de la dernière passe : la forme seule (rythme, longueurs, budget), le fond relu ne bouge pas."""
-    return ("Le correcteur a mesuré ces écarts de FORME :\n- " + "\n- ".join(issues) + "\n\nCorrige-les sans toucher au "
-            "fond : garde chaque fait, chaque temps, leur ordre, l'idée centrale et la dernière phrase. Coupe une phrase "
-            "longue en deux ; ajoute une phrase courte qui claque (5 mots ou moins) là où l'histoire bascule ; raccourcis "
-            "l'accroche ou la promesse ; ajoute ou retire des mots de contexte pour tenir le budget. N'ajoute aucun fait, "
-            "aucune pensée ni aucune circonstance qui ne soit pas dans le dossier. Rends l'histoire entière.")
+    return (
+        "Le correcteur a mesuré ces écarts de FORME :\n- " + "\n- ".join(issues) + "\n\nCorrige-les sans toucher au "
+        "fond : garde chaque fait, chaque temps, leur ordre, l'idée centrale et la dernière phrase. Coupe une phrase "
+        "longue en deux ; ajoute une phrase courte qui claque (5 mots ou moins) là où l'histoire bascule ; raccourcis "
+        "l'accroche ou la promesse ; ajoute ou retire des mots de contexte pour tenir le budget. N'ajoute aucun fait, "
+        "aucune pensée ni aucune circonstance qui ne soit pas dans le dossier. Rends l'histoire entière."
+    )
 
 
 def rewrite_request(issues: Sequence[str], problems: Sequence[str]) -> str:

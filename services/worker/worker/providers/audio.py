@@ -41,20 +41,42 @@ class MusicMood:
 INSTRUMENTAL = "instrumental, no vocals, loopable background music for a short video, clean modern mix"
 MUSIC_MOODS: dict[str, MusicMood] = {
     # Visites de luxe
-    "luxury": MusicMood("Luxury real estate video music: chill deep house, smooth Rhodes electric piano chords, warm sub "
-                        f"bass, soft four-on-the-floor kick, crisp shakers, shimmering pads, elegant and aspirational, {INSTRUMENTAL}", 118, "A minor"),
-    "chill": MusicMood(f"Chill lounge house, mellow piano, soft guitar licks, relaxed groove, warm bass, sunny, {INSTRUMENTAL}", 102, "D major"),
-    "elegant": MusicMood(f"Elegant cinematic piano with light strings and pizzicato, sophisticated, calm, luxurious, {INSTRUMENTAL}", 88, "C major"),
+    "luxury": MusicMood(
+        "Luxury real estate video music: chill deep house, smooth Rhodes electric piano chords, warm sub "
+        f"bass, soft four-on-the-floor kick, crisp shakers, shimmering pads, elegant and aspirational, {INSTRUMENTAL}",
+        118,
+        "A minor",
+    ),
+    "chill": MusicMood(
+        f"Chill lounge house, mellow piano, soft guitar licks, relaxed groove, warm bass, sunny, {INSTRUMENTAL}", 102, "D major"
+    ),
+    "elegant": MusicMood(
+        f"Elegant cinematic piano with light strings and pizzicato, sophisticated, calm, luxurious, {INSTRUMENTAL}", 88, "C major"
+    ),
     # Chantiers en accéléré
-    "inspiring": MusicMood("Inspiring cinematic build-up for a construction time-lapse: steady piano ostinato, rising strings, "
-                           f"light percussion and claps, uplifting and positive, grows in intensity, {INSTRUMENTAL}", 110, "G major"),
-    "upbeat": MusicMood(f"Upbeat energetic pop instrumental, punchy drums, bright synth plucks, claps, positive, fast-paced, {INSTRUMENTAL}", 124, "C major"),
-    "epic": MusicMood(f"Epic cinematic trailer music, big drums, powerful strings and brass, heroic build-up, {INSTRUMENTAL}", 100, "D minor"),
+    "inspiring": MusicMood(
+        "Inspiring cinematic build-up for a construction time-lapse: steady piano ostinato, rising strings, "
+        f"light percussion and claps, uplifting and positive, grows in intensity, {INSTRUMENTAL}",
+        110,
+        "G major",
+    ),
+    "upbeat": MusicMood(
+        f"Upbeat energetic pop instrumental, punchy drums, bright synth plucks, claps, positive, fast-paced, {INSTRUMENTAL}",
+        124,
+        "C major",
+    ),
+    "epic": MusicMood(
+        f"Epic cinematic trailer music, big drums, powerful strings and brass, heroic build-up, {INSTRUMENTAL}", 100, "D minor"
+    ),
     # Récits (séries narrées)
     "calm": MusicMood(f"Calm ambient piano, soft pads, gentle and warm, {INSTRUMENTAL}", 80, "F major"),
-    "suspense": MusicMood(f"Suspense documentary underscore, pulsing low synth, ticking percussion, tension, {INSTRUMENTAL}", 95, "E minor"),
+    "suspense": MusicMood(
+        f"Suspense documentary underscore, pulsing low synth, ticking percussion, tension, {INSTRUMENTAL}", 95, "E minor"
+    ),
     "emotional": MusicMood(f"Emotional cinematic piano and cello, tender, hopeful, {INSTRUMENTAL}", 76, "A minor"),
-    "mysterious": MusicMood(f"Mysterious ambient soundtrack, airy pads, subtle bells, low drones, curious, {INSTRUMENTAL}", 85, "B minor"),
+    "mysterious": MusicMood(
+        f"Mysterious ambient soundtrack, airy pads, subtle bells, low drones, curious, {INSTRUMENTAL}", 85, "B minor"
+    ),
 }
 
 
@@ -66,8 +88,15 @@ def load_audio_workflow(settings: Settings, name: str) -> dict[str, Any]:
 
 
 def patch_audio_workflow(
-    wf: dict[str, Any], *, prompt: str, seed: int, seconds: float, negative: str = "",
-    bpm: int | None = None, key: str | None = None, prefix: str | None = None,
+    wf: dict[str, Any],
+    *,
+    prompt: str,
+    seed: int,
+    seconds: float,
+    negative: str = "",
+    bpm: int | None = None,
+    key: str | None = None,
+    prefix: str | None = None,
 ) -> dict[str, Any]:
     """Copie du workflow audio avec les entrées remplacées (titres PROMPT, NEGATIVE, SIZE, DURATION, SEED, OUTPUT).
     Le nœud PROMPT est soit un encodeur ACE-Step (tags, durée, tempo, tonalité, graine), soit un CLIPTextEncode."""
@@ -112,11 +141,24 @@ class ComfyAudio:
 
     def music(self, mood: str, out_dir: Path, *, seed: int, seconds: float = 90.0) -> Path:
         m = MUSIC_MOODS[mood]
-        wf = patch_audio_workflow(load_audio_workflow(self.settings, MUSIC_WORKFLOW), prompt=m.tags, seed=seed,
-                                  seconds=seconds, bpm=m.bpm, key=m.key, prefix=f"yt2/music_{mood}")
+        wf = patch_audio_workflow(
+            load_audio_workflow(self.settings, MUSIC_WORKFLOW),
+            prompt=m.tags,
+            seed=seed,
+            seconds=seconds,
+            bpm=m.bpm,
+            key=m.key,
+            prefix=f"yt2/music_{mood}",
+        )
         return self._run(wf, out_dir / f"ace15_{mood}_{seed}.mp3")
 
     def sfx(self, tag: str, prompt: str, out_dir: Path, *, seed: int, seconds: float) -> Path:
-        wf = patch_audio_workflow(load_audio_workflow(self.settings, SFX_WORKFLOW), prompt=sfx_prompt(prompt, seconds),
-                                  negative=SFX_NEGATIVE, seed=seed, seconds=seconds, prefix=f"yt2/sfx_{tag}")
+        wf = patch_audio_workflow(
+            load_audio_workflow(self.settings, SFX_WORKFLOW),
+            prompt=sfx_prompt(prompt, seconds),
+            negative=SFX_NEGATIVE,
+            seed=seed,
+            seconds=seconds,
+            prefix=f"yt2/sfx_{tag}",
+        )
         return self._run(wf, out_dir / f"sa3_{tag}_{seed}.flac")

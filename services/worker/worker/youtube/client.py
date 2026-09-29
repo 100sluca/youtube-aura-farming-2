@@ -148,7 +148,9 @@ class YouTubeClient:
             metrics = self.VIDEO_METRICS.replace("engagedViews,", "")
             if "engagedViews" not in str(exc):
                 raise
-            return self.analytics(start, end, metrics=metrics, dimensions="video", filters=filters, sort="-views", max_results=200)
+            return self.analytics(
+                start, end, metrics=metrics, dimensions="video", filters=filters, sort="-views", max_results=200
+            )
 
     def analytics_retention(self, video_id: str, start: date, end: date) -> list[dict[str, Any]]:
         """Courbe de rétention d'une vidéo : 100 points (avancement 0,01 → 1), part de l'audience encore là."""

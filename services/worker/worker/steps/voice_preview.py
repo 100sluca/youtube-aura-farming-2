@@ -15,9 +15,8 @@ from .base import Context, Step
 # Phrase par défaut : ton des séries narrées (accroche, chiffres, liaisons)
 SAMPLES = {
     "fr": "Derrière ce miroir se cache une pièce que personne n'avait vue depuis 120 ans. "
-          "Regardez bien ce qui se passe quand on l'ouvre.",
-    "en": "Behind this mirror hides a room nobody had seen for 120 years. "
-          "Watch closely what happens when we open it.",
+    "Regardez bien ce qui se passe quand on l'ouvre.",
+    "en": "Behind this mirror hides a room nobody had seen for 120 years. Watch closely what happens when we open it.",
 }
 MAX_CHARS = 600
 KEEP = 40  # essais gardés sur le disque, les plus récents
@@ -46,15 +45,26 @@ class VoicePreviewStep(Step):
         else:
             import soundfile as sf
 
-            [speech] = tts.speak_many([text], voice=voice, lang=lang, speed=speed,
-                                      on_progress=lambda pct, label: ctx.progress(5 + int(0.9 * pct), label))
+            [speech] = tts.speak_many(
+                [text],
+                voice=voice,
+                lang=lang,
+                speed=speed,
+                on_progress=lambda pct, label: ctx.progress(5 + int(0.9 * pct), label),
+            )
             samples = trim_silence(speech.samples, speech.rate)
             sf.write(str(out), samples, speech.rate)
             duration = len(samples) / speech.rate
         _prune(out_dir)
         return {
-            "path": str(out), "voice": f"{engine_name}:{voice}", "engine": tts.name, "lang": lang, "text": text,
-            "speed": speed, "duration_s": round(duration, 2), "elapsed_s": round(time.monotonic() - started, 1),
+            "path": str(out),
+            "voice": f"{engine_name}:{voice}",
+            "engine": tts.name,
+            "lang": lang,
+            "text": text,
+            "speed": speed,
+            "duration_s": round(duration, 2),
+            "elapsed_s": round(time.monotonic() - started, 1),
         }
 
 

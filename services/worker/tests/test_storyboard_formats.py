@@ -29,7 +29,12 @@ class FakeDb:
 
     def fetch_one(self, sql: str, params: Any = None) -> dict | None:
         if "from productions p" in sql and "p.script" in sql:
-            return {"script": self.script.model_dump(), "style_preset": "timelapse_site", "image_workflow": "zimage_turbo", "title": "t"}
+            return {
+                "script": self.script.model_dump(),
+                "style_preset": "timelapse_site",
+                "image_workflow": "zimage_turbo",
+                "title": "t",
+            }
         if "coalesce(s.recipe" in sql:
             return {"recipe": self.recipe}
         if "count(*)" in sql:
@@ -85,8 +90,17 @@ class FakeEditor:
         self.name, self.width, self.height, self.fallback_reason = "fake_edit", 768, 1344, None
         self.client = type("C", (), {"free": lambda self: None})()
 
-    def edit(self, *, image_path: Path, instruction: str, description: str, style_preset: Any, out_path: Path, seed: int,
-             dry_run: bool = False) -> Path:
+    def edit(
+        self,
+        *,
+        image_path: Path,
+        instruction: str,
+        description: str,
+        style_preset: Any,
+        out_path: Path,
+        seed: int,
+        dry_run: bool = False,
+    ) -> Path:
         FakeImage.calls.append(f"edit:{out_path.name.split('_')[1]}<{image_path.name.split('_')[1]}")
         out_path.write_bytes(b"png")
         return out_path
@@ -108,10 +122,27 @@ class FakeVision:
 
 
 def _timelapse(n: int = 5) -> ScriptV1:
-    scenes = [{"index": i, "duration_s": 1.5, "visual_prompt": f"stage {i}", "motion_prompt": "build",
-               "edit_prompt": f"Remove part {i}", "on_screen_text": {"fr": f"Jour {i * 10 + 1}"}} for i in range(n)]
-    return normalize_script(ScriptV1.model_validate({"scenes": scenes, "metadata": {"fr": {"title": "t", "description": "d"}},
-                                                     "hook_title": {"fr": "Regarde ce chantier fou"}}), "timelapse")
+    scenes = [
+        {
+            "index": i,
+            "duration_s": 1.5,
+            "visual_prompt": f"stage {i}",
+            "motion_prompt": "build",
+            "edit_prompt": f"Remove part {i}",
+            "on_screen_text": {"fr": f"Jour {i * 10 + 1}"},
+        }
+        for i in range(n)
+    ]
+    return normalize_script(
+        ScriptV1.model_validate(
+            {
+                "scenes": scenes,
+                "metadata": {"fr": {"title": "t", "description": "d"}},
+                "hook_title": {"fr": "Regarde ce chantier fou"},
+            }
+        ),
+        "timelapse",
+    )
 
 
 def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: ScriptV1, vision: FakeVision | None, **settings: Any):
@@ -121,12 +152,22 @@ def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: ScriptV1, visi
     monkeypatch.setattr(sb, "get_vision_llm", lambda s, d: vision)
     monkeypatch.setattr(sb, "build_sheet", lambda *a, **k: None)
     monkeypatch.setattr(sb, "enqueue_render_dag", lambda *a, **k: {"clips": len(script.scenes)})
-    monkeypatch.setattr(sb, "load_generation_config", lambda s, d: type("G", (), {"image_workflow": "zimage_turbo", "storyboard_candidates": 2})())
+    monkeypatch.setattr(
+        sb, "load_generation_config", lambda s, d: type("G", (), {"image_workflow": "zimage_turbo", "storyboard_candidates": 2})()
+    )
     db = FakeDb(script, "timelapse")
-    cfg = Settings(database_url="postgresql://x", supabase_url="http://x", supabase_service_role_key="x", data_dir=tmp_path,
-                   **settings)
-    job = Job(id=uuid.uuid4(), type="storyboard", status="running", priority=90, production_id=uuid.uuid4(), payload={},
-              created_at=datetime.now(UTC))
+    cfg = Settings(
+        database_url="postgresql://x", supabase_url="http://x", supabase_service_role_key="x", data_dir=tmp_path, **settings
+    )
+    job = Job(
+        id=uuid.uuid4(),
+        type="storyboard",
+        status="running",
+        priority=90,
+        production_id=uuid.uuid4(),
+        payload={},
+        created_at=datetime.now(UTC),
+    )
     out = sb.StoryboardStep().run(Context(job=job, db=db, settings=cfg))  # type: ignore[arg-type]
     return db, out
 
@@ -169,9 +210,15 @@ def test_requirements_follow_the_recipe():
     assert any("ENTIÈRE" in r for r in requirements(s, 3, "timelapse"))
     assert any("MOINS avancée" in r for r in requirements(s, 1, "timelapse"))
     assert any("crépuscule" in r for r in requirements(s, 4, "timelapse"))
-    tour = normalize_script(ScriptV1.model_validate({
-        "scenes": [{"index": i, "duration_s": 3.5, "visual_prompt": f"room {i}"} for i in range(6)],
-        "metadata": {"fr": {"title": "t", "description": "d"}}}), "tour")
+    tour = normalize_script(
+        ScriptV1.model_validate(
+            {
+                "scenes": [{"index": i, "duration_s": 3.5, "visual_prompt": f"room {i}"} for i in range(6)],
+                "metadata": {"fr": {"title": "t", "description": "d"}},
+            }
+        ),
+        "tour",
+    )
     assert any("L'INTÉRIEUR" in r for r in requirements(tour, 2, "tour"))
     assert not any("L'INTÉRIEUR" in r for r in requirements(tour, 0, "tour"))  # l'arrivée est dehors
     assert all(any("Aucune personne" in r for r in requirements(tour, i, "tour")) for i in range(6))

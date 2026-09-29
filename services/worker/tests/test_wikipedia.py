@@ -8,23 +8,51 @@ LONG = ("Le poisson-pierre vit dans l'océan Indien. " * 40).strip()
 
 FEED = {
     "tfa": {"titles": {"normalized": "Poisson-pierre"}},
-    "mostread": {"articles": [
-        {"titles": {"normalized": "Catherine Ringer"}, "views": 55336, "description": "chanteuse française"},
-        {"titles": {"normalized": "Saint-Pierre-et-Miquelon"}, "views": 31194, "description": "collectivité d'outre-mer"},
-    ]},
-    "onthisday": [{"year": 1930, "text": "brevet des ampoules de flash", "pages": [{"titles": {"normalized": "Flash (photographie)"}}]}],
+    "mostread": {
+        "articles": [
+            {"titles": {"normalized": "Catherine Ringer"}, "views": 55336, "description": "chanteuse française"},
+            {"titles": {"normalized": "Saint-Pierre-et-Miquelon"}, "views": 31194, "description": "collectivité d'outre-mer"},
+        ]
+    },
+    "onthisday": [
+        {"year": 1930, "text": "brevet des ampoules de flash", "pages": [{"titles": {"normalized": "Flash (photographie)"}}]}
+    ],
 }
 PAGES = {
-    "Poisson-pierre": {"title": "Poisson-pierre", "canonicalurl": "https://fr.wikipedia.org/wiki/Poisson-pierre", "extract": LONG,
-                       "revisions": [{"revid": 237485590}], "description": "espèce de poissons"},
-    "Catherine Ringer": {"title": "Catherine Ringer", "canonicalurl": "https://fr.wikipedia.org/wiki/Catherine_Ringer", "extract": LONG,
-                         "revisions": [{"revid": 1}], "description": "chanteuse française"},
-    "Saint-Pierre-et-Miquelon": {"title": "Saint-Pierre-et-Miquelon", "canonicalurl": "https://fr.wikipedia.org/wiki/SPM",
-                                 "extract": LONG, "revisions": [{"revid": 2}], "description": "collectivité"},
-    "Flash (photographie)": {"title": "Flash (photographie)", "canonicalurl": "https://fr.wikipedia.org/wiki/Flash", "extract": "trop court.",
-                             "revisions": [{"revid": 3}]},
-    "Monstre de Gila": {"title": "Monstre de Gila", "canonicalurl": "https://fr.wikipedia.org/wiki/Gila", "extract": LONG,
-                        "revisions": [{"revid": 4}], "description": "lézard venimeux"},
+    "Poisson-pierre": {
+        "title": "Poisson-pierre",
+        "canonicalurl": "https://fr.wikipedia.org/wiki/Poisson-pierre",
+        "extract": LONG,
+        "revisions": [{"revid": 237485590}],
+        "description": "espèce de poissons",
+    },
+    "Catherine Ringer": {
+        "title": "Catherine Ringer",
+        "canonicalurl": "https://fr.wikipedia.org/wiki/Catherine_Ringer",
+        "extract": LONG,
+        "revisions": [{"revid": 1}],
+        "description": "chanteuse française",
+    },
+    "Saint-Pierre-et-Miquelon": {
+        "title": "Saint-Pierre-et-Miquelon",
+        "canonicalurl": "https://fr.wikipedia.org/wiki/SPM",
+        "extract": LONG,
+        "revisions": [{"revid": 2}],
+        "description": "collectivité",
+    },
+    "Flash (photographie)": {
+        "title": "Flash (photographie)",
+        "canonicalurl": "https://fr.wikipedia.org/wiki/Flash",
+        "extract": "trop court.",
+        "revisions": [{"revid": 3}],
+    },
+    "Monstre de Gila": {
+        "title": "Monstre de Gila",
+        "canonicalurl": "https://fr.wikipedia.org/wiki/Gila",
+        "extract": LONG,
+        "revisions": [{"revid": 4}],
+        "description": "lézard venimeux",
+    },
 }
 
 
@@ -46,8 +74,13 @@ class FakeClient(WikipediaClient):
 
 
 def test_daily_material_filters_and_orders():
-    config = {"feeds": ["tfa", "onthisday", "mostread"], "queries": ["animal venimeux"], "queries_per_day": 1,
-              "min_words": 100, "exclude": "(chanteuse|chanteur)"}
+    config = {
+        "feeds": ["tfa", "onthisday", "mostread"],
+        "queries": ["animal venimeux"],
+        "queries_per_day": 1,
+        "min_words": 100,
+        "exclude": "(chanteuse|chanteur)",
+    }
     docs = daily_material(FakeClient(), config, date(2026, 9, 21), exclude_urls={"https://fr.wikipedia.org/wiki/SPM"})
     titles = [d.title for d in docs]
     assert titles == ["Poisson-pierre", "Monstre de Gila"]  # Ringer exclue (regex), SPM déjà exploitée, Flash trop court
@@ -57,10 +90,15 @@ def test_daily_material_filters_and_orders():
 
 
 def test_material_text_and_sources_mapping():
-    docs = [SourceDoc("A", "https://a", "fr", LONG, kind="tfa", revision=1), SourceDoc("B", "https://b", "fr", LONG, kind="search")]
+    docs = [
+        SourceDoc("A", "https://a", "fr", LONG, kind="tfa", revision=1),
+        SourceDoc("B", "https://b", "fr", LONG, kind="search"),
+    ]
     text = material_text(docs, chars=80)
     assert text.startswith("[1] A — https://a") and "[2] B — https://b" in text and len(text) < 400
-    refs, facts = sources_for(docs, [Fact(claim="x", source=2), Fact(claim="y", source=2), Fact(claim="z", source=9), Fact(claim="w", source=1)])
+    refs, facts = sources_for(
+        docs, [Fact(claim="x", source=2), Fact(claim="y", source=2), Fact(claim="z", source=9), Fact(claim="w", source=1)]
+    )
     assert [r.title for r in refs] == ["B", "A"]
     assert [(f.claim, f.source) for f in facts] == [("x", 0), ("y", 0), ("w", 1)]
 
@@ -72,9 +110,24 @@ def test_clip_text_cuts_on_sentence():
 
 
 def _series(slug, weight):
-    return Series(id=None, slug=slug, name=slug, source="llm", source_config={}, brief="", categories=[], style_preset=None,
-                  format="A_voiceover", target_duration_s=30, subtitle_profile=None, music_moods=[], video_provider=None,
-                  weight=weight, is_active=True, channel_id=None)
+    return Series(
+        id=None,
+        slug=slug,
+        name=slug,
+        source="llm",
+        source_config={},
+        brief="",
+        categories=[],
+        style_preset=None,
+        format="A_voiceover",
+        target_duration_s=30,
+        subtitle_profile=None,
+        music_moods=[],
+        video_provider=None,
+        weight=weight,
+        is_active=True,
+        channel_id=None,
+    )
 
 
 def test_weighted_counts():

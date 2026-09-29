@@ -85,10 +85,17 @@ def test_the_chain_goes_down_the_choices_and_retries_once_after_an_overload():
 
 
 def test_chains_come_from_settings_or_from_the_old_fields():
-    assert parse_chain([{"provider": "gemini", "model": " a "}, {"provider": "x", "model": "b"}, {"provider": "gemini", "model": "a"},
-                        {"provider": "mistral", "model": ""}]) == [ChainEntry("gemini", "a")]
-    old = LlmConfig(provider="gemini", fallbacks=["mistral"], models={"gemini": "lite", "mistral": "small"},
-                    writer_models={"gemini": "flash"})
+    assert parse_chain(
+        [
+            {"provider": "gemini", "model": " a "},
+            {"provider": "x", "model": "b"},
+            {"provider": "gemini", "model": "a"},
+            {"provider": "mistral", "model": ""},
+        ]
+    ) == [ChainEntry("gemini", "a")]
+    old = LlmConfig(
+        provider="gemini", fallbacks=["mistral"], models={"gemini": "lite", "mistral": "small"}, writer_models={"gemini": "flash"}
+    )
     assert old.chain("writer") == [ChainEntry("gemini", "flash"), ChainEntry("gemini", "lite"), ChainEntry("mistral", "small")]
     assert old.chain("default") == [ChainEntry("gemini", "lite"), ChainEntry("mistral", "small")]
     new = LlmConfig(provider="gemini", fallbacks=[], models={}, chains={"default": [ChainEntry("mistral", "small")]})
@@ -98,9 +105,16 @@ def test_chains_come_from_settings_or_from_the_old_fields():
 
 
 def test_get_llm_builds_every_choice_with_all_its_keys(monkeypatch: pytest.MonkeyPatch):
-    cfg = LlmConfig(provider="gemini", fallbacks=[], models={}, keys={"gemini": ["k1", "k2"]},
-                    chains={"writer": [ChainEntry("gemini", "g-flash"), ChainEntry("gemini", "g-lite"), ChainEntry("anthropic", "c")],
-                            "default": [ChainEntry("gemini", "g-lite")]})
+    cfg = LlmConfig(
+        provider="gemini",
+        fallbacks=[],
+        models={},
+        keys={"gemini": ["k1", "k2"]},
+        chains={
+            "writer": [ChainEntry("gemini", "g-flash"), ChainEntry("gemini", "g-lite"), ChainEntry("anthropic", "c")],
+            "default": [ChainEntry("gemini", "g-lite")],
+        },
+    )
     monkeypatch.setattr(llm_mod, "load_llm_config", lambda s, d: cfg)
     settings = Settings(database_url="postgresql://x", supabase_url="http://x", supabase_service_role_key="x")
     writer = llm_mod.get_llm(settings, None, writer=True)
@@ -141,6 +155,8 @@ def test_keys_fill_the_next_free_slot_and_chains_are_saved(monkeypatch: pytest.M
     store.delete_secret(db, "gemini", 2)
     assert save_secret(None, db, "gemini", "dddd4444") == 2  # type: ignore[arg-type]  # le trou est repris
     assert key_slots(db)["gemini"] == [(1, "1111"), (2, "4444"), (3, "3333")]
-    v = save_llm_settings(db, chains={"writer": [{"provider": "gemini", "model": "g-flash"}, {"provider": "gemini", "model": "g-lite"}]})
+    v = save_llm_settings(
+        db, chains={"writer": [{"provider": "gemini", "model": "g-flash"}, {"provider": "gemini", "model": "g-lite"}]}
+    )
     assert v["chains"]["writer"][1] == {"provider": "gemini", "model": "g-lite"}
     assert "writer" not in save_llm_settings(db, chains={"writer": []})["chains"]

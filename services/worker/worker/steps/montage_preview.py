@@ -87,16 +87,35 @@ class MontagePreviewStep(Step):
                 (work / "apercu.jpg").write_bytes(b"")
             else:
                 render(plan, out, fonts=fonts, encoder="cpu")
-                run(["ffmpeg", "-y", "-v", "error", "-ss", f"{min(1.5, duration / 2):.2f}", "-i", str(out), "-frames:v", "1",
-                     "-q:v", "3", str(work / "apercu.jpg")])
+                run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-v",
+                        "error",
+                        "-ss",
+                        f"{min(1.5, duration / 2):.2f}",
+                        "-i",
+                        str(out),
+                        "-frames:v",
+                        "1",
+                        "-q:v",
+                        "3",
+                        str(work / "apercu.jpg"),
+                    ]
+                )
             shutil.move(str(out), video)
             shutil.move(str(work / "apercu.jpg"), poster)
         finally:
             shutil.rmtree(work, ignore_errors=True)
         _prune(root)
         return {
-            "path": str(video), "poster": str(poster), "recipe": recipe, "duration_s": duration,
-            "elapsed_s": round(time.monotonic() - started, 1), **report,
+            "path": str(video),
+            "poster": str(poster),
+            "recipe": recipe,
+            "duration_s": duration,
+            "elapsed_s": round(time.monotonic() - started, 1),
+            **report,
         }
 
     def _sound(self, ctx: Context, p: dict[str, Any]) -> dict[str, Any]:
@@ -126,8 +145,13 @@ class MontagePreviewStep(Step):
                 raise RuntimeError(f"musique « {wanted} » absente du dossier des musiques")
             overrides = {k: float(p[f"track_{k}"]) for k in ("gain_db", "start_s") if p.get(f"track_{k}") is not None}
             track = dataclasses.replace(track, **overrides)
-        mix = apply_audio(m.plan, template.audio, track, narration_lufs=narration_loudness(m.plan, ctx.settings.dry_run),
-                          words=m.timeline.words if m.timeline else ())
+        mix = apply_audio(
+            m.plan,
+            template.audio,
+            track,
+            narration_lufs=narration_loudness(m.plan, ctx.settings.dry_run),
+            words=m.timeline.words if m.timeline else (),
+        )
         root = ctx.settings.data_dir / "previews" / "montage"
         root.mkdir(parents=True, exist_ok=True)
         video, poster = root / f"{ctx.job.id}.mp4", root / f"{ctx.job.id}.jpg"
@@ -142,9 +166,15 @@ class MontagePreviewStep(Step):
             shutil.move(str(tmp), video)
         _prune(root)
         return {
-            "path": str(video), "poster": str(poster), "mode": "sound", "video_id": vid, "recipe": m.recipe,
-            "music_track": track.id if track else None, "duration_s": m.plan.total_s,
-            "elapsed_s": round(time.monotonic() - started, 1), "mix": mix,
+            "path": str(video),
+            "poster": str(poster),
+            "mode": "sound",
+            "video_id": vid,
+            "recipe": m.recipe,
+            "music_track": track.id if track else None,
+            "duration_s": m.plan.total_s,
+            "elapsed_s": round(time.monotonic() - started, 1),
+            "mix": mix,
         }
 
     def _background(self, ctx: Context, asset_id: Any, work: Path, duration: float) -> tuple[Path, float | None]:
@@ -161,8 +191,28 @@ class MontagePreviewStep(Step):
         else:
             source = ["-f", "lavfi", "-i", f"gradients=s={W}x{H}:c0=0x2B3A55:c1=0xC9A66B:x0=0:y0=0:x1={W}:y1={H}:speed=0.02"]
         if not ctx.settings.dry_run:
-            run(["ffmpeg", "-y", "-v", "error", *source, "-t", f"{duration:.2f}", "-r", str(FPS), "-vf", geom,
-                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)])
+            run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-v",
+                    "error",
+                    *source,
+                    "-t",
+                    f"{duration:.2f}",
+                    "-r",
+                    str(FPS),
+                    "-vf",
+                    geom,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "20",
+                    str(out),
+                ]
+            )
         return out, duration
 
 

@@ -62,16 +62,41 @@ class RecipeSpec:
 RECIPES: dict[str, RecipeSpec] = {
     # Récit : 60 à 90 s découpés phrase par phrase (worker/storycraft.py, docs/37), jusqu'à 24 scènes
     "story": RecipeSpec("story", True, False, None, (4, 24), (2.0, 8.0), False, 0.12, 330),
-    "timelapse": RecipeSpec("timelapse", False, True, None, (8, 14), (1.2, 5.0), False, 0.35, 1330,
-                            max_speedup=4.5, trails=True, counter=True, title_size=76,
-                            video_negative="giant person, person close to the camera, close-up of a person, face, hand in the "
-                                           "foreground, camera, tripod"),
+    "timelapse": RecipeSpec(
+        "timelapse",
+        False,
+        True,
+        None,
+        (8, 14),
+        (1.2, 5.0),
+        False,
+        0.35,
+        1330,
+        max_speedup=4.5,
+        trails=True,
+        counter=True,
+        title_size=76,
+        video_negative="giant person, person close to the camera, close-up of a person, face, hand in the "
+        "foreground, camera, tripod",
+    ),
     # Visite : en 4 passes, Wan fait entrer des passants par les portes (essais du 25/09 : bibliothèque, salle de bain) ;
     # le mélange avec négatif les supprime (même salle de bain : pièce vide), pour ≈ 2 fois plus de calcul (10 min/clip)
-    "tour": RecipeSpec("tour", False, True, None, (6, 10), (2.5, 6.0), True, 0.45, 1330, max_speedup=4.5, passages=True,
-                       video_variant="hybrid",
-                       video_negative="person, people, human, man, woman, child, figure, silhouette, someone walking, hand, "
-                                      "face, camera, tripod, crane, gimbal"),
+    "tour": RecipeSpec(
+        "tour",
+        False,
+        True,
+        None,
+        (6, 10),
+        (2.5, 6.0),
+        True,
+        0.45,
+        1330,
+        max_speedup=4.5,
+        passages=True,
+        video_variant="hybrid",
+        video_negative="person, people, human, man, woman, child, figure, silhouette, someone walking, hand, "
+        "face, camera, tripod, crane, gimbal",
+    ),
     # Drame (worker/drama.py, docs/35) : une réplique par plan, dite par le modèle vidéo ; coupes franches
     "drama": RecipeSpec("drama", True, True, None, drama.SCENES_RANGE, drama.SCENE_S, False, 0.12, 1330),
 }
@@ -212,8 +237,11 @@ def normalize_script(script: ScriptV1, recipe: str) -> ScriptV1:
 
 
 _QUESTION = {
-    "fr": re.compile(r"^(combien|qui |quoi|pourquoi|comment|est-ce|où |quel|tu \w+rais\b|vous \w+riez\b|tu devines|"
-                     r"tu crois|t'as déjà|as-tu|aurais-tu|oserais-tu)", re.I),
+    "fr": re.compile(
+        r"^(combien|qui |quoi|pourquoi|comment|est-ce|où |quel|tu \w+rais\b|vous \w+riez\b|tu devines|"
+        r"tu crois|t'as déjà|as-tu|aurais-tu|oserais-tu)",
+        re.I,
+    ),
     "en": re.compile(r"^(would|how|what|who|why|could|can|do|did|is|are|where|which|will)\b", re.I),
 }
 
@@ -276,12 +304,21 @@ def _normalize_tour(s: ScriptV1, passages: bool) -> None:
         if i + 1 < len(rooms):
             nxt = rooms[i + 1]
             lead = (room.leads_to or "").strip().rstrip(".") or "through the opening into the next room"
-            out.append(ScriptScene(
-                index=0, duration_s=PASSAGE_S, passage=True, continues_previous=True, clip_mode="flf", transition="cut",
-                visual_prompt=f"Passage from scene {i + 1} to scene {i + 2}: {lead}",
-                motion_prompt=f"smooth steady shot walking forward through the opening into the next room, {lead}",
-                interior=room.interior if room.interior is not None else nxt.interior, floor=nxt.floor, sfx="whoosh",
-            ))
+            out.append(
+                ScriptScene(
+                    index=0,
+                    duration_s=PASSAGE_S,
+                    passage=True,
+                    continues_previous=True,
+                    clip_mode="flf",
+                    transition="cut",
+                    visual_prompt=f"Passage from scene {i + 1} to scene {i + 2}: {lead}",
+                    motion_prompt=f"smooth steady shot walking forward through the opening into the next room, {lead}",
+                    interior=room.interior if room.interior is not None else nxt.interior,
+                    floor=nxt.floor,
+                    sfx="whoosh",
+                )
+            )
     # une variante d'une pièce (edit_prompt, rare) retouche la PIÈCE précédente, pas le passage qui les sépare
     last_room: int | None = None
     for k, sc in enumerate(out):
@@ -341,7 +378,9 @@ _REMOVAL = re.compile(r"\b(remove|removed|take away|without|strip|clear|bare|emp
 # L'état initial d'un chantier : ce qu'on s'attend à lire dans la scène 1 (Gemini y a mis deux fois le résultat fini)
 _INITIAL = re.compile(
     r"\b(abandon\w*|ruin\w*|overgrown|derelict|bare|empty|untouched|wild|vacant|collaps\w*|dilapidated|old|rusty|"
-    r"weeds?|rubble|raw|virgin|neglected|decay\w*|crumbl\w*|disused|flooded|muddy|barren|unbuilt|plot|wasteland)\b", re.I)
+    r"weeds?|rubble|raw|virgin|neglected|decay\w*|crumbl\w*|disused|flooded|muddy|barren|unbuilt|plot|wasteland)\b",
+    re.I,
+)
 
 
 def _overlap(a: str, b: str, ignore: str = "") -> float:
@@ -359,16 +398,22 @@ def _lint_timelapse(script: ScriptV1, langs: Sequence[str]) -> list[str]:
         return issues
     done = script.scenes[n - 2]
     if len(words(done.visual_prompt)) < 25:
-        issues.append(f"scène {n - 1} (le résultat fini, seule image générée) : visual_prompt trop court, décrire le "
-                      "bâtiment terminé en détail (matériaux, portes, fenêtres, garde-corps) et le paysage")
+        issues.append(
+            f"scène {n - 1} (le résultat fini, seule image générée) : visual_prompt trop court, décrire le "
+            "bâtiment terminé en détail (matériaux, portes, fenêtres, garde-corps) et le paysage"
+        )
     first = script.scenes[0].visual_prompt
     if not _INITIAL.search(first) or _overlap(first, done.visual_prompt, script.design_bible or "") > 0.8:
-        issues.append("scène 1 : c'est l'ÉTAT INITIAL, avant tout travaux (ruine, terrain nu, lieu abandonné ou "
-                      "vierge), jamais le résultat ; l'ordre des scènes est chronologique")
+        issues.append(
+            "scène 1 : c'est l'ÉTAT INITIAL, avant tout travaux (ruine, terrain nu, lieu abandonné ou "
+            "vierge), jamais le résultat ; l'ordre des scènes est chronologique"
+        )
     forward = [i + 1 for i, sc in enumerate(script.scenes[: n - 2]) if not _REMOVAL.search(sc.edit_prompt or "")]
     if len(forward) > (n - 2) // 2:
-        issues.append(f"scènes {forward} : edit_prompt doit ENLEVER ce qui n'est pas encore construit (« Remove the "
-                      "roof and the windows… ») : l'image d'une étape est une retouche de l'étape SUIVANTE")
+        issues.append(
+            f"scènes {forward} : edit_prompt doit ENLEVER ce qui n'est pas encore construit (« Remove the "
+            "roof and the windows… ») : l'image d'une étape est une retouche de l'étape SUIVANTE"
+        )
     for lang in langs:
         days = [_day(sc.on_screen_text.get(lang, "")) for sc in script.scenes[: n - 1]]  # type: ignore[call-overload]
         got = [d for d in days if d is not None]
@@ -402,8 +447,9 @@ def _day(text: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def day_counter(script: ScriptV1, lang: str, starts: Sequence[float], durations: Sequence[float],
-                per_s: float = 10.0) -> list[tuple[float, float, str]]:
+def day_counter(
+    script: ScriptV1, lang: str, starts: Sequence[float], durations: Sequence[float], per_s: float = 10.0
+) -> list[tuple[float, float, str]]:
     """Compteur de jours d'un chantier (« Jour 1 » → « Jour 120 ») : pendant chaque étape, le nombre défile de
     son jour à celui de l'étape suivante (au plus `per_s` changements par seconde) ; la fin reste sur le dernier
     jour. Vide si le script n'a pas de compteur (moins de la moitié des étapes numérotées)."""
@@ -616,8 +662,14 @@ def _tour_prompt(script: ScriptV1, sc: Any, prompt: str, bible: str) -> str:
     """Une pièce de la visite : intérieur ou extérieur dit en premier (essai du 25/09 : la « pièce secrète » est
     sortie en façade de chalet), l'ouverture vers la pièce suivante, les matériaux et la vue de toute la maison."""
     inside = sc.interior is not False
-    parts = [("Interior photograph taken inside the house, walls and ceiling visible: " if inside
-              else "Exterior photograph of the house: ") + prompt]
+    parts = [
+        (
+            "Interior photograph taken inside the house, walls and ceiling visible: "
+            if inside
+            else "Exterior photograph of the house: "
+        )
+        + prompt
+    ]
     if (sc.leads_to or "").strip():
         lead = _no_camera(sc.leads_to.strip()).rstrip(".")
         parts.append(lead[:1].upper() + lead[1:])

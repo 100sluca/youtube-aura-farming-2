@@ -45,8 +45,14 @@ class TTSStep(Step):
         if out.exists() and v["timeline"] and not forced and retake is None:  # idempotence
             return {"path": str(out), "skipped": True}
         if retake is not None:
-            return self._retake(ctx, out, ScriptV1.model_validate(v["script"]), v["lang"],
-                                float(v["voice_speed"] or ctx.settings.kokoro_speed), int(retake))
+            return self._retake(
+                ctx,
+                out,
+                ScriptV1.model_validate(v["script"]),
+                v["lang"],
+                float(v["voice_speed"] or ctx.settings.kokoro_speed),
+                int(retake),
+            )
 
         lang = v["lang"]
         script = ScriptV1.model_validate(v["script"])
@@ -61,7 +67,9 @@ class TTSStep(Step):
         tts, voice = resolve_voice(ctx.settings, voices, lang)
 
         if ctx.settings.dry_run:
-            scenes = [SceneSpeech(s.index, s.duration_s, texts[s.index], estimate_speech_s(texts[s.index], lang)) for s in script.scenes]
+            scenes = [
+                SceneSpeech(s.index, s.duration_s, texts[s.index], estimate_speech_s(texts[s.index], lang)) for s in script.scenes
+            ]
             timeline = plan_timeline(scenes, lang)
             out.write_bytes(b"")
         else:
@@ -71,7 +79,10 @@ class TTSStep(Step):
             spoken = [s.index for s in script.scenes if texts[s.index]]
             ctx.progress(5, f"Voix · {tts.name}")
             results = tts.speak_many(
-                [texts[i] for i in spoken], voice=voice, lang=lang, speed=speed,
+                [texts[i] for i in spoken],
+                voice=voice,
+                lang=lang,
+                speed=speed,
                 on_progress=lambda pct, label: ctx.progress(5 + int(0.8 * pct), f"Voix · {label}"),
             )
             rate = results[0].rate if results else 24000
@@ -89,8 +100,13 @@ class TTSStep(Step):
         stretched = [s.index for s, sc in zip(script.scenes, timeline.scenes, strict=True) if sc.duration > s.duration_s + 0.01]
         if stretched:
             ctx.log("tts.scenes_allongees", scenes=stretched, duree_totale=timeline.duration_s)
-        return {"duration_s": timeline.duration_s, "words": len(timeline.words), "stretched_scenes": stretched,
-                "voice": f"{tts.name}:{voice}", **({"retouch": True} if forced else {})}
+        return {
+            "duration_s": timeline.duration_s,
+            "words": len(timeline.words),
+            "stretched_scenes": stretched,
+            "voice": f"{tts.name}:{voice}",
+            **({"retouch": True} if forced else {}),
+        }
 
     def _drama(self, ctx: Context, out: Any, script: ScriptV1, lang: str, speed: float) -> dict[str, Any]:
         """Répliques d'un drame, chacune avec la voix de son personnage (un appel au moteur par voix, le modèle se charge
@@ -105,7 +121,9 @@ class TTSStep(Step):
                 by_voice.setdefault(voices.get(who) or default, []).append(s.index)
         ctx.log("tts.voix_personnages", voix=voices)
         if ctx.settings.dry_run:
-            scenes = [SceneSpeech(s.index, s.duration_s, texts[s.index], estimate_speech_s(texts[s.index], lang)) for s in script.scenes]
+            scenes = [
+                SceneSpeech(s.index, s.duration_s, texts[s.index], estimate_speech_s(texts[s.index], lang)) for s in script.scenes
+            ]
             timeline = plan_timeline(scenes, lang)
             out.write_bytes(b"")
         else:
@@ -126,8 +144,10 @@ class TTSStep(Step):
                     elif not speeches:
                         rate = sp.rate
                     speeches[i] = x
-            scenes = [SceneSpeech(s.index, s.duration_s, texts[s.index], len(speeches[s.index]) / rate if s.index in speeches else None)
-                      for s in script.scenes]
+            scenes = [
+                SceneSpeech(s.index, s.duration_s, texts[s.index], len(speeches[s.index]) / rate if s.index in speeches else None)
+                for s in script.scenes
+            ]
             timeline = plan_timeline(scenes, lang)
             ctx.progress(90, "Piste des répliques")
             sf.write(str(out), mix_speech(timeline, speeches, rate), rate)
@@ -142,8 +162,10 @@ class TTSStep(Step):
         vid, payload = ctx.job.video_id, ctx.job.payload
         cached = cached_lines(ctx.settings, vid)
         if cached is None:
-            raise RuntimeError("répliques de la vidéo introuvables (voix refaite depuis le dernier montage ?) : "
-                               "« Refaire la vidéo » d'abord, puis redire la réplique")
+            raise RuntimeError(
+                "répliques de la vidéo introuvables (voix refaite depuis le dernier montage ?) : "
+                "« Refaire la vidéo » d'abord, puis redire la réplique"
+            )
         speeches, rate, _ = cached
         scene = next((s for s in script.scenes if s.index == index), None)
         text = line_text(scene) if scene else ""
@@ -167,15 +189,18 @@ class TTSStep(Step):
 
         engine, voice = split_voice(voice_id)
         ctx.progress(10, f"Voix · plan {index + 1} · prise {take + 1}")
-        sp = get_engine(ctx.settings, engine).speak_many([said], voice=voice, lang=lang, speed=speed * factor,
-                                                         seed=1234 + 1000 * take)[0]
+        sp = get_engine(ctx.settings, engine).speak_many(
+            [said], voice=voice, lang=lang, speed=speed * factor, seed=1234 + 1000 * take
+        )[0]
         x = trim_silence(sp.samples, sp.rate)
         if sp.rate != rate:
             x = np.interp(np.linspace(0, len(x) - 1, int(len(x) * rate / sp.rate)), np.arange(len(x)), x)
         speeches[index] = np.asarray(x, dtype=np.float32)
         texts = {s.index: line_text(s) for s in script.scenes}
-        scenes = [SceneSpeech(s.index, s.duration_s, texts[s.index], len(speeches[s.index]) / rate if s.index in speeches else None)
-                  for s in script.scenes]
+        scenes = [
+            SceneSpeech(s.index, s.duration_s, texts[s.index], len(speeches[s.index]) / rate if s.index in speeches else None)
+            for s in script.scenes
+        ]
         timeline = plan_timeline(scenes, lang)
         ctx.progress(80, "Piste des répliques")
         sf.write(str(out), mix_speech(timeline, speeches, rate), rate)

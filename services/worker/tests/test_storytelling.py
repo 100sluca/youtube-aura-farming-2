@@ -16,13 +16,24 @@ GOOD_FR = [
 def _script(narrations=GOOD_FR, roles=ROLES, loop_note="Retour sur la pierre du plan 1", **overrides) -> ScriptV1:
     scenes = []
     for i, text in enumerate(narrations):
-        scene = {"index": i, "duration_s": 5, "role": roles[i] if roles else None, "visual_prompt": "x",
-                 "motion_prompt": "y", "narration": {"fr": text}, "continues_previous": i in (2, 3, 4)}
+        scene = {
+            "index": i,
+            "duration_s": 5,
+            "role": roles[i] if roles else None,
+            "visual_prompt": "x",
+            "motion_prompt": "y",
+            "narration": {"fr": text},
+            "continues_previous": i in (2, 3, 4),
+        }
         scene.update(overrides.get(i, {}))
         scenes.append(scene)
     return ScriptV1.model_validate(
-        {"version": 1, "scenes": scenes, "loop_note": loop_note,
-         "metadata": {"fr": {"title": "t", "description": "d", "tags": []}}}
+        {
+            "version": 1,
+            "scenes": scenes,
+            "loop_note": loop_note,
+            "metadata": {"fr": {"title": "t", "description": "d", "tags": []}},
+        }
     )
 
 

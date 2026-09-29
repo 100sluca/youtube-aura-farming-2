@@ -61,8 +61,9 @@ class GenerateClipStep(Step):
             if done:
                 return done
 
-        provider = get_video_provider(ctx.settings, prod["video_provider"] or load_generation_config(ctx.settings, ctx.db).video_provider,
-                                      db=ctx.db)
+        provider = get_video_provider(
+            ctx.settings, prod["video_provider"] or load_generation_config(ctx.settings, ctx.db).video_provider, db=ctx.db
+        )
         # Recette qui demande une variante du modèle (visite : mélange avec négatif, sans passants, docs/15 §10)
         variant = quality_variant(ctx.settings, provider.name, spec(recipe).video_variant) if is_visual(recipe) else None
         if variant:
@@ -140,18 +141,32 @@ class GenerateClipStep(Step):
         if extra_negative and isinstance(getattr(provider, "negative", None), str):  # n'agit qu'avec CFG > 1 (mélange, 20 passes)
             provider.negative = f"{provider.negative}, {extra_negative}"
         out = clips_dir / f"scene_{idx:02d}.mp4"
-        ctx.progress(5, f"Clip {idx + 1} · {provider.name}" + (" · continuité" if continues else " · première + dernière image"
-                     if end_image else " · depuis l'image" if image else ""))
+        ctx.progress(
+            5,
+            f"Clip {idx + 1} · {provider.name}"
+            + (
+                " · continuité"
+                if continues
+                else " · première + dernière image"
+                if end_image
+                else " · depuis l'image"
+                if image
+                else ""
+            ),
+        )
         # Formats visuels : le clip est regardé par le modèle de vision (personne, appareil de tournage ou objet inventés,
         # worker/keyframe_qc.py) et refait une fois s'il est refusé (docs/15 §10) ; drame : texte écrit par le modèle
         # vidéo (la réplique en sous-titre, 29/09)
-        qc = (get_vision_llm(ctx.settings, ctx.db)
-              if (is_visual(recipe) or is_drama(recipe)) and image is not None and ctx.settings.clip_qc
-              and not ctx.settings.dry_run else None)
+        qc = (
+            get_vision_llm(ctx.settings, ctx.db)
+            if (is_visual(recipe) or is_drama(recipe)) and image is not None and ctx.settings.clip_qc and not ctx.settings.dry_run
+            else None
+        )
         verdict: KeyframeVerdict | None = None
         # Gemini en ligne (durée imposée, asynchrone) : verdict noté, jamais de nouvel essai. Le job repart du début après
         # chaque attente (Postpone) : une reprise ici redemanderait une vidéo à chaque passage, sans fin, sur le quota
         retries = 0 if fixed else max(0, ctx.settings.clip_qc_retries)
+
         def render() -> Any:
             return provider.generate(
                 prompt=prompt,
@@ -169,8 +184,9 @@ class GenerateClipStep(Step):
             if not qc or image is None:
                 break
             try:
-                verdict = check_clip(qc, out, image, script, pos, recipe, clips_dir / "qc",
-                                     system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM))  # onglet Agents du dashboard
+                verdict = check_clip(
+                    qc, out, image, script, pos, recipe, clips_dir / "qc", system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM)
+                )  # onglet Agents du dashboard
             except Exception as exc:  # noqa: BLE001  le contrôle est un filet, pas une étape bloquante
                 ctx.log("clip.controle_indisponible", level="warn", scene=idx, erreur=str(exc)[:300])
                 verdict = None
@@ -186,13 +202,21 @@ class GenerateClipStep(Step):
         for retry in range(DIALOGUE_RETRIES):
             if dialogue is None or dialogue["ratio"] >= HEARD_MIN:
                 break
-            ctx.log("clip.replique_absente", level="warn", scene=idx, essai=retry + 1, attendu=dialogue["expected"],
-                    entendu=dialogue["heard"], ressemblance=dialogue["ratio"])
+            ctx.log(
+                "clip.replique_absente",
+                level="warn",
+                scene=idx,
+                essai=retry + 1,
+                attendu=dialogue["expected"],
+                entendu=dialogue["heard"],
+                ressemblance=dialogue["ratio"],
+            )
             info = render()
             if qc and image is not None and verdict is not None:  # le nouvel essai repasse le contrôle (texte écrit…)
                 try:
-                    verdict = check_clip(qc, out, image, script, pos, recipe, clips_dir / "qc",
-                                         system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM))
+                    verdict = check_clip(
+                        qc, out, image, script, pos, recipe, clips_dir / "qc", system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM)
+                    )
                     if not verdict.ok:
                         ctx.log("clip.refuse", level="warn", scene=idx, essai="réplique", problemes=verdict.problems)
                 except Exception as exc:  # noqa: BLE001
@@ -206,13 +230,26 @@ class GenerateClipStep(Step):
             duration_s=info.duration_s,
             width=info.width,
             height=info.height,
-            meta={"provider": provider.name, "seed": info.seed, "prompt": prompt, "image": str(image) if image else None,
-                  "continues": continues, "end_image": str(end_image) if end_image else None,
-                  **({"qc": verdict.model_dump()} if verdict else {}), **({"dialogue": dialogue} if dialogue else {})},
+            meta={
+                "provider": provider.name,
+                "seed": info.seed,
+                "prompt": prompt,
+                "image": str(image) if image else None,
+                "continues": continues,
+                "end_image": str(end_image) if end_image else None,
+                **({"qc": verdict.model_dump()} if verdict else {}),
+                **({"dialogue": dialogue} if dialogue else {}),
+            },
         )
-        return {"asset_id": str(asset_id), "provider": provider.name, "from_image": bool(image), "continues": continues,
-                "first_last": bool(end_image), **({"qc": verdict.model_dump()} if verdict else {}),
-                **({"dialogue": {k: dialogue[k] for k in ("expected", "heard", "ratio")}} if dialogue else {})}
+        return {
+            "asset_id": str(asset_id),
+            "provider": provider.name,
+            "from_image": bool(image),
+            "continues": continues,
+            "first_last": bool(end_image),
+            **({"qc": verdict.model_dump()} if verdict else {}),
+            **({"dialogue": {k: dialogue[k] for k in ("expected", "heard", "ratio")}} if dialogue else {}),
+        }
 
     @staticmethod
     def _direction(ctx: Context, script: ScriptV1, scene: ScriptScene, image: Path) -> tuple[dict[str, str], str]:
@@ -242,12 +279,21 @@ class GenerateClipStep(Step):
             ctx.log("clip.transcription_indisponible", level="warn", scene=scene.index, erreur=str(exc)[:300])
             return None
         if not heard:
-            ctx.log("clip.transcription_absente", level="warn", scene=scene.index,
-                    raison="environnement tts/eval (Whisper) non installé : install_tts.ps1 -Engine eval")
+            ctx.log(
+                "clip.transcription_absente",
+                level="warn",
+                scene=scene.index,
+                raison="environnement tts/eval (Whisper) non installé : install_tts.ps1 -Engine eval",
+            )
             return None
         expected = line_text(scene)
-        return {"expected": expected, "heard": heard[0]["text"], "words": heard[0]["words"],
-                "speech": heard[0].get("speech") or [], "ratio": heard_ratio(expected, heard[0]["text"])}
+        return {
+            "expected": expected,
+            "heard": heard[0]["text"],
+            "words": heard[0]["words"],
+            "speech": heard[0].get("speech") or [],
+            "ratio": heard_ratio(expected, heard[0]["text"]),
+        }
 
     @staticmethod
     def _map_storyboard(ctx: Context, pid: Any, idx: int) -> bool:
@@ -274,14 +320,26 @@ class GenerateClipStep(Step):
                 duration = scene.duration_s
             else:
                 plan = maps.scene_plan(ctx.settings, scene.map, lang)
-                duration = maps.render_clip(plan, out, scene.duration_s, cache_root=ctx.settings.data_dir / "maps",
-                                            user_agent=ctx.settings.effective_wikipedia_user_agent,
-                                            font_path=maps.font_for(ctx.settings), lang=lang)
+                duration = maps.render_clip(
+                    plan,
+                    out,
+                    scene.duration_s,
+                    cache_root=ctx.settings.data_dir / "maps",
+                    user_agent=ctx.settings.effective_wikipedia_user_agent,
+                    font_path=maps.font_for(ctx.settings),
+                    lang=lang,
+                )
         except Exception as exc:  # noqa: BLE001
             ctx.log("clip.carte_indisponible", level="warn", scene=scene.index, lieu=scene.map.place, erreur=str(exc)[:300])
             return None
         asset_id = ctx.db.add_asset(
-            production_id=pid, kind="clip", scene_index=scene.index, local_path=str(out), duration_s=duration,
-            width=maps.W, height=maps.H, meta={"provider": "map", "prompt": f"Carte : {scene.map.place}", "map": scene.map.model_dump()},
+            production_id=pid,
+            kind="clip",
+            scene_index=scene.index,
+            local_path=str(out),
+            duration_s=duration,
+            width=maps.W,
+            height=maps.H,
+            meta={"provider": "map", "prompt": f"Carte : {scene.map.place}", "map": scene.map.model_dump()},
         )
         return {"asset_id": str(asset_id), "provider": "map", "from_image": False, "continues": False, "first_last": False}

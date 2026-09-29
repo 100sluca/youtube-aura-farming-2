@@ -133,8 +133,17 @@ def normalize(script: ScriptV1) -> ScriptV1:
     for m in s.cast:
         key = slug(m.key or m.name)
         if key and key not in {c.key for c in cast}:
-            cast.append(m.model_copy(update={"key": key, "name": (m.name or key).strip(), "look": m.look.strip(),
-                                             "voice": m.voice.strip(), "role": m.role.strip()}))
+            cast.append(
+                m.model_copy(
+                    update={
+                        "key": key,
+                        "name": (m.name or key).strip(),
+                        "look": m.look.strip(),
+                        "voice": m.voice.strip(),
+                        "role": m.role.strip(),
+                    }
+                )
+            )
     s.cast = cast
     by_name = {slug(m.name): m.key for m in cast} | {m.key: m.key for m in cast}
 
@@ -148,8 +157,13 @@ def normalize(script: ScriptV1) -> ScriptV1:
         sc.continues_previous, sc.clip_mode, sc.transition, sc.passage = False, "i2v", "cut", False
         sc.edit_prompt, sc.edit_from, sc.map = None, None, None
         # nombres en chiffres à l'écran (sous-titres, docs/33) ; le prompt du clip les redonne en lettres à la voix
-        lines = [ln.model_copy(update={"who": resolve(ln.who), "text": to_digits(unlabel(ln.text.strip(), cast), lang), "tone": ln.tone.strip()})
-                 for ln in sc.lines if ln.text.strip() and ln.who.strip()]
+        lines = [
+            ln.model_copy(
+                update={"who": resolve(ln.who), "text": to_digits(unlabel(ln.text.strip(), cast), lang), "tone": ln.tone.strip()}
+            )
+            for ln in sc.lines
+            if ln.text.strip() and ln.who.strip()
+        ]
         if len(lines) > 1 and len({ln.who for ln in lines}) == 1:  # un même personnage : une seule réplique
             lines = [lines[0].model_copy(update={"text": " ".join(ln.text for ln in lines)})]
         sc.lines = lines
@@ -170,12 +184,16 @@ def lint(script: ScriptV1, langs: Sequence[str], target_duration_s: float | None
     if not SCENES_RANGE[0] <= n <= SCENES_RANGE[1]:
         issues.append(f"{n} scènes : {SCENES_RANGE[0]} à {SCENES_RANGE[1]} pour un drame (une réplique par plan de 2 à 5 s)")
     if not CAST_RANGE[0] <= len(script.cast) <= CAST_RANGE[1]:
-        issues.append(f"cast : {len(script.cast)} personnages, il en faut {CAST_RANGE[0]} à {CAST_RANGE[1]} "
-                      "(key, name, look, voice pour chacun)")
+        issues.append(
+            f"cast : {len(script.cast)} personnages, il en faut {CAST_RANGE[0]} à {CAST_RANGE[1]} "
+            "(key, name, look, voice pour chacun)"
+        )
     for m in script.cast:
         if len(words(m.look)) < LOOK_WORDS_MIN:
-            issues.append(f"personnage {m.name} : look trop court ({len(words(m.look))} mots) ; en anglais, "
-                          f"{LOOK_WORDS_MIN} mots au moins : tête, couleurs, âge, vêtements, accessoires")
+            issues.append(
+                f"personnage {m.name} : look trop court ({len(words(m.look))} mots) ; en anglais, "
+                f"{LOOK_WORDS_MIN} mots au moins : tête, couleurs, âge, vêtements, accessoires"
+            )
         if not m.voice:
             issues.append(f"personnage {m.name} : voice manquante (sa voix en anglais : âge, timbre, manière de parler)")
     keys = {m.key for m in script.cast}
@@ -203,13 +221,17 @@ def lint(script: ScriptV1, langs: Sequence[str], target_duration_s: float | None
         if not sc.characters and sc.lines:
             issues.append(f"{tag} : réplique sans personnage à l'image")
     if n and talking / n < DIALOGUE_SHARE_MIN:
-        issues.append(f"répliques sur {talking} plans sur {n} : un drame se raconte en dialogues "
-                      f"({int(DIALOGUE_SHARE_MIN * 100)} % des plans au moins)")
+        issues.append(
+            f"répliques sur {talking} plans sur {n} : un drame se raconte en dialogues "
+            f"({int(DIALOGUE_SHARE_MIN * 100)} % des plans au moins)"
+        )
     for lg in langs:
         issues += lint_hook_title(script.hook_title.get(lg, ""), lg)  # type: ignore[call-overload]
     if target_duration_s and abs(script.duration_s - target_duration_s) > DURATION_TOLERANCE * target_duration_s:
-        issues.append(f"durée {script.duration_s:g} s, cible {target_duration_s:g} s (± {int(DURATION_TOLERANCE * 100)} %) : "
-                      "ajouter ou retirer des plans")
+        issues.append(
+            f"durée {script.duration_s:g} s, cible {target_duration_s:g} s (± {int(DURATION_TOLERANCE * 100)} %) : "
+            "ajouter ou retirer des plans"
+        )
     return issues
 
 
@@ -225,8 +247,11 @@ def sheet_prompt(member: CastMember) -> str:
 
 # Tout-petit (chiot, chaton, enfant de moins de 10 ans) : sa fiche, seule sur fond gris, ne dit rien de sa taille, et le
 # modèle le dessinait aussi grand que les adultes (Tom, chiot de 8 ans, à côté de son père : Papa Bruno, 28/09)
-_SMALL = re.compile(r"\b(puppy|kitten|cub|toddler|baby|little (girl|boy)|[3-9][- ]years?[- ]old|"
-                    r"(three|four|five|six|seven|eight|nine)[- ]years?[- ]old)\b", re.I)
+_SMALL = re.compile(
+    r"\b(puppy|kitten|cub|toddler|baby|little (girl|boy)|[3-9][- ]years?[- ]old|"
+    r"(three|four|five|six|seven|eight|nine)[- ]years?[- ]old)\b",
+    re.I,
+)
 
 
 def _size(member: CastMember) -> str:
@@ -239,15 +264,18 @@ def scene_prompt(script: ScriptV1, pos: int, refs: Sequence[str] = ()) -> str:
     sc = script.scenes[pos]
     text = sc.visual_prompt.strip().rstrip(".")
     if refs:
-        tags = [f"{m.name} is the character of <image{k}>{_size(m)}" for k, key in enumerate(refs, 1) if (m := script.member(key))]
+        tags = [
+            f"{m.name} is the character of <image{k}>{_size(m)}" for k, key in enumerate(refs, 1) if (m := script.member(key))
+        ]
         intro = REFS_INTRO.format(refs=", ".join(f"<image{k}>" for k in range(1, len(refs) + 1)))
         return f"{intro}{'; '.join(tags)}. {text}"
     looks = "; ".join(f"{m.name}: {m.look.rstrip('.')}" for key in sc.characters if (m := script.member(key)))
     return f"{text}. Characters: {looks}" if looks else text
 
 
-def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None = None,
-                where: dict[str, str] | None = None, note: str = "") -> str:
+def clip_prompt(
+    script: ScriptV1, pos: int, lang: str, style_preset: str | None = None, where: dict[str, str] | None = None, note: str = ""
+) -> str:
     """Prompt du clip : le film, ce qui bouge, qui est qui dans le plan (par ce qui se voit et, à plusieurs, par leur
     place dans l'image : `where`, worker/speaker.py), puis la réplique entre guillemets avec la voix du personnage (le
     modèle vidéo la dit, bouche comprise) et les autres qui se taisent ; un plan sans réplique demande le silence, sinon
@@ -255,8 +283,11 @@ def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None 
     sc = script.scenes[pos]
     members = shot_members(script, sc)
     # H3 ne sait pas qui est « Api » : un nom seul lui faisait animer la mauvaise bouche (« Mamie Pomme », 29/09)
-    parts = [f"{FILM.get(style_preset or '', '3D animated feature film')}.",
-             (sc.motion_prompt or sc.visual_prompt).strip().rstrip(".") + ".", legend(members, where)]
+    parts = [
+        f"{FILM.get(style_preset or '', '3D animated feature film')}.",
+        (sc.motion_prompt or sc.visual_prompt).strip().rstrip(".") + ".",
+        legend(members, where),
+    ]
     if sc.lines:
         ln = sc.lines[0]
         m = script.member(ln.who)
@@ -292,35 +323,68 @@ def speaker_line(script: ScriptV1, scene: ScriptScene) -> str:
 # Voix constantes (série en format A) : une voix de synthèse par personnage, posée sur les clips
 # ---------------------------------------------------------------------------
 
-_FEMALE = re.compile(r"\b(woman|women|girl|lady|female|she|her|mother|mom|wife|daughter|sister|grandmother|granny|"
-                     r"widow|queen|princess|bride|madame|mrs)\b", re.I)
-_CHILD = re.compile(r"\b(child|kid|little (girl|boy)|([4-9]|1[0-2])[- ]year[- ]old|(four|five|six|seven|eight|nine|ten|"
-                    r"eleven|twelve)[- ]year[- ]old|puppy|kitten)\b", re.I)
+_FEMALE = re.compile(
+    r"\b(woman|women|girl|lady|female|she|her|mother|mom|wife|daughter|sister|grandmother|granny|"
+    r"widow|queen|princess|bride|madame|mrs)\b",
+    re.I,
+)
+_CHILD = re.compile(
+    r"\b(child|kid|little (girl|boy)|([4-9]|1[0-2])[- ]year[- ]old|(four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve)[- ]year[- ]old|puppy|kitten)\b",
+    re.I,
+)
 _TEEN = re.compile(r"\b(teen\w*|adolescent|1[3-7][- ]year[- ]old|(thirteen|fourteen|fifteen|sixteen)[- ]year[- ]old)\b", re.I)
 _OLD = re.compile(r"\b(elderly|old|aged|seventies|sixties|eighties|grand(mother|father|ma|pa)|granny|widow)\b", re.I)
-_BOSS = re.compile(r"\b(boss|authoritative|powerful|commanding|rich|wealthy|billionaire|ceo|director|tycoon|banker|"
-                   r"mine owner|contempt)\b", re.I)
+_BOSS = re.compile(
+    r"\b(boss|authoritative|powerful|commanding|rich|wealthy|billionaire|ceo|director|tycoon|banker|"
+    r"mine owner|contempt)\b",
+    re.I,
+)
 _FAKE = re.compile(r"\b(fake|manipulative|honeyed|haughty|snob\w*|scheming|disdainful|cold)\b", re.I)
 
 
 def character_voices(catalog: dict[str, Any], lang: str) -> dict[str, str]:
     """Voix de synthèse proposées aux personnages : les voix Qwen3 dessinées de la langue (celles des personnages
     d'abord), {id: libellé} ; les voix « perso_… » sont dessinées par tts_runners/qwen3_design.py (docs/35)."""
-    voices = {str(v.get("id")): str(v.get("label") or v.get("id")) for v in (catalog.get("voices") or {}).get(lang, [])
-              if str(v.get("id", "")).startswith("qwen3:")}
+    voices = {
+        str(v.get("id")): str(v.get("label") or v.get("id"))
+        for v in (catalog.get("voices") or {}).get(lang, [])
+        if str(v.get("id", "")).startswith("qwen3:")
+    }
     return dict(sorted(voices.items(), key=lambda kv: (not kv[0].startswith("qwen3:perso_"), kv[0])))
 
 
 def voices_brief(voices: dict[str, str]) -> str:
     """La liste des voix donnée au scénariste d'un drame (champ tts_voice)."""
-    return ("VOIX DE SYNTHÈSE (champ tts_voice de chaque personnage : l'identifiant tel quel, une voix différente par "
-            "personnage) :\n" + "\n".join(f"- {k} : {v}" for k, v in voices.items())) if voices else ""
+    return (
+        (
+            "VOIX DE SYNTHÈSE (champ tts_voice de chaque personnage : l'identifiant tel quel, une voix différente par "
+            "personnage) :\n" + "\n".join(f"- {k} : {v}" for k, v in voices.items())
+        )
+        if voices
+        else ""
+    )
 
 
-_WOMEN = ["qwen3:perso_jeune_femme", "qwen3:perso_mamie", "qwen3:perso_mielleuse", "qwen3:narratrice", "qwen3:elegante",
-          "qwen3:energique_f", "qwen3:perso_fillette"]
-_MEN = ["qwen3:perso_humble", "qwen3:perso_patron", "qwen3:perso_papi", "qwen3:narrateur", "qwen3:energique_h",
-        "qwen3:mystere", "qwen3:perso_ado", "qwen3:perso_garcon"]
+_WOMEN = [
+    "qwen3:perso_jeune_femme",
+    "qwen3:perso_mamie",
+    "qwen3:perso_mielleuse",
+    "qwen3:narratrice",
+    "qwen3:elegante",
+    "qwen3:energique_f",
+    "qwen3:perso_fillette",
+]
+_MEN = [
+    "qwen3:perso_humble",
+    "qwen3:perso_patron",
+    "qwen3:perso_papi",
+    "qwen3:narrateur",
+    "qwen3:energique_h",
+    "qwen3:mystere",
+    "qwen3:perso_ado",
+    "qwen3:perso_garcon",
+]
 
 
 def voice_candidates(member: CastMember) -> list[str]:
@@ -410,8 +474,11 @@ def _heard_units(heard: Sequence[dict[str, Any]]) -> list[tuple[float, float, st
         if not w:
             continue
         s, e = float(h["start"]), float(h["end"])
-        glued = out and (w[0] in "'’-" or out[-1][2].endswith(("'", "’", "-"))
-                         or (re.fullmatch(r"\d{3}\W*", w) and re.search(r"\d\W*$", out[-1][2])))
+        glued = out and (
+            w[0] in "'’-"
+            or out[-1][2].endswith(("'", "’", "-"))
+            or (re.fullmatch(r"\d{3}\W*", w) and re.search(r"\d\W*$", out[-1][2]))
+        )
         if glued:
             ps, pe, pw = out[-1]
             out[-1] = (ps, max(pe, e), pw + w)
@@ -452,8 +519,11 @@ def align_words(text: str, heard: Sequence[dict[str, Any]], lang: str, offset: f
         for m in range(k, j):
             times[m] = (left + step * (m - k), left + step * (m - k + 1))
         k = j
-    return [WordTiming(text=w, start=round(offset + max(0.0, t[0]), 3), end=round(offset + max(t[0], t[1]), 3))
-            for w, t in zip(shown, times, strict=True) if t is not None]
+    return [
+        WordTiming(text=w, start=round(offset + max(0.0, t[0]), 3), end=round(offset + max(t[0], t[1]), 3))
+        for w, t in zip(shown, times, strict=True)
+        if t is not None
+    ]
 
 
 def dialogue_timeline(script: ScriptV1, lang: str, clips: Sequence[dict[str, Any]]) -> NarrationTimeline:
@@ -479,11 +549,22 @@ def dialogue_timeline(script: ScriptV1, lang: str, clips: Sequence[dict[str, Any
             b = min(native, a + len(words(text)) / DIALOGUE_WPS)
             ws = distribute_words(text, round(t + a, 3), round(t + b, 3), lang)
         d = min(native, max(d, b + TAIL_S))
-        out.append(SceneTiming(index=sc.index, start=round(t, 3), duration=round(d, 3), speech_start=round(t + a, 3),
-                               speech_end=round(t + b, 3), words=ws))
+        out.append(
+            SceneTiming(
+                index=sc.index,
+                start=round(t, 3),
+                duration=round(d, 3),
+                speech_start=round(t + a, 3),
+                speech_end=round(t + b, 3),
+                words=ws,
+            )
+        )
         t += d
-    return NarrationTimeline(lang=lang, aligner="whisper" if any(c.get("dialogue") for c in clips) else "proportional",  # type: ignore[arg-type]
-                             scenes=out)
+    return NarrationTimeline(
+        lang=lang,
+        aligner="whisper" if any(c.get("dialogue") for c in clips) else "proportional",  # type: ignore[arg-type]
+        scenes=out,
+    )
 
 
 def whisper_python(settings: Any) -> Path:
@@ -502,13 +583,26 @@ def transcribe(settings: Any, clips: Sequence[Path], lang: str, timeout_s: int =
     tmp_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="whisper_", dir=tmp_root) as tmp:
         req, out = Path(tmp) / "request.json", Path(tmp) / "result.json"
-        req.write_text(json.dumps({"files": [str(c) for c in clips], "lang": lang, "out": str(out)}, ensure_ascii=False),
-                       encoding="utf-8")
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
-               "HF_HOME": str(Path(settings.yt2_home) / "tts" / "hf-cache"), "HF_HUB_OFFLINE": "1"}
-        proc = subprocess.run([str(python), str(runner), str(req)], capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", env=env, timeout=timeout_s,
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        req.write_text(
+            json.dumps({"files": [str(c) for c in clips], "lang": lang, "out": str(out)}, ensure_ascii=False), encoding="utf-8"
+        )
+        env = {
+            **os.environ,
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+            "HF_HOME": str(Path(settings.yt2_home) / "tts" / "hf-cache"),
+            "HF_HUB_OFFLINE": "1",
+        }
+        proc = subprocess.run(
+            [str(python), str(runner), str(req)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=timeout_s,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
         if proc.returncode != 0 or not out.exists():
             raise RuntimeError(f"Whisper en échec (code {proc.returncode}) : {(proc.stderr or '')[-1500:]}")
         return list(json.loads(out.read_text(encoding="utf-8"))["results"])
@@ -524,8 +618,10 @@ def build_dialogue_track(clips: Sequence[Path], durations: Sequence[float], out:
     for k, (clip, d) in enumerate(zip(clips, durations, strict=True)):
         inputs += ["-i", str(clip)]
         if _has_audio(clip):
-            parts.append(f"[{k}:a]aresample=48000,aformat=channel_layouts=mono,atrim=0:{d:.3f},asetpts=PTS-STARTPTS,"
-                         f"apad=whole_dur={d:.3f}[a{k}]")
+            parts.append(
+                f"[{k}:a]aresample=48000,aformat=channel_layouts=mono,atrim=0:{d:.3f},asetpts=PTS-STARTPTS,"
+                f"apad=whole_dur={d:.3f}[a{k}]"
+            )
         else:  # clip muet (Wan, clip refait par un autre modèle) : du silence à sa place
             parts.append(f"anullsrc=r=48000:cl=mono,atrim=0:{d:.3f}[a{k}]")
     graph = ";".join(parts) + ";" + "".join(f"[a{k}]" for k in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[out]"
@@ -535,9 +631,13 @@ def build_dialogue_track(clips: Sequence[Path], durations: Sequence[float], out:
 
 
 def _has_audio(clip: Path) -> bool:
-    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
-                            str(clip)], capture_output=True, text=True, timeout=60,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(clip)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
     return bool(probe.stdout.strip())
 
 

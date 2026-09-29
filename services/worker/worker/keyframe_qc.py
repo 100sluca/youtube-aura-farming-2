@@ -62,32 +62,47 @@ def requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     what = sc.visual_prompt.strip()[:300]
     if recipe == "tour":
         if sc.interior is not False:
-            reqs = ["La photo est prise À L'INTÉRIEUR d'une maison : on voit les murs et le plafond de la pièce ; ce "
-                    "n'est ni une façade, ni une terrasse, ni un extérieur.",
-                    f"On reconnaît la pièce décrite : {what}"]
+            reqs = [
+                "La photo est prise À L'INTÉRIEUR d'une maison : on voit les murs et le plafond de la pièce ; ce "
+                "n'est ni une façade, ni une terrasse, ni un extérieur.",
+                f"On reconnaît la pièce décrite : {what}",
+            ]
         else:
             reqs = [f"Vue extérieure qui correspond à : {what}"]
         return [PHOTO, *reqs, NOBODY]
     if recipe == "timelapse":
         n = len(script.scenes)
         if pos == n - 2:  # le résultat fini : il fixe le cadre et l'échelle de tout le chantier
-            return [PHOTO, f"L'image montre : {what}",
-                    "C'est le résultat TERMINÉ : aucun échafaudage, engin, grue ni matériau de chantier.",
-                    "La construction est ENTIÈRE dans l'image, pas coupée par les bords, avec de l'espace autour.",
-                    "On lit l'échelle humaine (portes, fenêtres, garde-corps ou escaliers de taille normale).", NOBODY]
+            return [
+                PHOTO,
+                f"L'image montre : {what}",
+                "C'est le résultat TERMINÉ : aucun échafaudage, engin, grue ni matériau de chantier.",
+                "La construction est ENTIÈRE dans l'image, pas coupée par les bords, avec de l'espace autour.",
+                "On lit l'échelle humaine (portes, fenêtres, garde-corps ou escaliers de taille normale).",
+                NOBODY,
+            ]
         if pos == n - 1:
-            return [PHOTO, "C'est la même scène que l'image 2, au crépuscule, avec des lumières allumées ; même "
-                    "construction, même cadrage.", NOBODY]
+            return [
+                PHOTO,
+                "C'est la même scène que l'image 2, au crépuscule, avec des lumières allumées ; même construction, même cadrage.",
+                NOBODY,
+            ]
         if pos == 0:  # l'état d'origine : des ruines ou de la végétation EN PLUS vont dans le bon sens (faux refus du 25/09)
-            return [PHOTO, f"L'image montre le lieu AVANT tout travaux : {what}",
-                    "Même paysage, même point de vue et même cadrage que l'image 2 (le chantier à ses débuts) ; des "
-                    "ruines, de la végétation ou des objets abandonnés en plus sont normaux, c'est l'état d'origine.",
-                    "Aucun engin de chantier ni ouvrier."]
-        reqs = [PHOTO, f"L'image montre cette étape du chantier : {what}",
-                "Elle est MOINS avancée que l'image 2 (étape suivante) : ce qui n'est pas encore construit a été "
-                "enlevé ; le paysage, le point de vue et le cadrage sont les mêmes que dans l'image 2.",
-                "Les ouvriers éventuels sont petits, à l'échelle du bâtiment ; aucun n'est près de l'objectif, en gros "
-                "plan ou coupé par le bord de l'image."]
+            return [
+                PHOTO,
+                f"L'image montre le lieu AVANT tout travaux : {what}",
+                "Même paysage, même point de vue et même cadrage que l'image 2 (le chantier à ses débuts) ; des "
+                "ruines, de la végétation ou des objets abandonnés en plus sont normaux, c'est l'état d'origine.",
+                "Aucun engin de chantier ni ouvrier.",
+            ]
+        reqs = [
+            PHOTO,
+            f"L'image montre cette étape du chantier : {what}",
+            "Elle est MOINS avancée que l'image 2 (étape suivante) : ce qui n'est pas encore construit a été "
+            "enlevé ; le paysage, le point de vue et le cadrage sont les mêmes que dans l'image 2.",
+            "Les ouvriers éventuels sont petits, à l'échelle du bâtiment ; aucun n'est près de l'objectif, en gros "
+            "plan ou coupé par le bord de l'image.",
+        ]
         return reqs
     return [PHOTO]
 
@@ -104,8 +119,10 @@ NO_RIG = "Aucun appareil de tournage ni machine étrangère n'apparaît (caméra
 # Drame (docs/35) : MiniMax H3 écrivait parfois la réplique à l'image, comme un sous-titre, en plus de ceux du montage
 # (« Mamie Pomme », 29/09). Seul le texte ajouté par le clip compte : celui de l'image de départ ne partirait pas en le
 # refaisant (la consigne du scénariste et du prompt d'image l'interdit déjà).
-NO_NEW_TEXT = ("Aucun texte n'apparaît sur les images 2 à 4 qui ne soit pas déjà dans l'image 1 : ni sous-titres, ni "
-               "légende, ni lettres ou mots écrits sur l'image. Les personnages de film d'animation sont normaux.")
+NO_NEW_TEXT = (
+    "Aucun texte n'apparaît sur les images 2 à 4 qui ne soit pas déjà dans l'image 1 : ni sous-titres, ni "
+    "légende, ni lettres ou mots écrits sur l'image. Les personnages de film d'animation sont normaux."
+)
 
 
 def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
@@ -116,13 +133,18 @@ def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     if sc.passage:  # un passage d'une pièce à l'autre transforme l'image : seuls personnes et appareils comptent
         return ["Aucune personne n'apparaît, même au loin ou en reflet.", NO_RIG]
     if recipe == "timelapse" and sc.clip_mode == "flf" and pos < len(script.scenes) - 2:
-        return ["Les ouvriers éventuels restent petits, à l'échelle du bâtiment : aucune personne géante, en gros plan, "
-                "près de l'objectif ou coupée par le bord de l'image.", NO_RIG.replace(", grue", ""),
-                "Le paysage, le point de vue et le cadrage restent ceux de l'image 1."]
+        return [
+            "Les ouvriers éventuels restent petits, à l'échelle du bâtiment : aucune personne géante, en gros plan, "
+            "près de l'objectif ou coupée par le bord de l'image.",
+            NO_RIG.replace(", grue", ""),
+            "Le paysage, le point de vue et le cadrage restent ceux de l'image 1.",
+        ]
     reqs = ["Aucune personne n'apparaît, même au loin ou en reflet.", NO_RIG]
     if recipe == "tour":
-        reqs.append("Aucun objet étranger n'apparaît par rapport à l'image 1, et rien ne se déforme ni ne disparaît sur place ; "
-                    "un meuble peut sortir du cadre quand la caméra avance ou tourne, ce n'est pas un défaut.")
+        reqs.append(
+            "Aucun objet étranger n'apparaît par rapport à l'image 1, et rien ne se déforme ni ne disparaît sur place ; "
+            "un meuble peut sortir du cadre quand la caméra avance ou tourne, ce n'est pas un défaut."
+        )
     else:
         reqs.append("La construction reste la même que dans l'image 1, sans se déformer.")
     return reqs
@@ -143,8 +165,9 @@ def clip_frames(clip: Path, out_dir: Path, fractions: tuple[float, ...] = (0.3, 
     return frames
 
 
-def check_clip(llm: Any, clip: Path, start: Path, script: ScriptV1, pos: int, recipe: str, workdir: Path,
-               system: str = CLIP_SYSTEM) -> KeyframeVerdict:
+def check_clip(
+    llm: Any, clip: Path, start: Path, script: ScriptV1, pos: int, recipe: str, workdir: Path, system: str = CLIP_SYSTEM
+) -> KeyframeVerdict:
     """Verdict du modèle de vision sur un clip : son image de départ et trois images tirées du clip. `system` : le
     prompt actif de la clé clip_qc (onglet Agents du dashboard, worker/prompts.py)."""
     reqs = clip_requirements(script, pos, recipe)
@@ -152,14 +175,17 @@ def check_clip(llm: Any, clip: Path, start: Path, script: ScriptV1, pos: int, re
     return _ask(llm, system, user, [start, *clip_frames(clip, workdir)])
 
 
-def check_keyframe(llm: Any, image: Path, script: ScriptV1, pos: int, recipe: str, source: Path | None = None,
-                   system: str = QC_SYSTEM) -> KeyframeVerdict:
+def check_keyframe(
+    llm: Any, image: Path, script: ScriptV1, pos: int, recipe: str, source: Path | None = None, system: str = QC_SYSTEM
+) -> KeyframeVerdict:
     """Verdict du modèle de vision sur une image clé ; `source` = l'image retouchée pour l'obtenir (image 2). `system` :
     le prompt actif de la clé keyframe_qc (onglet Agents du dashboard, worker/prompts.py)."""
     reqs = requirements(script, pos, recipe)
     lines = "\n".join(f"{k + 1}. {r}" for k, r in enumerate(reqs))
     user = f"Exigences pour l'image 1 :\n{lines}"
     if source is not None and edit_source(script, pos) is not None:
-        user += f"\n\nL'image 1 a été obtenue en retouchant l'image 2 avec cette consigne : {edit_instruction(script, pos, recipe)}"
+        user += (
+            f"\n\nL'image 1 a été obtenue en retouchant l'image 2 avec cette consigne : {edit_instruction(script, pos, recipe)}"
+        )
     images = [image, source] if source is not None else [image]
     return _ask(llm, system, user, images)

@@ -30,8 +30,25 @@ NBSP = " "
 # Nombre → mots
 # ---------------------------------------------------------------------------------------------------------------------
 
-_FR_UNITS = ("zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze", "douze", "treize",
-             "quatorze", "quinze", "seize")
+_FR_UNITS = (
+    "zéro",
+    "un",
+    "deux",
+    "trois",
+    "quatre",
+    "cinq",
+    "six",
+    "sept",
+    "huit",
+    "neuf",
+    "dix",
+    "onze",
+    "douze",
+    "treize",
+    "quatorze",
+    "quinze",
+    "seize",
+)
 _FR_TENS = {2: "vingt", 3: "trente", 4: "quarante", 5: "cinquante", 6: "soixante"}
 
 
@@ -91,11 +108,20 @@ def fr_ordinal(n: int, feminine: bool = False) -> str:
     return (words[:-1] if words.endswith("e") else words) + "ième"
 
 
-_EN_UNITS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen "
-             "seventeen eighteen nineteen").split()
+_EN_UNITS = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen "
+    "seventeen eighteen nineteen"
+).split()
 _EN_TENS = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
-_EN_ORDINAL = {"one": "first", "two": "second", "three": "third", "five": "fifth", "eight": "eighth", "nine": "ninth",
-               "twelve": "twelfth"}
+_EN_ORDINAL = {
+    "one": "first",
+    "two": "second",
+    "three": "third",
+    "five": "fifth",
+    "eight": "eighth",
+    "nine": "ninth",
+    "twelve": "twelfth",
+}
 
 
 def _en_below_100(n: int) -> str:
@@ -277,26 +303,122 @@ def spoken(text: str, lang: str = "fr") -> str:
 # ---------------------------------------------------------------------------------------------------------------------
 
 _FR_SMALL = {w: i for i, w in enumerate(_FR_UNITS)} | {
-    "une": 1, "vingt": 20, "vingts": 20, "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60,
-    "septante": 70, "huitante": 80, "octante": 80, "nonante": 90,
+    "une": 1,
+    "vingt": 20,
+    "vingts": 20,
+    "trente": 30,
+    "quarante": 40,
+    "cinquante": 50,
+    "soixante": 60,
+    "septante": 70,
+    "huitante": 80,
+    "octante": 80,
+    "nonante": 90,
 }
 _FR_BIG = {"million": 10**6, "millions": 10**6, "milliard": 10**9, "milliards": 10**9}
 _FR_WORDS = set(_FR_SMALL) | {"cent", "cents", "mille"} | set(_FR_BIG)
 # Mots qui annoncent une année (« en 1992 », « l'an 1000 ») : elle s'écrit sans espace
 _YEAR_BEFORE = {
-    "en", "depuis", "dès", "vers", "an", "année", "années", "avant", "après", "fin", "début", "milieu", "printemps", "été",
-    "automne", "hiver", "janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
-    "novembre", "décembre",
+    "en",
+    "depuis",
+    "dès",
+    "vers",
+    "an",
+    "année",
+    "années",
+    "avant",
+    "après",
+    "fin",
+    "début",
+    "milieu",
+    "printemps",
+    "été",
+    "automne",
+    "hiver",
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
 }
 # Mots suivis d'un numéro : « Jour un » est « Jour 1 », pas un article
 _LABELS = {"jour", "page", "chapitre", "épisode", "saison", "acte", "étape", "numéro", "tome", "partie", "niveau", "an"}
 # Mots qui ne sont pas le nom compté après un nombre (« de 1914 à 1918 », « en 1992 les travaux »)
 _NOT_COUNTED = {
-    "à", "au", "aux", "et", "ou", "puis", "avant", "après", "quand", "lorsque", "les", "le", "la", "un", "une", "des", "du",
-    "de", "il", "elle", "ils", "elles", "on", "ce", "cet", "cette", "ces", "se", "sa", "son", "ses", "leur", "leurs", "mais",
-    "donc", "pour", "par", "sur", "dans", "avec", "sans", "sous", "tout", "tous", "toute", "toutes", "déjà", "encore",
-    "enfin", "alors", "que", "qui", "où", "entre", "contre", "vers", "chez", "plus", "moins", "seulement", "même", "aussi",
-    "y", "en", "ne", "jusqu", "jusque",
+    "à",
+    "au",
+    "aux",
+    "et",
+    "ou",
+    "puis",
+    "avant",
+    "après",
+    "quand",
+    "lorsque",
+    "les",
+    "le",
+    "la",
+    "un",
+    "une",
+    "des",
+    "du",
+    "de",
+    "il",
+    "elle",
+    "ils",
+    "elles",
+    "on",
+    "ce",
+    "cet",
+    "cette",
+    "ces",
+    "se",
+    "sa",
+    "son",
+    "ses",
+    "leur",
+    "leurs",
+    "mais",
+    "donc",
+    "pour",
+    "par",
+    "sur",
+    "dans",
+    "avec",
+    "sans",
+    "sous",
+    "tout",
+    "tous",
+    "toute",
+    "toutes",
+    "déjà",
+    "encore",
+    "enfin",
+    "alors",
+    "que",
+    "qui",
+    "où",
+    "entre",
+    "contre",
+    "vers",
+    "chez",
+    "plus",
+    "moins",
+    "seulement",
+    "même",
+    "aussi",
+    "y",
+    "en",
+    "ne",
+    "jusqu",
+    "jusque",
 }
 
 
@@ -518,7 +640,7 @@ def _spans(texts: Sequence[str]) -> list[tuple[int, int, str]]:
             continue
         elide = toks[i].elide
         if elide[:1].lower() in ("d", "q") and toks[i].parts[0] in ("un", "une"):  # plus d'un million → plus de 1 million
-            elide = ("de " if elide[:1].lower() == "d" else "que ")
+            elide = "de " if elide[:1].lower() == "d" else "que "
             elide = elide.capitalize() if toks[i].elide[:1].isupper() else elide
         out.append((i, j, f"{toks[i].lead}{elide}{shown}{trail}"))
         i = j

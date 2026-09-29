@@ -77,7 +77,9 @@ def test_ui_landmarks_match_the_labels_seen_on_gemini():
     assert gw.DOWNLOAD.search("Télécharger la vidéo")
     # page vidéo, connecté (…/u/0/videos, capture du 25/09 à 21 h 07)
     assert gw.ADD_IMAGE.search("Importation de fichiers") and gw.PORTRAIT.search("Format, Portrait (9:16)")
-    assert gw.ASPECT_CONTROL.search("Format, Portrait (9:16)") and gw.MODE_PICKER.search("Ouvrir le sélecteur de mode, actuellement Gemini Flash")
+    assert gw.ASPECT_CONTROL.search("Format, Portrait (9:16)") and gw.MODE_PICKER.search(
+        "Ouvrir le sélecteur de mode, actuellement Gemini Flash"
+    )
 
 
 def test_retry_time_is_read_from_the_limit_message():
@@ -105,14 +107,26 @@ def test_request_state_lives_next_to_the_clip(tmp_path: Path):
 def test_chrome_is_started_with_its_own_profile_and_local_port(tmp_path: Path):
     cmd = gw.chrome_command(Path("chrome.exe"), tmp_path / "profil", 9333, "https://gemini.google.com/u/1/app", minimized=True)
     assert cmd[0] == "chrome.exe" and cmd[-1] == "https://gemini.google.com/u/1/app"
-    assert "--remote-debugging-port=9333" in cmd and f"--user-data-dir={tmp_path / 'profil'}" in cmd and "--start-minimized" in cmd
+    assert (
+        "--remote-debugging-port=9333" in cmd and f"--user-data-dir={tmp_path / 'profil'}" in cmd and "--start-minimized" in cmd
+    )
     assert "--enable-automation" not in cmd  # Chrome ordinaire : navigator.webdriver reste faux
 
 
 def settings(tmp_path: Path, **kw):
-    base = dict(gemini_chrome_path=None, gemini_profile_dir=None, gemini_cdp_port=9333, gemini_authuser=0, gemini_video_model=None,
-                gemini_video_duration="auto", gemini_poll_minutes=3.0, gemini_quota_retry_minutes=60, gemini_max_wait_hours=6.0,
-                data_dir=tmp_path, effective_gemini_profile_dir=tmp_path / "gemini-chrome")
+    base = dict(
+        gemini_chrome_path=None,
+        gemini_profile_dir=None,
+        gemini_cdp_port=9333,
+        gemini_authuser=0,
+        gemini_video_model=None,
+        gemini_video_duration="auto",
+        gemini_poll_minutes=3.0,
+        gemini_quota_retry_minutes=60,
+        gemini_max_wait_hours=6.0,
+        data_dir=tmp_path,
+        effective_gemini_profile_dir=tmp_path / "gemini-chrome",
+    )
     return SimpleNamespace(**{**base, **kw})
 
 
@@ -128,8 +142,16 @@ def test_provider_is_chosen_by_name_and_renders_fixed_length_clips(tmp_path: Pat
 def test_first_last_frame_is_attempted_with_both_images(tmp_path: Path):
     """Chantier en accéléré, passage d'une visite : Gemini reçoit l'image de départ et celle d'arrivée (au mieux)."""
     provider = gw.GeminiWebVideo(settings(tmp_path))
-    info = provider.generate(prompt="p", style_preset=None, duration_s=1.5, out_path=tmp_path / "c.mp4", on_progress=lambda _p: None,
-                             dry_run=True, image_path=tmp_path / "a.png", end_image_path=tmp_path / "b.png")
+    info = provider.generate(
+        prompt="p",
+        style_preset=None,
+        duration_s=1.5,
+        out_path=tmp_path / "c.mp4",
+        on_progress=lambda _p: None,
+        dry_run=True,
+        image_path=tmp_path / "a.png",
+        end_image_path=tmp_path / "b.png",
+    )
     assert info.duration_s == 4  # clip entier gardé, accéléré au montage (fit « speed »)
     p = gw.build_prompt("steel beams are lifted into place", "timelapse_site", 1.5, 4, with_image=True, end_frame=True)
     assert "starts exactly on the first attached image and ends exactly on the second attached image" in p

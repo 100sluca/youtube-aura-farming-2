@@ -34,8 +34,15 @@ from worker.steps.assemble import RenderPlan, apply_audio, build_command, sound_
 
 
 def _t(tid: str, moods: str, formats: str, weight: float = 1.0, **kw) -> Track:
-    return Track(id=tid, file=f"{tid}.mp3", moods=tuple(moods.split()), formats=tuple(formats.split()), weight=weight,
-                 path=Path(f"{tid}.mp3"), **kw)
+    return Track(
+        id=tid,
+        file=f"{tid}.mp3",
+        moods=tuple(moods.split()),
+        formats=tuple(formats.split()),
+        weight=weight,
+        path=Path(f"{tid}.mp3"),
+        **kw,
+    )
 
 
 # Les pistes du 28/09 telles que décrites par Luca (migration 0018)
@@ -60,7 +67,11 @@ def test_defaults_file_has_the_mixing_constants_of_the_code():
     assert audio["unknown_lufs"] == music.UNKNOWN_LUFS and audio["max_leveling_db"] == music.MAX_LEVELING_DB
     assert audio["duck_merge_gap_s"] == music.DUCK_MERGE_GAP_S
     assert (audio["duck_attack_s"], audio["duck_release_s"]) == (music.DUCK_ATTACK_S, music.DUCK_RELEASE_S)
-    assert (audio["fade_in_s"], audio["fade_out_s"], audio["output_lufs"]) == (music.FADE_IN_S, music.FADE_OUT_S, music.OUTPUT_LUFS)
+    assert (audio["fade_in_s"], audio["fade_out_s"], audio["output_lufs"]) == (
+        music.FADE_IN_S,
+        music.FADE_OUT_S,
+        music.OUTPUT_LUFS,
+    )
     assert audio["moods"] == {k: list(v) for k, v in MOODS.items()}
     # le dashboard refait le choix automatique d'une piste pour la vidéo d'essai (lib/music-library.ts : chooseTrack)
     assert audio["related"] == {k: list(v) for k, v in music.RELATED.items()}
@@ -131,8 +142,10 @@ def test_mix_levels_bring_every_track_to_the_same_loudness():
 
 
 def test_speech_segments_and_the_ducking_curve():
-    words = [WordTiming(text=w, start=s, end=e) for w, s, e in
-             [("Il", 0.4, 0.6), ("était", 0.65, 1.0), ("une", 1.5, 1.7), ("fois", 3.0, 3.4), ("rien", 3.4, 3.4)]]
+    words = [
+        WordTiming(text=w, start=s, end=e)
+        for w, s, e in [("Il", 0.4, 0.6), ("était", 0.65, 1.0), ("une", 1.5, 1.7), ("fois", 3.0, 3.4), ("rien", 3.4, 3.4)]
+    ]
     segments = speech_segments(words)
     assert segments == [(0.4, 1.7), (3.0, 3.4)]  # 0,5 s de silence : même passage ; 1,3 s : la musique remonte
     assert duck_amount(0.0, segments) == 0 and duck_amount(0.34, segments) == pytest.approx(0.5)
@@ -146,7 +159,9 @@ def test_speech_segments_and_the_ducking_curve():
 
     depth = 1 - 10 ** (-6 / 20)
     for t in (0.0, 0.3, 0.34, 1.0, 1.9, 2.2, 2.9, 3.2, 3.7, 5.0):
-        assert eval(expr, {"clip": clip, "min": min, "max": max, "t": t}) == pytest.approx(1 - depth * duck_amount(t, segments), abs=1e-3)
+        assert eval(expr, {"clip": clip, "min": min, "max": max, "t": t}) == pytest.approx(
+            1 - depth * duck_amount(t, segments), abs=1e-3
+        )
 
 
 def test_duck_expression_stays_shallow_for_ffmpeg():
@@ -183,14 +198,23 @@ def test_apply_audio_sets_the_plan_and_reports_the_mix():
 def test_sound_command_keeps_the_picture_and_remixes_the_sound():
     """Essai du son (onglet Montage → Son) : l'image de la vidéo montée est copiée, le son refait par le même graphe."""
     cue = SfxCue(Path("pas.wav"), 1.0, 2.0, 0.5, False)
-    plan = RenderPlan(clips=[Path("c.mp4")], clip_durations=[5.0], scene_durations=[5.0], narration=Path("n.wav"),
-                      music=Path("m.mp3"), music_gain_db=-17.5, duck_db=4.0, speech=[(0.5, 2.0)], sfx=[cue])
+    plan = RenderPlan(
+        clips=[Path("c.mp4")],
+        clip_durations=[5.0],
+        scene_durations=[5.0],
+        narration=Path("n.wav"),
+        music=Path("m.mp3"),
+        music_gain_db=-17.5,
+        duck_db=4.0,
+        speech=[(0.5, 2.0)],
+        sfx=[cue],
+    )
     cmd = sound_command(plan, Path("final.mp4"), Path("essai.mp4"))
     assert cmd[cmd.index("-i") + 1] == "final.mp4" and "c.mp4" not in cmd  # pas de remontage des clips
     graph = cmd[cmd.index("-filter_complex") + 1]
     assert "[1:a]" in graph and "[2:a]" in graph and "[3:a]" in graph  # voix, musique, bruitage
     assert "volume=-17.50dB" in graph and "eval=frame" in graph and graph.endswith("[aout]")
-    assert cmd[cmd.index("-c:v") + 1] == "copy" and ["-map", "0:v"] == cmd[cmd.index("-map"):cmd.index("-map") + 2]
+    assert cmd[cmd.index("-c:v") + 1] == "copy" and ["-map", "0:v"] == cmd[cmd.index("-map") : cmd.index("-map") + 2]
     assert cmd[-1] == "essai.mp4" and cmd[cmd.index("-t") + 1] == "5.000"
 
 
@@ -216,12 +240,29 @@ class FakeDb:
     def execute(self, sql: str, params=None) -> int:
         if sql.startswith("insert into music_tracks"):
             tid, file, title = params
-            self.rows.setdefault(tid, {"id": tid, "file": file, "title": title, "moods": [], "formats": [], "weight": 1.0,
-                                       "enabled": True, "gain_db": 0, "start_s": 0, "lufs": None, "missing": False,
-                                       "file_size": None, "file_mtime": None})
+            self.rows.setdefault(
+                tid,
+                {
+                    "id": tid,
+                    "file": file,
+                    "title": title,
+                    "moods": [],
+                    "formats": [],
+                    "weight": 1.0,
+                    "enabled": True,
+                    "gain_db": 0,
+                    "start_s": 0,
+                    "lufs": None,
+                    "missing": False,
+                    "file_size": None,
+                    "file_mtime": None,
+                },
+            )
         elif "lufs = %s" in sql:
             file, lufs, peak, dur, size, mtime, tid = params
-            self.rows[tid].update(file=file, lufs=lufs, peak_db=peak, duration_s=dur, file_size=size, file_mtime=mtime, missing=False)
+            self.rows[tid].update(
+                file=file, lufs=lufs, peak_db=peak, duration_s=dur, file_size=size, file_mtime=mtime, missing=False
+            )
         elif "missing = true" in sql:
             self.rows[params[0]]["missing"] = True
         elif "missing = false" in sql:
@@ -235,11 +276,36 @@ def test_sync_library_adds_new_files_measures_once_and_flags_removed_ones(tmp_pa
     assert sorted(library_files(tmp_path)) == ["music_1", "music_2"]  # music_1.wav : même nom, le premier reste
     measured: list[str] = []
     monkeypatch.setattr(music, "measure_loudness", lambda p: measured.append(p.name) or Loudness(-12.0, -1.0, 90.0))
-    db = FakeDb([{"id": "music_1", "file": "music_1.mp3", "title": "Narration douce", "moods": ["pose"], "formats": ["story"],
-                  "weight": 1.0, "enabled": True, "gain_db": 0, "start_s": 0, "lufs": None, "missing": False,
-                  "file_size": None, "file_mtime": None},
-                 {"id": "old", "file": "old.mp3", "title": "Retirée", "moods": [], "formats": ["story"], "weight": 1.0,
-                  "enabled": True, "lufs": -9.0, "missing": False}])
+    db = FakeDb(
+        [
+            {
+                "id": "music_1",
+                "file": "music_1.mp3",
+                "title": "Narration douce",
+                "moods": ["pose"],
+                "formats": ["story"],
+                "weight": 1.0,
+                "enabled": True,
+                "gain_db": 0,
+                "start_s": 0,
+                "lufs": None,
+                "missing": False,
+                "file_size": None,
+                "file_mtime": None,
+            },
+            {
+                "id": "old",
+                "file": "old.mp3",
+                "title": "Retirée",
+                "moods": [],
+                "formats": ["story"],
+                "weight": 1.0,
+                "enabled": True,
+                "lufs": -9.0,
+                "missing": False,
+            },
+        ]
+    )
     tracks = {t.id: t for t in sync_library(db, tmp_path)}
     assert sorted(measured) == ["music_1.mp3", "music_2.MP3"] and db.rows["old"]["missing"] is True
     assert tracks["music_1"].lufs == -12.0 and tracks["music_1"].title == "Narration douce" and tracks["music_1"].usable
@@ -258,16 +324,56 @@ def test_real_render_levels_and_ducks_the_music(tmp_path):
     clip, nar, mus, out = tmp_path / "c.mp4", tmp_path / "n.wav", tmp_path / "m.wav", tmp_path / "o.mp4"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x112:r=16:d=4", str(clip)], check=True)
     # voix : un son de 1 à 2 s seulement ; musique : une note continue
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=1000:d=4", "-af",
-                    "volume='between(t,1,2)':eval=frame", str(nar)], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=f=1000:d=4",
+            "-af",
+            "volume='between(t,1,2)':eval=frame",
+            str(nar),
+        ],
+        check=True,
+    )
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=220:d=10", str(mus)], check=True)
-    plan = RenderPlan(clips=[clip], clip_durations=[4.0], scene_durations=[4.0], narration=nar, music=mus,
-                      music_gain_db=-6.0, duck_db=12.0, speech=[(1.0, 2.0)])
+    plan = RenderPlan(
+        clips=[clip],
+        clip_durations=[4.0],
+        scene_durations=[4.0],
+        narration=nar,
+        music=mus,
+        music_gain_db=-6.0,
+        duck_db=12.0,
+        speech=[(1.0, 2.0)],
+    )
     subprocess.run(build_command(plan, out, ["-c:v", "libx264", "-preset", "ultrafast"], None), check=True, capture_output=True)
 
     def music_level(start: float) -> float:  # niveau de la note de la musique (220 Hz) sur 0,4 s
-        r = subprocess.run(["ffmpeg", "-v", "info", "-ss", str(start), "-t", "0.4", "-i", str(out), "-af",
-                            "lowpass=f=400,lowpass=f=400,volumedetect", "-f", "null", "-"], capture_output=True, text=True)
+        r = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "info",
+                "-ss",
+                str(start),
+                "-t",
+                "0.4",
+                "-i",
+                str(out),
+                "-af",
+                "lowpass=f=400,lowpass=f=400,volumedetect",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+        )
         return float(re.search(r"mean_volume: (-?[\d.]+) dB", r.stderr).group(1))  # type: ignore[union-attr]
 
     assert music_level(1.3) < music_level(2.9) - 6  # baissée pendant la voix, remontée après

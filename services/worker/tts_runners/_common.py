@@ -71,8 +71,12 @@ def join_audio(chunks: list[np.ndarray], rate: int, pause_s: float = 0.18) -> np
     return np.concatenate(out) if out else np.zeros(0, dtype=np.float32)
 
 
-def run(synthesize: Callable[[dict[str, Any], str], tuple[np.ndarray, int]], *, speed_applied: bool = False,
-        prepare: Callable[[dict[str, Any]], None] | None = None) -> None:
+def run(
+    synthesize: Callable[[dict[str, Any], str], tuple[np.ndarray, int]],
+    *,
+    speed_applied: bool = False,
+    prepare: Callable[[dict[str, Any]], None] | None = None,
+) -> None:
     """Boucle commune : `prepare(req)` charge le modèle une fois, `synthesize(req, texte)` → (échantillons, fréquence)."""
     try:
         req = load_request()
@@ -88,8 +92,9 @@ def run(synthesize: Callable[[dict[str, Any], str], tuple[np.ndarray, int]], *, 
             write_wav(out_dir / name, samples, rate)
             files.append(name)
             progress(i + 1, len(texts))
-        (out_dir / "result.json").write_text(json.dumps({"rate": rate, "files": files, "speed_applied": speed_applied}),
-                                             encoding="utf-8")
+        (out_dir / "result.json").write_text(
+            json.dumps({"rate": rate, "files": files, "speed_applied": speed_applied}), encoding="utf-8"
+        )
     except Exception:  # noqa: BLE001 — le worker lit la sortie d'erreur
         traceback.print_exc()
         sys.exit(1)

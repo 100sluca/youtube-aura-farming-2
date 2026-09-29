@@ -73,7 +73,9 @@ class SyncMetricsStep(Step):
         return out
 
 
-def collect_counters(ctx: Context, yt: YouTubeClient, cid: UUID, by_yt: dict[str, UUID], *, alert_private: bool) -> dict[str, Any]:
+def collect_counters(
+    ctx: Context, yt: YouTubeClient, cid: UUID, by_yt: dict[str, UUID], *, alert_private: bool
+) -> dict[str, Any]:
     """Compteurs publics de la chaîne et de ses vidéos, relevés dans channel_snapshots / video_snapshots."""
     taken = datetime.now(UTC)
     stats = yt.channel_statistics()
@@ -263,7 +265,9 @@ def store_retention(db: Db, yt: YouTubeClient, v: dict[str, Any]) -> bool:
         rows = yt.analytics_retention(v["youtube_video_id"], v["published_at"].date() - timedelta(days=1), date.today())
     except AnalyticsBadRequest:
         return False
-    curve = [{"t": r["elapsedVideoTimeRatio"], "w": r["audienceWatchRatio"], "rel": r["relativeRetentionPerformance"]} for r in rows]
+    curve = [
+        {"t": r["elapsedVideoTimeRatio"], "w": r["audienceWatchRatio"], "rel": r["relativeRetentionPerformance"]} for r in rows
+    ]
     if not curve:
         return False
     db.execute("insert into video_retention (video_id, curve) values (%s, %s)", (v["id"], Jsonb(curve)))
@@ -273,9 +277,7 @@ def store_retention(db: Db, yt: YouTubeClient, v: dict[str, Any]) -> bool:
         (v["id"], v["id"]),
     )
     hook, end = retention_summary(curve, float(v["duration_s"]) if v.get("duration_s") else None)
-    db.execute(
-        "update video_stats set hook_retention_pct = %s, end_retention_pct = %s where video_id = %s", (hook, end, v["id"])
-    )
+    db.execute("update video_stats set hook_retention_pct = %s, end_retention_pct = %s where video_id = %s", (hook, end, v["id"]))
     return True
 
 

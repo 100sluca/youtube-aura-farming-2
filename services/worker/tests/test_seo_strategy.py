@@ -7,8 +7,10 @@ from worker.strategy import VideoPerf, compute_stats, duration_bucket, guidance_
 
 def _pack(**kw) -> SeoPack:
     base = {
-        "titles": [{"title": "Le miroir qui cache un dressing secret", "angle": "curiosité"},
-                   {"title": "12 m² cachés derrière un miroir ?", "angle": "chiffre"}],
+        "titles": [
+            {"title": "Le miroir qui cache un dressing secret", "angle": "curiosité"},
+            {"title": "12 m² cachés derrière un miroir ?", "angle": "chiffre"},
+        ],
         "chosen": 0,
         "description": "Personne ne pousse jamais ce miroir.\nEt vous, vous oseriez ?",
         "tags": ["dressing secret", "#miroir", "Dressing Secret", "rangement caché"],
@@ -26,7 +28,11 @@ def test_titles_are_cleaned_and_kept_short():
 
 
 def test_hashtags_tags_and_description():
-    assert normalize_hashtags(["#maison cachée", "Maison", "#construction!", "#a", "#b"]) == ["#maisoncachée", "#Maison", "#construction"]
+    assert normalize_hashtags(["#maison cachée", "Maison", "#construction!", "#a", "#b"]) == [
+        "#maisoncachée",
+        "#Maison",
+        "#construction",
+    ]
     tags = normalize_tags(["dressing secret", "#miroir", "Dressing Secret", "<rangement>"])
     assert tags == ["dressing secret", "miroir", "‹rangement›"]
     assert tags_length(["a b", "c"]) == 3 + 2 + 1 + 1
@@ -38,9 +44,19 @@ def test_hashtags_tags_and_description():
 
 
 def _row(title, cat, views, pct, hour, dur=30.0):
-    return VideoPerf(title=title, category=cat, format="A_voiceover", duration_s=dur,
-                     published_local=datetime(2026, 9, 1, hour, 0), views_d7=views, average_view_pct=pct,
-                     subscribers_gained=views // 100, likes=views // 20, comments=views // 200, shares=views // 300)
+    return VideoPerf(
+        title=title,
+        category=cat,
+        format="A_voiceover",
+        duration_s=dur,
+        published_local=datetime(2026, 9, 1, hour, 0),
+        views_d7=views,
+        average_view_pct=pct,
+        subscribers_gained=views // 100,
+        likes=views // 20,
+        comments=views // 200,
+        shares=views // 300,
+    )
 
 
 def test_compute_stats_groups_with_confidence_and_lift():
@@ -59,11 +75,16 @@ def test_compute_stats_groups_with_confidence_and_lift():
 def test_validate_proposal_guards_slots_and_weights():
     rows = [_row(f"v{i}", "pool", 5000, 70.0, 18) for i in range(4)] + [_row(f"w{i}", "pool", 3000, 60.0, 9) for i in range(4)]
     stats = compute_stats(rows)
-    p = StrategyProposal.model_validate({
-        "summary": "s",
-        "category_weights": [{"category": "pool", "weight": 3, "reason": "r"}, {"category": "treehouse", "weight": 3, "reason": "r"}],
-        "publish_slots": ["18:00", "12:30", "09:00"],
-    })
+    p = StrategyProposal.model_validate(
+        {
+            "summary": "s",
+            "category_weights": [
+                {"category": "pool", "weight": 3, "reason": "r"},
+                {"category": "treehouse", "weight": 3, "reason": "r"},
+            ],
+            "publish_slots": ["18:00", "12:30", "09:00"],
+        }
+    )
     v = validate_proposal(p, stats, ["09:00", "13:00", "18:00"])
     assert v.publish_slots == ["09:00", "12:30", "18:00"]  # justifié : 18:00 a une confiance moyenne
     assert [w.weight for w in v.category_weights] == [3.0, 2.0]  # 3 seulement avec une confiance « bonne »
@@ -76,5 +97,7 @@ def test_small_helpers():
     assert time_slot(datetime(2026, 1, 1, 12)) == "midi (11-14 h)" and time_slot(datetime(2026, 1, 1, 23)) == "nuit (22-6 h)"
     assert title_features("12 idées ? 🔥")[:3] == ["question", "chiffre", "émoji"]
     assert "Aucune stratégie" in guidance_text({})
-    g = guidance_text({"fr": StrategyProposal(summary="Plus de piscines", title_patterns=["Chiffre + objet"], avoid=["listes"])}, for_seo=True)
+    g = guidance_text(
+        {"fr": StrategyProposal(summary="Plus de piscines", title_patterns=["Chiffre + objet"], avoid=["listes"])}, for_seo=True
+    )
     assert "Chiffre + objet" in g and "listes" in g

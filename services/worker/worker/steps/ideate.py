@@ -111,8 +111,11 @@ class IdeateStep(Step):
             material = material_text(docs, chars=3500)  # tout l'extrait mis en cache : l'enjeu est rarement au début
         system, tpl_id = tpl
         # formats visuels : le guide du format (pas de voix, un titre d'accroche, docs/15) ; sinon les règles du storytelling
-        guide = (prompt_text(db, f"guide_{s.recipe}", IDEA_GUIDES[s.recipe]) if s.recipe in IDEA_GUIDES
-                 else prompt_text(db, "rules_storytelling", RULES))
+        guide = (
+            prompt_text(db, f"guide_{s.recipe}", IDEA_GUIDES[s.recipe])
+            if s.recipe in IDEA_GUIDES
+            else prompt_text(db, "rules_storytelling", RULES)
+        )
         user = "\n\n".join(
             part
             for part in (
@@ -124,9 +127,13 @@ class IdeateStep(Step):
                 f"Stratégie validée :\n{guidance_text(active_strategies(db))}",
                 # leçons de l'agent analyste validées dans le Dashboard (docs/25)
                 lessons_text(db, "idea", channel_id=ctx.job.payload.get("channel_id"), recipe=s.recipe),
-                f"Produis {n} idées" + (", chacune avec 8 à 12 faits sourcés [n] qui couvrent le contexte, l'enjeu, "
-                                        "l'obstacle ou la controverse, les rebondissements et la fin."
-                                        if docs else "."),
+                f"Produis {n} idées"
+                + (
+                    ", chacune avec 8 à 12 faits sourcés [n] qui couvrent le contexte, l'enjeu, "
+                    "l'obstacle ou la controverse, les rebondissements et la fin."
+                    if docs
+                    else "."
+                ),
             )
             if part
         )
@@ -146,9 +153,17 @@ class IdeateStep(Step):
                                          series_id, angle, sources, facts, channel_id)
                    values (%s, %s, %s, %s, %s, 'agent', %s, %s, %s, %s, %s, %s, %s)""",
                 (
-                    idea.title, idea.hook, idea.category, idea.premise, Jsonb(idea.visual_beats), idea.score,
-                    tpl_id, s.id, idea.angle,
-                    Jsonb([r.model_dump() for r in refs]), Jsonb([f.model_dump() for f in facts]),
+                    idea.title,
+                    idea.hook,
+                    idea.category,
+                    idea.premise,
+                    Jsonb(idea.visual_beats),
+                    idea.score,
+                    tpl_id,
+                    s.id,
+                    idea.angle,
+                    Jsonb([r.model_dump() for r in refs]),
+                    Jsonb([f.model_dump() for f in facts]),
                     ctx.job.payload.get("channel_id"),
                 ),
             )
@@ -166,8 +181,12 @@ class IdeateStep(Step):
         }
         client = WikipediaClient(lang=s.lang, user_agent=ctx.settings.effective_wikipedia_user_agent)
         return cached_material(
-            client, s.source_config, date.today(), ctx.settings.data_dir / "sources" / "wikipedia",
-            exclude_urls={u for u in used if u}, max_docs=int(s.source_config.get("max_docs", 6)),
+            client,
+            s.source_config,
+            date.today(),
+            ctx.settings.data_dir / "sources" / "wikipedia",
+            exclude_urls={u for u in used if u},
+            max_docs=int(s.source_config.get("max_docs", 6)),
         )
 
 

@@ -33,13 +33,20 @@ LINES = [
 def _script(lines=LINES, maps_at: dict[int, dict] | None = None, **overrides: Any) -> ScriptV1:
     scenes = []
     for i, text in enumerate(lines):
-        scene: dict[str, Any] = {"index": i, "duration_s": 5, "role": ROLES[i % len(ROLES)], "visual_prompt": "v",
-                                 "narration": {"fr": text}, "continues_previous": i > 0}
+        scene: dict[str, Any] = {
+            "index": i,
+            "duration_s": 5,
+            "role": ROLES[i % len(ROLES)],
+            "visual_prompt": "v",
+            "narration": {"fr": text},
+            "continues_previous": i > 0,
+        }
         if maps_at and i in maps_at:
             scene["map"] = maps_at[i]
         scenes.append(scene)
-    return ScriptV1.model_validate({"scenes": scenes, "loop_note": "retour", "metadata": {"fr": {"title": "t", "description": "d"}},
-                                    **overrides})
+    return ScriptV1.model_validate(
+        {"scenes": scenes, "loop_note": "retour", "metadata": {"fr": {"title": "t", "description": "d"}}, **overrides}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +84,9 @@ def test_seo_credits_the_map_sources(monkeypatch: pytest.MonkeyPatch):
     from worker.models import SeoPack
     from worker.steps import seo
 
-    pack = SeoPack.model_validate({"titles": [{"title": "Titre", "angle": "a"}, {"title": "Autre", "angle": "b"}],
-                                   "description": "d", "hashtags": []})
+    pack = SeoPack.model_validate(
+        {"titles": [{"title": "Titre", "angle": "a"}, {"title": "Autre", "angle": "b"}], "description": "d", "hashtags": []}
+    )
     monkeypatch.setattr(seo, "MAP_CREDIT", {"fr": "Carte : EOX, OpenStreetMap", "en": "Map"})
     assert finalize(pack, map_credit=True)[1].endswith("Carte : EOX, OpenStreetMap")
     assert "EOX" not in finalize(pack)[1]
@@ -102,9 +110,18 @@ def test_names_geometry_and_chaining():
     assert strokes == [[(3.0, 0.0), (2.0, 0.0), (1.0, 0.0), (0.0, 0.0)]]
     far = maps.chain([[(0.0, 0.0), (1.0, 0.0)], [(5.0, 0.0), (6.0, 0.0)]], start=(0.0, 0.0))
     assert len(far) == 2 and maps.stroke_lengths(far)[1][-1] == pytest.approx(2.0, rel=1e-3)
-    data = {"elements": [{"type": "relation", "members": [
-        {"type": "way", "geometry": [{"lat": 49.9, "lon": 10.9}, {"lat": 49.8, "lon": 11.0}]},
-        {"type": "node", "lat": 1, "lon": 2}]}, {"type": "node", "lat": 49.2, "lon": 11.2}]}
+    data = {
+        "elements": [
+            {
+                "type": "relation",
+                "members": [
+                    {"type": "way", "geometry": [{"lat": 49.9, "lon": 10.9}, {"lat": 49.8, "lon": 11.0}]},
+                    {"type": "node", "lat": 1, "lon": 2},
+                ],
+            },
+            {"type": "node", "lat": 49.2, "lon": 11.2},
+        ]
+    }
     lines, point = maps.overpass_lines(data)
     assert lines == [[(10.9, 49.9), (11.0, 49.8)]] and point == (11.2, 49.2)
     poly = {"type": "MultiPolygon", "coordinates": [[[[0, 0], [1, 0], [1, 1], [0, 0]]]]}
@@ -112,7 +129,9 @@ def test_names_geometry_and_chaining():
 
 
 def _canal() -> tuple[maps.Place, list[maps.Place]]:
-    place = maps.Place("Canal", 11.3, 49.4, lines=[[(10.9, 49.9), (11.1, 49.5), (11.3, 49.2)], [(11.3, 49.2), (11.87, 48.92)]], source="osm")
+    place = maps.Place(
+        "Canal", 11.3, 49.4, lines=[[(10.9, 49.9), (11.1, 49.5), (11.3, 49.2)], [(11.3, 49.2), (11.87, 48.92)]], source="osm"
+    )
     return place, [maps.Place("Bamberg", 10.89, 49.9), maps.Place("Kelheim", 11.87, 48.92)]
 
 
@@ -174,8 +193,13 @@ def _settings(tmp_path: Path | None = None) -> Settings:
 def test_writer_model_goes_first_then_the_usual_model(monkeypatch: pytest.MonkeyPatch):
     import worker.providers.llm as llm_mod
 
-    cfg = LlmConfig(provider="gemini", fallbacks=[], models={"gemini": "gemini-3.5-flash-lite"},
-                    api_keys={"gemini": "k"}, writer_models={"gemini": "gemini-3.8-flash"})
+    cfg = LlmConfig(
+        provider="gemini",
+        fallbacks=[],
+        models={"gemini": "gemini-3.5-flash-lite"},
+        api_keys={"gemini": "k"},
+        writer_models={"gemini": "gemini-3.8-flash"},
+    )
     assert cfg.writer_model_for("gemini") == "gemini-3.8-flash"
     same = LlmConfig(provider="gemini", fallbacks=[], models={"gemini": "x"}, writer_models={"gemini": "x"})
     assert same.writer_model_for("gemini") is None

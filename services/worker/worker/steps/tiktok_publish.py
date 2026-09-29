@@ -114,19 +114,31 @@ class TikTokPublishStep(Step):
             path, on_progress=lambda f: ctx.progress(2 + int(f * 88), f"Envoi à Zernio {int(f * 100)} %")
         )
         ctx.progress(92, "Création de la publication TikTok")
-        body = post_body(caption=build_caption(v["title"], v["description"]), media_url=media_url,
-                         account_id=account_id, cfg=cfg, when=when, draft=draft)
+        body = post_body(
+            caption=build_caption(v["title"], v["description"]),
+            media_url=media_url,
+            account_id=account_id,
+            cfg=cfg,
+            when=when,
+            draft=draft,
+        )
         try:
             code, resp = client.create_post(body, idempotency_key(v["id"], round_))
         except ZernioError as exc:
             if exc.status == 429 or exc.code == "idempotency_conflict":
-                raise Postpone(f"Zernio demande d'attendre : {exc}", exc.retry_after or 120,
-                               label="TikTok : limite de Zernio, nouvel essai bientôt") from exc
+                raise Postpone(
+                    f"Zernio demande d'attendre : {exc}",
+                    exc.retry_after or 120,
+                    label="TikTok : limite de Zernio, nouvel essai bientôt",
+                ) from exc
             state.update(status="failed", error=str(exc)[:500])
             self._save(ctx, v["id"], state)
             raise
-        ctx.log("Publication TikTok créée" if code != 409 else "Publication TikTok déjà créée", code=code,
-                scheduled_for=state["scheduled_for"])
+        ctx.log(
+            "Publication TikTok créée" if code != 409 else "Publication TikTok déjà créée",
+            code=code,
+            scheduled_for=state["scheduled_for"],
+        )
         return self._record(ctx, v, state, read_create(code, resp))
 
     # ---- Suivi d'une publication existante ---------------------------------------------------------------------------
@@ -136,8 +148,13 @@ class TikTokPublishStep(Step):
 
     def _record(self, ctx: Context, v: dict[str, Any], state: dict[str, Any], out: Outcome) -> dict[str, Any]:
         now = datetime.now(UTC)
-        state.update(status=out.status, post_id=out.post_id or state.get("post_id"), error=out.error,
-                     url=out.url or state.get("url"), checked_at=now.isoformat())
+        state.update(
+            status=out.status,
+            post_id=out.post_id or state.get("post_id"),
+            error=out.error,
+            url=out.url or state.get("url"),
+            checked_at=now.isoformat(),
+        )
         if out.draft:
             state["draft"] = True
         if out.status == "published":
@@ -154,16 +171,19 @@ class TikTokPublishStep(Step):
         if out.status == "published":
             if state.get("url") or state.get("draft") or state["url_checks"] > URL_CHECKS:
                 return result
-            raise Postpone("Publiée sur TikTok, lien pas encore donné par TikTok", URL_CHECK_S,
-                           label="TikTok : publiée, lien en attente")
+            raise Postpone(
+                "Publiée sur TikTok, lien pas encore donné par TikTok", URL_CHECK_S, label="TikTok : publiée, lien en attente"
+            )
         if out.status not in WAITING:
             raise RuntimeError(f"État TikTok inattendu : {out.status}")
         when = _parse(state.get("scheduled_for"))
         if when and when > now:
             local = when.astimezone(ZoneInfo(v["timezone"]))
-            raise Postpone(f"Programmée sur TikTok pour le {local:%d/%m à %H:%M}",
-                           (when + FOLLOW_AFTER - now).total_seconds(),
-                           label=f"TikTok : programmée le {local:%d/%m à %H:%M}")
+            raise Postpone(
+                f"Programmée sur TikTok pour le {local:%d/%m à %H:%M}",
+                (when + FOLLOW_AFTER - now).total_seconds(),
+                label=f"TikTok : programmée le {local:%d/%m à %H:%M}",
+            )
         raise Postpone("Publication TikTok en cours de traitement", 120, label="TikTok : publication en cours")
 
     @staticmethod

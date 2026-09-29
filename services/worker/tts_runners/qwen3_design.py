@@ -60,8 +60,12 @@ def main() -> None:
         return
 
     if args.free_comfy:
-        req = urllib.request.Request(f"{args.free_comfy.rstrip('/')}/free", data=b'{"unload_models": true, "free_memory": true}',
-                                     headers={"Content-Type": "application/json"}, method="POST")
+        req = urllib.request.Request(
+            f"{args.free_comfy.rstrip('/')}/free",
+            data=b'{"unload_models": true, "free_memory": true}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
             urllib.request.urlopen(req, timeout=30)
             time.sleep(3)
@@ -74,8 +78,10 @@ def main() -> None:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     t0 = time.monotonic()
     model = Qwen3TTSModel.from_pretrained(
-        str(engine_dir / "models" / "Qwen3-TTS-12Hz-1.7B-VoiceDesign"), device_map=device,
-        dtype=torch.bfloat16 if device.startswith("cuda") else torch.float32, attn_implementation="sdpa",
+        str(engine_dir / "models" / "Qwen3-TTS-12Hz-1.7B-VoiceDesign"),
+        device_map=device,
+        dtype=torch.bfloat16 if device.startswith("cuda") else torch.float32,
+        attn_implementation="sdpa",
     )
     print(f"VoiceDesign chargé sur {device} en {time.monotonic() - t0:.0f} s", flush=True)
     trials_dir = engine_dir / "voices" / "_essais"
@@ -88,12 +94,16 @@ def main() -> None:
             seed = int(design.get("seed", 1234)) + k
             torch.manual_seed(seed)
             t1 = time.monotonic()
-            wavs, rate = model.generate_voice_design(text=text, instruct=design["instruct"], language=language.get(lang, "French"))
+            wavs, rate = model.generate_voice_design(
+                text=text, instruct=design["instruct"], language=language.get(lang, "French")
+            )
             audio = np.asarray(wavs[0], dtype=np.float32)
             seconds = len(audio) / rate
             cps = len(text) / max(seconds, 0.1)
             write_wav(trials_dir / f"{name}_{seed}.wav", audio, rate)
-            print(f"{name} graine {seed} : {seconds:.1f} s, {cps:.1f} car./s, calculé en {time.monotonic() - t1:.0f} s", flush=True)
+            print(
+                f"{name} graine {seed} : {seconds:.1f} s, {cps:.1f} car./s, calculé en {time.monotonic() - t1:.0f} s", flush=True
+            )
             score = abs(cps - float(design.get("cps", TARGET_CPS)))
             if best is None or score < best[0]:
                 best = (score, audio, rate, seed)

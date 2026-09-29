@@ -36,7 +36,9 @@ class StrategyStep(Step):
             (channel_id, days),
         )
         stats = compute_stats([VideoPerf.from_row(r) for r in rows])
-        version_row = ctx.db.fetch_one("select coalesce(max(version), 0) + 1 as v from strategies where channel_id = %s", (channel_id,))
+        version_row = ctx.db.fetch_one(
+            "select coalesce(max(version), 0) + 1 as v from strategies where channel_id = %s", (channel_id,)
+        )
         version = version_row["v"] if version_row else 1
 
         proposal: StrategyProposal | None = None

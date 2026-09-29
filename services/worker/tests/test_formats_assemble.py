@@ -39,15 +39,42 @@ def test_real_render_with_a_cut_before_a_whip(tmp_path):
     clips = []
     for i in range(3):
         c = tmp_path / f"c{i}.mp4"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=64x112:r=16:d=1.5", "-vf", f"hue=h={i * 90}",
-                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(c)], check=True)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=64x112:r=16:d=1.5",
+                "-vf",
+                f"hue=h={i * 90}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(c),
+            ],
+            check=True,
+        )
         clips.append(c)
-    plan = RenderPlan(clips=clips, clip_durations=[1.5] * 3, scene_durations=[1.0, 1.0, 1.0],
-                      transitions=[("cut", 0.0), ("whip", 0.3), ("cut", 0.0)], interpolate=True)
+    plan = RenderPlan(
+        clips=clips,
+        clip_durations=[1.5] * 3,
+        scene_durations=[1.0, 1.0, 1.0],
+        transitions=[("cut", 0.0), ("whip", 0.3), ("cut", 0.0)],
+        interpolate=True,
+    )
     out = tmp_path / "final.mp4"
     subprocess.run(build_command(plan, out, ["-c:v", "libx264", "-preset", "ultrafast"], None), check=True, capture_output=True)
-    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
-                           capture_output=True, text=True, check=True)
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert float(probe.stdout) == pytest.approx(plan.total_s, abs=0.1)
 
 
@@ -66,14 +93,19 @@ def test_timelapse_stages_are_accelerated_with_trails():
     assert f"setpts=0.2964*PTS,{TRAILS}" in graph  # 5,06 s → 1,5 s : ×3,4, les ouvriers laissent une traînée
     assert "setpts=0.2372*PTS" in graph  # 1,2 s : ×4,2, toujours sous le plafond de la recette
     assert graph.count("tmix") == 2  # la révélation (coupée, pas accélérée) reste nette
-    capped = _graph(build_command(_plan(scene_durations=[0.5, 4.0, 4.0], fit=["speed", "trim", "trim"], max_speedup=4.5),
-                                  Path("o.mp4"), [], None))
+    capped = _graph(
+        build_command(
+            _plan(scene_durations=[0.5, 4.0, 4.0], fit=["speed", "trim", "trim"], max_speedup=4.5), Path("o.mp4"), [], None
+        )
+    )
     assert "setpts=0.2222*PTS" in capped and "tmix" not in capped  # ×4,5 au plus ; traînées seulement si demandées
 
 
 def test_gemini_first_last_clips_are_sped_up_whole():
     """Clip Gemini en ligne (10 s) sur une étape de 1,5 s : ×6,7, au-delà du plafond, pour finir sur l'image suivante."""
-    plan = _plan(clip_durations=[10.0, 10.0, 10.0], scene_durations=[1.5, 1.5, 4.0], fit=["fill", "speed", "trim"], max_speedup=4.5)
+    plan = _plan(
+        clip_durations=[10.0, 10.0, 10.0], scene_durations=[1.5, 1.5, 4.0], fit=["fill", "speed", "trim"], max_speedup=4.5
+    )
     graph = _graph(build_command(plan, Path("o.mp4"), [], None))
     assert "setpts=0.1500*PTS" in graph  # fill : 10 s → 1,5 s
     assert "setpts=0.2222*PTS" in graph  # speed : plafonné à ×4,5
@@ -81,8 +113,14 @@ def test_gemini_first_last_clips_are_sped_up_whole():
 
 def test_hook_title_overlay_and_sfx_mix_without_voice():
     cues = [SfxCue(Path("excavator.wav"), 0.0, 4.0, 0.55, True), SfxCue(Path("whoosh.wav"), 3.4, 1.5, 0.7, False, 0.05)]
-    plan = _plan(hook_png=Path("hook.png"), sfx=cues, music=Path("m.mp3"), music_gain_db=-10.46, profile=BUILTIN_PROFILES["impact"],
-                 titles=[(0.0, 4.0, "Jour 1")])
+    plan = _plan(
+        hook_png=Path("hook.png"),
+        sfx=cues,
+        music=Path("m.mp3"),
+        music_gain_db=-10.46,
+        profile=BUILTIN_PROFILES["impact"],
+        titles=[(0.0, 4.0, "Jour 1")],
+    )
     cmd = build_command(plan, Path("o.mp4"), [], "subtitles=subtitles.ass")
     graph = _graph(cmd)
     assert cmd[cmd.index("hook.png") - 1] == "-i"
@@ -101,22 +139,43 @@ def test_apply_recipe_builds_the_visual_plan(tmp_path):
     for tag in ("excavator", "whoosh"):
         (tmp_path / "sfx" / tag).mkdir(parents=True)
         (tmp_path / "sfx" / tag / f"{tag}.wav").write_bytes(b"x")
-    script = normalize_script(ScriptV1.model_validate({
-        "scenes": [{"index": i, "duration_s": 4, "visual_prompt": "room", "motion_prompt": "glide", "sfx": "excavator, birds",
-                    "on_screen_text": {"fr": "Salon · 60 m²"} if i == 1 else {}} for i in range(4)],
-        "metadata": {"fr": {"title": "t", "description": "d"}},
-        "hook_title": {"fr": "Tu paierais combien pour cette villa ?"},
-    }), "tour")
+    script = normalize_script(
+        ScriptV1.model_validate(
+            {
+                "scenes": [
+                    {
+                        "index": i,
+                        "duration_s": 4,
+                        "visual_prompt": "room",
+                        "motion_prompt": "glide",
+                        "sfx": "excavator, birds",
+                        "on_screen_text": {"fr": "Salon · 60 m²"} if i == 1 else {},
+                    }
+                    for i in range(4)
+                ],
+                "metadata": {"fr": {"title": "t", "description": "d"}},
+                "hook_title": {"fr": "Tu paierais combien pour cette villa ?"},
+            }
+        ),
+        "tour",
+    )
     n = len(script.scenes)  # 4 pièces + 3 passages
-    plan = RenderPlan(clips=[Path(f"c{i}.mp4") for i in range(n)], clip_durations=[5.06] * n,
-                      scene_durations=[s.duration_s for s in script.scenes], profile=BUILTIN_PROFILES["impact"])
+    plan = RenderPlan(
+        clips=[Path(f"c{i}.mp4") for i in range(n)],
+        clip_durations=[5.06] * n,
+        scene_durations=[s.duration_s for s in script.scenes],
+        profile=BUILTIN_PROFILES["impact"],
+    )
     report = apply_recipe(plan, script, "fr", "tour", sfx_dir=tmp_path / "sfx", key="v1")
     assert n == 7 and plan.transitions == [("cut", 0.0)] * 7 and plan.interpolate  # le passage relie les pièces
     assert plan.fit == ["trim", "speed"] * 3 + ["trim"] and plan.max_speedup == 4.5 and not plan.trails and not plan.ticks
     assert plan.total_s == 19.6  # 4 pièces de 4 s + 3 passages de 1,2 s
     assert plan.titles == [(5.2, 9.2, "Salon · 60 m²")]  # s'arrête quand le passage suivant commence
     # Modèle de montage d'origine : texte sous l'image, au-dessus des boutons Shorts ; titre d'accroche en haut
-    assert apply_template(plan, MontageTemplate(), "tour", hook=hook_text(script, "fr"), workdir=tmp_path, fonts=FontRegistry()) == {}
+    assert (
+        apply_template(plan, MontageTemplate(), "tour", hook=hook_text(script, "fr"), workdir=tmp_path, fonts=FontRegistry())
+        == {}
+    )
     assert plan.title_style and plan.title_style.y == 1330
     assert plan.hook_png and plan.hook_png.exists() and plan.hook_filter == "overlay=(W-w)/2:150"
     assert [c.start for c in plan.sfx if c.path.name == "whoosh.wav"] == [4.05, 9.25, 14.45]  # un whoosh par passage
@@ -128,14 +187,31 @@ def test_apply_recipe_builds_the_visual_plan(tmp_path):
 
 def test_apply_recipe_timelapse_counts_the_days(tmp_path):
     pytest.importorskip("PIL")
-    script = normalize_script(ScriptV1.model_validate({
-        "scenes": [{"index": i, "duration_s": 1.5, "visual_prompt": "stage", "motion_prompt": "build",
-                    "on_screen_text": {"fr": f"Jour {1 + 20 * i}"}} for i in range(4)],
-        "metadata": {"fr": {"title": "t", "description": "d"}},
-        "hook_title": {"fr": "Personne ne voulait de ce terrain"},
-    }), "timelapse")
-    plan = RenderPlan(clips=[Path(f"c{i}.mp4") for i in range(4)], clip_durations=[5.06] * 4,
-                      scene_durations=[s.duration_s for s in script.scenes], profile=BUILTIN_PROFILES["impact"])
+    script = normalize_script(
+        ScriptV1.model_validate(
+            {
+                "scenes": [
+                    {
+                        "index": i,
+                        "duration_s": 1.5,
+                        "visual_prompt": "stage",
+                        "motion_prompt": "build",
+                        "on_screen_text": {"fr": f"Jour {1 + 20 * i}"},
+                    }
+                    for i in range(4)
+                ],
+                "metadata": {"fr": {"title": "t", "description": "d"}},
+                "hook_title": {"fr": "Personne ne voulait de ce terrain"},
+            }
+        ),
+        "timelapse",
+    )
+    plan = RenderPlan(
+        clips=[Path(f"c{i}.mp4") for i in range(4)],
+        clip_durations=[5.06] * 4,
+        scene_durations=[s.duration_s for s in script.scenes],
+        profile=BUILTIN_PROFILES["impact"],
+    )
     apply_recipe(plan, script, "fr", "timelapse", sfx_dir=tmp_path / "sfx", key="v1")
     assert plan.fit == ["speed"] * 3 + ["trim"] and plan.trails and plan.max_speedup == 4.5
     assert plan.titles == [] and plan.ticks[0][2] == "Jour 1" and plan.ticks[-1][2] == "Jour 61"

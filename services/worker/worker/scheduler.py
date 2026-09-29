@@ -83,9 +83,7 @@ def plan_tiktok_backlog(db: Db, settings: Settings) -> None:
         return
     now = datetime.now(UTC)
     for channel_id, ch in channels:
-        row = db.fetch_one(
-            "select publish_slots, timezone from channels where id = %s and is_active", (channel_id,)
-        )
+        row = db.fetch_one("select publish_slots, timezone from channels where id = %s and is_active", (channel_id,))
         if not row or not row["publish_slots"]:
             continue
         window = [s for s in slot_times(row["publish_slots"], row["timezone"], now) if s <= now + LEAD_MAX]
@@ -119,8 +117,14 @@ def plan_tiktok_backlog(db: Db, settings: Settings) -> None:
         )
         if not video:
             continue
-        db.enqueue("tiktok_publish", video_id=video["id"], channel_id=channel_id, priority=55, max_attempts=3,
-                   payload={"at": slot.isoformat(), "source": "rattrapage", "account_id": ch.account_id})
+        db.enqueue(
+            "tiktok_publish",
+            video_id=video["id"],
+            channel_id=channel_id,
+            priority=55,
+            max_attempts=3,
+            payload={"at": slot.isoformat(), "source": "rattrapage", "account_id": ch.account_id},
+        )
         log.info("tiktok.backlog", video=str(video["id"]), at=slot.isoformat(), account=ch.username or ch.account_id)
 
 
@@ -154,8 +158,10 @@ def start_productions(db: Db, settings: Settings) -> None:
         return
     today = db.fetch_one("select count(*) as n from productions where created_at::date = current_date")
     in_flight = db.fetch_one("select count(*) as n from productions where status not in ('ready', 'failed', 'archived')")
-    room = min(settings.productions_per_day - int(today["n"] if today else 0),
-               settings.max_productions_in_flight - int(in_flight["n"] if in_flight else 0))
+    room = min(
+        settings.productions_per_day - int(today["n"] if today else 0),
+        settings.max_productions_in_flight - int(in_flight["n"] if in_flight else 0),
+    )
     if room <= 0:
         return
     for c in next_concepts(db, room):

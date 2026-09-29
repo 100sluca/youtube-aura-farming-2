@@ -72,8 +72,16 @@ class TTS(Protocol):
     name: str
     gpu: bool
 
-    def speak_many(self, texts: Sequence[str], *, voice: str, lang: str, speed: float,
-                   on_progress: Progress | None = None, seed: int | None = None) -> list[Speech]: ...
+    def speak_many(
+        self,
+        texts: Sequence[str],
+        *,
+        voice: str,
+        lang: str,
+        speed: float,
+        on_progress: Progress | None = None,
+        seed: int | None = None,
+    ) -> list[Speech]: ...
 
 
 class KokoroTTS:
@@ -97,8 +105,7 @@ class KokoroTTS:
 
                 if not self.model_path.exists() or not self.voices_path.exists():
                     raise FileNotFoundError(
-                        f"Modèles Kokoro introuvables ({self.model_path}, {self.voices_path}). "
-                        "Voir docs/06-local-stack.md."
+                        f"Modèles Kokoro introuvables ({self.model_path}, {self.voices_path}). Voir docs/06-local-stack.md."
                     )
                 KokoroTTS._engine = Kokoro(str(self.model_path), str(self.voices_path))
             return KokoroTTS._engine
@@ -109,8 +116,16 @@ class KokoroTTS:
         samples, rate = self._get_engine().create(spoken(text, lang), voice=voice, speed=float(speed), lang=code)
         return Speech(samples=samples, rate=int(rate), voice=voice)
 
-    def speak_many(self, texts: Sequence[str], *, voice: str, lang: str, speed: float,
-                   on_progress: Progress | None = None, seed: int | None = None) -> list[Speech]:
+    def speak_many(
+        self,
+        texts: Sequence[str],
+        *,
+        voice: str,
+        lang: str,
+        speed: float,
+        on_progress: Progress | None = None,
+        seed: int | None = None,
+    ) -> list[Speech]:
         out = []
         for i, text in enumerate(texts):
             if on_progress:
@@ -145,13 +160,23 @@ class VenvTTS:
 
     def check(self) -> None:
         if not self.python.exists():
-            raise FileNotFoundError(f"Moteur de voix « {self.name} » non installé ({self.python} absent) : "
-                                    f"powershell -File services\\worker\\scripts\\install_tts.ps1 -Engine {self.name}")
+            raise FileNotFoundError(
+                f"Moteur de voix « {self.name} » non installé ({self.python} absent) : "
+                f"powershell -File services\\worker\\scripts\\install_tts.ps1 -Engine {self.name}"
+            )
         if not self.runner.exists():
             raise FileNotFoundError(f"Script du moteur absent : {self.runner}")
 
-    def speak_many(self, texts: Sequence[str], *, voice: str, lang: str, speed: float,
-                   on_progress: Progress | None = None, seed: int | None = None) -> list[Speech]:
+    def speak_many(
+        self,
+        texts: Sequence[str],
+        *,
+        voice: str,
+        lang: str,
+        speed: float,
+        on_progress: Progress | None = None,
+        seed: int | None = None,
+    ) -> list[Speech]:
         """`seed` : une autre prise (Qwen3-TTS tire sa voix au hasard, graine fixe par voix sinon) ; sans effet sur un
         moteur déterministe."""
         import soundfile as sf
@@ -167,8 +192,14 @@ class VenvTTS:
         with tempfile.TemporaryDirectory(prefix=f"tts_{self.name}_", dir=tmp_root) as tmp:
             work = Path(tmp)
             request = {
-                "texts": [spoken(t, lang) for t in texts], "voice": voice, "voice_params": entry.get("params") or {}, "lang": lang,
-                "speed": float(speed), "out_dir": str(work), "engine_dir": str(self.engine_dir), "home": str(self.home),
+                "texts": [spoken(t, lang) for t in texts],
+                "voice": voice,
+                "voice_params": entry.get("params") or {},
+                "lang": lang,
+                "speed": float(speed),
+                "out_dir": str(work),
+                "engine_dir": str(self.engine_dir),
+                "home": str(self.home),
                 "options": {**(self.spec.get("options") or {}), **({"seed": int(seed)} if seed is not None else {})},
             }
             (work / "request.json").write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
@@ -200,7 +231,12 @@ class VenvTTS:
         with log_path.open("w", encoding="utf-8") as log:
             proc = subprocess.Popen(
                 [str(self.python), str(self.runner), str(work / "request.json")],
-                stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8", errors="replace", env=env,
+                stdout=subprocess.PIPE,
+                stderr=log,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
                 cwd=str(self.engine_dir if self.engine_dir.is_dir() else work),
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
@@ -255,7 +291,20 @@ def _stretch(path: Path, speed: float) -> Path:
     from ..media import run
 
     out = path.with_name(f"{path.stem}_x{speed:.2f}.wav")
-    run(["ffmpeg", "-hide_banner", "-v", "error", "-y", "-i", str(path), "-filter:a", f"atempo={min(2.0, max(0.5, speed)):.3f}", str(out)])
+    run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            str(path),
+            "-filter:a",
+            f"atempo={min(2.0, max(0.5, speed)):.3f}",
+            str(out),
+        ]
+    )
     return out
 
 

@@ -136,7 +136,7 @@ BANNED_OPENERS = {
 # le fait a disparu à la reprise), « commente » seul refusait « il commente ».
 CALLS_TO_ACTION = {
     "fr": r"\b(abonne[- ]toi|abonnez[- ]vous|abonnement|likez?|commentez|en commentaires?|partagez|partage[rz]? (cette|la) vidéo"
-          r"|n'oubliez pas de|cliquez?)\b",
+    r"|n'oubliez pas de|cliquez?)\b",
     "en": r"\b(subscribe|hit the like|like this video|comment below|share this|don't forget to|click the)\b",
 }
 EMPTY_SUPERLATIVES = {

@@ -99,10 +99,14 @@ def series_list(_: argparse.Namespace) -> None:
                   count(c.*) filter (where c.status = 'used') as used
            from series s left join concepts c on c.series_id = s.id group by s.id order by s.slug"""
     )
-    print(f"{'série':<22} {'recette':<9} {'source':<10} {'poids':>5} {'actif':<6} {'proposés':>8} {'approuvés':>9} {'produits':>8}  style")
+    print(
+        f"{'série':<22} {'recette':<9} {'source':<10} {'poids':>5} {'actif':<6} {'proposés':>8} {'approuvés':>9} {'produits':>8}  style"
+    )
     for r in rows:
-        print(f"{r['slug']:<22} {r['recipe']:<9} {r['source']:<10} {float(r['weight']):>5.1f} {'oui' if r['is_active'] else 'non':<6} "
-              f"{r['proposed']:>8} {r['approved']:>9} {r['used']:>8}  {r['style_preset'] or ''}")
+        print(
+            f"{r['slug']:<22} {r['recipe']:<9} {r['source']:<10} {float(r['weight']):>5.1f} {'oui' if r['is_active'] else 'non':<6} "
+            f"{r['proposed']:>8} {r['approved']:>9} {r['used']:>8}  {r['style_preset'] or ''}"
+        )
 
 
 def ideate_series(args: argparse.Namespace) -> None:
@@ -127,11 +131,13 @@ def concepts_list(args: argparse.Namespace) -> None:
         f"""select c.id, c.status, c.score, c.title, c.hook, coalesce(s.slug, '-') as slug,
                    jsonb_array_length(c.facts) as facts
             from concepts c left join series s on s.id = c.series_id
-            where {' and '.join(cond)} order by c.status, c.score desc nulls last, c.created_at desc limit %s""",  # noqa: S608
+            where {" and ".join(cond)} order by c.status, c.score desc nulls last, c.created_at desc limit %s""",  # noqa: S608
         (*params, args.limit),
     )
     for r in rows:
-        print(f"{str(r['id'])[:8]}  {r['status']:<9} {float(r['score'] or 0):>5.0f}  {r['slug']:<20} {r['facts']:>2} faits  {r['title']}")
+        print(
+            f"{str(r['id'])[:8]}  {r['status']:<9} {float(r['score'] or 0):>5.0f}  {r['slug']:<20} {r['facts']:>2} faits  {r['title']}"
+        )
         print(f"          ↳ {r['hook']}")
     if not rows:
         print("aucun concept")
@@ -140,9 +146,7 @@ def concepts_list(args: argparse.Namespace) -> None:
 def concepts_show(args: argparse.Namespace) -> None:
     _, db = _db()
     cid = _full_id(db, "concepts", args.id)
-    c = db.fetch_one(
-        """select c.*, s.slug from concepts c left join series s on s.id = c.series_id where c.id = %s""", (cid,)
-    )
+    c = db.fetch_one("""select c.*, s.slug from concepts c left join series s on s.id = c.series_id where c.id = %s""", (cid,))
     print(f"{c['title']}  [{c['status']}] · série {c['slug']} · catégorie {c['category']} · score {c['score']}")
     print(f"Accroche : {c['hook']}\nAngle : {c['angle'] or '-'}\nPrémisse : {c['premise']}")
     print("Temps visuels :", " → ".join(c["visual_beats"] or []))
@@ -159,7 +163,9 @@ def concepts_decide(args: argparse.Namespace, status: str) -> None:
     _, db = _db()
     for prefix in args.ids:
         cid = _full_id(db, "concepts", prefix)
-        db.execute("update concepts set status = %s where id = %s and status in ('proposed', 'approved', 'rejected')", (status, cid))
+        db.execute(
+            "update concepts set status = %s where id = %s and status in ('proposed', 'approved', 'rejected')", (status, cid)
+        )
         print(f"{cid[:8]} → {status}")
     if status == "approved":
         print("Production automatique toutes les 15 min si AUTO_PRODUCE=1, sinon : yt2 produce <id>")
@@ -173,9 +179,12 @@ def produce(args: argparse.Namespace) -> None:
     channel = db.fetch_one("select id from channels where slug = %s", (args.channel,)) if args.channel else None
     if args.channel and not channel:
         sys.exit(f"chaîne inconnue : {args.channel}")
-    pid, created = create_production(db, cid, format=args.format, target_duration_s=args.duration, priority=50,
-                                     channel_id=channel["id"] if channel else None)
-    print(f"Production {pid} {'créée : script en file' if created else 'déjà en cours'}. Suivre : yt2 storyboard show {str(pid)[:8]}")
+    pid, created = create_production(
+        db, cid, format=args.format, target_duration_s=args.duration, priority=50, channel_id=channel["id"] if channel else None
+    )
+    print(
+        f"Production {pid} {'créée : script en file' if created else 'déjà en cours'}. Suivre : yt2 storyboard show {str(pid)[:8]}"
+    )
 
 
 def wiki_today(args: argparse.Namespace) -> None:
@@ -225,8 +234,10 @@ def subtitles_list(_: argparse.Namespace) -> None:
     fonts = FontRegistry.scan(WORKER_ROOT / "assets" / "fonts")
     print("Profils intégrés :")
     for name, p in BUILTIN_PROFILES.items():
-        print(f"  {name:<9} {p.font_family}, {p.font_size} px, mot actif {p.highlight_mode} {p.highlight_color}, "
-              f"{p.position}, {p.max_words} mots, animation {p.animation}")
+        print(
+            f"  {name:<9} {p.font_family}, {p.font_size} px, mot actif {p.highlight_mode} {p.highlight_color}, "
+            f"{p.position}, {p.max_words} mots, animation {p.animation}"
+        )
     print("Polices fournies :", ", ".join(fonts.families()))
     try:
         _, db = _db()
@@ -253,9 +264,14 @@ def subtitles_preview(args: argparse.Namespace) -> None:
     if args.voice:  # vraie voix Kokoro si les modèles sont installés
         from .providers.tts import KokoroTTS
 
-        tts = KokoroTTS(SimpleNamespace(kokoro_voice_fr="ff_siwis", kokoro_voice_en="af_heart",
-                                        kokoro_model_path=WORKER_ROOT / "models" / "kokoro-v1.0.onnx",
-                                        kokoro_voices_path=WORKER_ROOT / "models" / "voices-v1.0.bin"))  # type: ignore[arg-type]
+        tts = KokoroTTS(
+            SimpleNamespace(
+                kokoro_voice_fr="ff_siwis",
+                kokoro_voice_en="af_heart",
+                kokoro_model_path=WORKER_ROOT / "models" / "kokoro-v1.0.onnx",
+                kokoro_voices_path=WORKER_ROOT / "models" / "voices-v1.0.bin",
+            )
+        )  # type: ignore[arg-type]
         for i, text in enumerate(lines):
             sp = tts.speak(text, lang=args.lang, speed=args.speed)
             rate = sp.rate
@@ -272,7 +288,12 @@ def subtitles_preview(args: argparse.Namespace) -> None:
         bg = ["-stream_loop", "-1", "-i", str(Path(args.background).resolve())]
         vchain = "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30"
     else:
-        bg = ["-f", "lavfi", "-i", f"gradients=s=1080x1920:c0=0x2B3A55:c1=0xC9A66B:x0=0:y0=0:x1=1080:y1=1920:d={total}:speed=0.02"]
+        bg = [
+            "-f",
+            "lavfi",
+            "-i",
+            f"gradients=s=1080x1920:c0=0x2B3A55:c1=0xC9A66B:x0=0:y0=0:x1=1080:y1=1920:d={total}:speed=0.02",
+        ]
         vchain = "[0:v]fps=30"
     cmd = ["ffmpeg", "-y", "-v", "error", *bg]
     amap: list[str] = ["-an"]
@@ -282,8 +303,24 @@ def subtitles_preview(args: argparse.Namespace) -> None:
         sf.write(str(work / "voix.wav"), mix_speech(timeline, speeches, rate), rate)
         cmd += ["-i", "voix.wav"]
         amap = ["-map", "1:a", "-c:a", "aac", "-b:a", "160k"]
-    cmd += ["-filter_complex", f"{vchain},{flt}[v]", "-map", "[v]", *amap, "-t", f"{total:.3f}",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out.resolve())]
+    cmd += [
+        "-filter_complex",
+        f"{vchain},{flt}[v]",
+        "-map",
+        "[v]",
+        *amap,
+        "-t",
+        f"{total:.3f}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        str(out.resolve()),
+    ]
     subprocess.run(cmd, cwd=work, check=True)
     print(f"Aperçu « {profile.name} » ({total:.1f} s) : {out}")
 
@@ -298,8 +335,10 @@ def subtitles_save(args: argparse.Namespace) -> None:
            on conflict (name) do update set profile = excluded.profile""",
         (args.name, Jsonb(profile.model_dump())),
     )
-    print(f"Profil « {args.name} » enregistré (aperçus : yt2 subtitles preview --profile {args.name}). Le montage des vidéos "
-          "suit le modèle de l'onglet Montage du dashboard (docs/23-montage.md), qui a ses propres sous-titres.")
+    print(
+        f"Profil « {args.name} » enregistré (aperçus : yt2 subtitles preview --profile {args.name}). Le montage des vidéos "
+        "suit le modèle de l'onglet Montage du dashboard (docs/23-montage.md), qui a ses propres sous-titres."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -350,8 +389,10 @@ def storyboard_pick(args: argparse.Namespace) -> None:
         items = board.get(scene, [])
         if not 0 <= image < len(items):
             sys.exit(f"scène {scene} : image {image} inexistante ({len(items)} image(s))")
-        db.execute("update assets set selected = (id = %s) where production_id = %s and kind = 'storyboard' and scene_index = %s",
-                   (items[image]["id"], pid, scene))
+        db.execute(
+            "update assets set selected = (id = %s) where production_id = %s and kind = 'storyboard' and scene_index = %s",
+            (items[image]["id"], pid, scene),
+        )
         print(f"Scène {scene} : image {image} retenue")
         derived = db.fetch_all(
             """select distinct scene_index from assets where production_id = %s and kind = 'storyboard'
@@ -379,7 +420,9 @@ def storyboard_reinvent(args: argparse.Namespace) -> None:
     if (args.note or "").strip():
         payload["note"] = args.note.strip()[:NOTE_MAX]
     db.enqueue("storyboard", production_id=pid, priority=80, payload=payload)
-    print(f"Scène {args.scene} : le scénariste la réinvente, puis ses images sont refaites (yt2 storyboard show {args.production})")
+    print(
+        f"Scène {args.scene} : le scénariste la réinvente, puis ses images sont refaites (yt2 storyboard show {args.production})"
+    )
 
 
 def storyboard_approve(args: argparse.Namespace) -> None:
@@ -406,7 +449,7 @@ def storyboard_approve(args: argparse.Namespace) -> None:
 def _strategy(db: Any, slug: str, version: int | None) -> dict[str, Any]:
     row = db.fetch_one(
         f"""select s.*, c.id as cid, c.slug from strategies s join channels c on c.id = s.channel_id
-            where c.slug = %s {'and s.version = %s' if version else ''} order by s.version desc limit 1""",  # noqa: S608
+            where c.slug = %s {"and s.version = %s" if version else ""} order by s.version desc limit 1""",  # noqa: S608
         (slug, version) if version else (slug,),
     )
     if not row:
@@ -417,8 +460,14 @@ def _strategy(db: Any, slug: str, version: int | None) -> dict[str, Any]:
 def strategy_show(args: argparse.Namespace) -> None:
     _, db = _db()
     s = _strategy(db, args.channel, args.version)
-    print(f"Stratégie v{s['version']} · {s['slug']} · {s['status']} · {s['stats'].get('n', 0)} vidéos sur {s['window_days']} jours")
-    print(json.dumps(s["proposal"], ensure_ascii=False, indent=2) if s["proposal"] else "Pas de proposition : données insuffisantes.")
+    print(
+        f"Stratégie v{s['version']} · {s['slug']} · {s['status']} · {s['stats'].get('n', 0)} vidéos sur {s['window_days']} jours"
+    )
+    print(
+        json.dumps(s["proposal"], ensure_ascii=False, indent=2)
+        if s["proposal"]
+        else "Pas de proposition : données insuffisantes."
+    )
 
 
 def strategy_decide(args: argparse.Namespace, accept: bool) -> None:
@@ -434,7 +483,9 @@ def strategy_decide(args: argparse.Namespace, accept: bool) -> None:
         if slots:
             db.execute("update channels set publish_slots = %s::time[] where id = %s", (slots, s["cid"]))
             print("Créneaux de publication mis à jour :", slots)
-    db.execute("update strategies set status = %s, decided_at = now() where id = %s", ("active" if accept else "rejected", s["id"]))
+    db.execute(
+        "update strategies set status = %s, decided_at = now() where id = %s", ("active" if accept else "rejected", s["id"])
+    )
     print(f"Stratégie v{s['version']} {'appliquée' if accept else 'refusée'}")
 
 
@@ -475,8 +526,10 @@ def settings_show(_: argparse.Namespace) -> None:
         keys = ", ".join(f"n° {s} (…{h})" for s, h in slots.get(p, [])) or ("clé .env" if cfg.key_for(p) else "pas de clé")
         print(f"  {p:<10} clés : {keys}")
     gen = load_generation_config(settings, db, use_cache=False)
-    print(f"\nGénération ({'base (dashboard)' if gen.source == 'db' else '.env'}) : images {gen.image_workflow} · vidéo "
-          f"{gen.video_workflow} · {gen.storyboard_candidates} image(s) par scène · voix {gen.voices}")
+    print(
+        f"\nGénération ({'base (dashboard)' if gen.source == 'db' else '.env'}) : images {gen.image_workflow} · vidéo "
+        f"{gen.video_workflow} · {gen.storyboard_candidates} image(s) par scène · voix {gen.voices}"
+    )
 
 
 def settings_generation(args: argparse.Namespace) -> None:
@@ -497,7 +550,11 @@ def settings_generation(args: argparse.Namespace) -> None:
             sys.exit(f"voix {lang} inconnue : {voice} (catalogue : {', '.join(known)})")
     voices = {k: v.removeprefix("kokoro:") for k, v in voices.items()}  # Kokoro : nom seul, comme avant les moteurs multiples
     value = save_generation_settings(
-        db, image_workflow=args.image, video_workflow=args.video, storyboard_candidates=args.candidates, voices=voices or None,
+        db,
+        image_workflow=args.image,
+        video_workflow=args.video,
+        storyboard_candidates=args.candidates,
+        voices=voices or None,
     )
     print("Réglages de génération :", json.dumps(value, ensure_ascii=False))
 
@@ -513,7 +570,8 @@ def voice_list(_: argparse.Namespace) -> None:
         try:
             engine = get_engine(settings, name)
             ok = all((settings.yt2_home / rel).exists() for rel in spec.get("check", [])) and (
-                not hasattr(engine, "python") or engine.python.exists())
+                not hasattr(engine, "python") or engine.python.exists()
+            )
         except ValueError:
             ok = False
         print(f"{name:<14} {'installé' if ok else 'À INSTALLER':<12} {spec.get('label', '')} · {spec.get('license', '')}")
@@ -541,8 +599,9 @@ def voice_say(args: argparse.Namespace) -> None:
         engine.online = True  # premier essai après installation : le moteur télécharge ses modèles
     text = args.text or SAMPLES[args.lang]
     started = time.monotonic()
-    [sp] = engine.speak_many([text], voice=voice, lang=args.lang, speed=args.speed,
-                             on_progress=lambda pct, label: print(f"  {pct:3d} % {label}"))
+    [sp] = engine.speak_many(
+        [text], voice=voice, lang=args.lang, speed=args.speed, on_progress=lambda pct, label: print(f"  {pct:3d} % {label}")
+    )
     out = Path(args.out) if args.out else settings.data_dir / "previews" / "voices" / f"cli_{engine_name}_{voice}.wav"
     out.parent.mkdir(parents=True, exist_ok=True)
     samples = trim_silence(sp.samples, sp.rate)
@@ -554,7 +613,9 @@ def remake(args: argparse.Namespace) -> None:
     _, db = _db()
     pid = _full_id(db, "productions", args.production)
     row = db.fetch_one("select remake_production(%s) as id", (pid,))
-    print(f"Production {row['id']} créée : même script, modèles des réglages actuels. Suivre : yt2 storyboard show {str(row['id'])[:8]}")
+    print(
+        f"Production {row['id']} créée : même script, modèles des réglages actuels. Suivre : yt2 storyboard show {str(row['id'])[:8]}"
+    )
 
 
 def settings_key(args: argparse.Namespace) -> None:
@@ -582,11 +643,20 @@ def settings_llm(args: argparse.Namespace) -> None:
         fallbacks=[f.strip() for f in args.fallbacks.split(",") if f.strip()] if args.fallbacks else None,
         # modèle d'écriture (idées, scénaristes, relecteur) ; « - » le retire (même modèle que les autres agents)
         writer_models={args.provider: "" if args.writer_model == "-" else args.writer_model}
-        if args.writer_model and args.provider else None,
+        if args.writer_model and args.provider
+        else None,
         # chaînes : « gemini:gemini-3.8-flash,gemini:gemini-3.5-flash-lite » (1er choix, 2e choix…) ; « - » la retire
-        chains={kind: [] if spec == "-" else [{"provider": p.strip(), "model": m.strip()}
-                                              for p, _, m in (x.partition(":") for x in spec.split(",") if x.strip())]
-                for kind, spec in (("writer", args.writer_chain), ("default", args.chain)) if spec} or None,
+        chains={
+            kind: []
+            if spec == "-"
+            else [
+                {"provider": p.strip(), "model": m.strip()}
+                for p, _, m in (x.partition(":") for x in spec.split(",") if x.strip())
+            ]
+            for kind, spec in (("writer", args.writer_chain), ("default", args.chain))
+            if spec
+        }
+        or None,
     )
     print("Réglages LLM :", json.dumps(value, ensure_ascii=False))
 
@@ -612,17 +682,25 @@ def prompts_list(_: argparse.Namespace) -> None:
             print(f"{key:<20} texte du code (pas encore en base : relancer le worker ou `yt2 prompts sync`)")
             continue
         origin = PROMPT_ORIGIN.get(r["origin"], r["origin"])
-        note = " · le code a une version plus récente" if r["last_code"] and r["last_code"] > r["active"] and origin != "code" else ""
+        note = (
+            " · le code a une version plus récente"
+            if r["last_code"] and r["last_code"] > r["active"] and origin != "code"
+            else ""
+        )
         print(f"{key:<20} v{r['active']} ({origin}) sur {r['last']} version(s){note} · {len(text)} car. dans le code")
 
 
 def prompts_show(args: argparse.Namespace) -> None:
     _, db = _db()
     if args.version:
-        row = db.fetch_one("select version, created_by, content from prompt_templates where agent = %s and version = %s",
-                           (args.key, args.version))
+        row = db.fetch_one(
+            "select version, created_by, content from prompt_templates where agent = %s and version = %s",
+            (args.key, args.version),
+        )
     else:
-        row = db.fetch_one("select version, created_by, content from prompt_templates where agent = %s and is_active", (args.key,))
+        row = db.fetch_one(
+            "select version, created_by, content from prompt_templates where agent = %s and is_active", (args.key,)
+        )
     if not row:
         sys.exit(f"aucune version pour {args.key}")
     print(f"# {args.key} v{row['version']} ({PROMPT_ORIGIN.get(row['created_by'], row['created_by'])})\n\n{row['content']}")
@@ -761,7 +839,9 @@ def main(argv: list[str] | None = None) -> None:
     sl2.add_argument("--provider", choices=["gemini", "anthropic", "mistral", "ollama"])
     sl2.add_argument("--model")
     sl2.add_argument("--fallbacks", help="liste séparée par des virgules")
-    sl2.add_argument("--writer-model", help="modèle d'écriture du fournisseur (idées, scénaristes, relecteur), « - » pour le retirer")
+    sl2.add_argument(
+        "--writer-model", help="modèle d'écriture du fournisseur (idées, scénaristes, relecteur), « - » pour le retirer"
+    )
     sl2.add_argument("--writer-chain", help="chaîne d'écriture, ex. gemini:gemini-3.8-flash,gemini:gemini-3.5-flash-lite")
     sl2.add_argument("--chain", help="chaîne des autres agents, même forme ; « - » pour la retirer")
     sl2.set_defaults(fn=settings_llm)
@@ -779,7 +859,8 @@ def main(argv: list[str] | None = None) -> None:
     stt.set_defaults(fn=settings_test)
 
     pp = sub.add_parser("prompts", help="prompts des agents (onglet Agents du dashboard, docs/22)").add_subparsers(
-        dest="cmd", required=True)
+        dest="cmd", required=True
+    )
     pp.add_parser("list").set_defaults(fn=prompts_list)
     ps = pp.add_parser("show")
     ps.add_argument("key")

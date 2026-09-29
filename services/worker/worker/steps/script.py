@@ -73,8 +73,10 @@ REVIEW_PROBLEMS_MAX = 8
 WEAK_WRITERS = re.compile(r"lite|nano", re.I)
 STRONG_WAIT_S = 3600.0
 STRONG_WAIT_MAX = timedelta(hours=12)
-DRAMA_RULES_NOTE =("(Pour un drame joué en dialogues, ces règles s'appliquent aux répliques et aux plans ; la structure du "
-                    "format, dans tes consignes, prime en cas de doute.)")
+DRAMA_RULES_NOTE = (
+    "(Pour un drame joué en dialogues, ces règles s'appliquent aux répliques et aux plans ; la structure du "
+    "format, dans tes consignes, prime en cas de doute.)"
+)
 
 CONTINUITY_HINT = """Continuité entre clips : pour chaque scène, continues_previous = true si elle prolonge le plan
 précédent (même lieu, même sujet, l'action continue : le clip partira de la dernière image du précédent) ;
@@ -138,8 +140,9 @@ class ScriptStep(Step):
             return self._write_recipe(ctx, prod, langs, series)
         return self._write_story(ctx, prod, langs, series)
 
-    def _write_story(self, ctx: Context, prod: dict[str, Any], langs: list[str], series: Series | None
-                     ) -> tuple[ScriptV1, list[str], UUID | None]:
+    def _write_story(
+        self, ctx: Context, prod: dict[str, Any], langs: list[str], series: Series | None
+    ) -> tuple[ScriptV1, list[str], UUID | None]:
         """Récit narré (docs/37) : le conteur écrit l'histoire en entier, le correcteur et le relecteur la font réécrire
         une fois, le code la découpe en scènes sans en changer un mot, le réalisateur décide les plans."""
         lang = langs[0] if langs else "fr"
@@ -165,16 +168,21 @@ class ScriptStep(Step):
                 prompt_text(ctx.db, "rules_storytelling", RULES),
                 f"IDÉE : {prod['title']}\nAccroche proposée : {prod['hook']}\nAngle : {prod.get('angle') or '—'}\n"
                 f"Prémisse : {prod['premise']}\nCatégorie : {prod['category']}\nTemps visuels : {prod['visual_beats']}",
-                f"FAITS SOURCÉS retenus par l'agent idées (points de départ) :\n{facts_txt}\nSources :\n{sources_txt}" if facts_txt else "",
+                f"FAITS SOURCÉS retenus par l'agent idées (points de départ) :\n{facts_txt}\nSources :\n{sources_txt}"
+                if facts_txt
+                else "",
                 f"DOSSIER : les pages sources relues en entier. Avec les faits ci-dessus, c'est la seule base des affirmations ; "
-                f"puises-y le héros, l'enjeu, le contexte, le conflit et le renversement.\n{dossier}" if dossier else "",
+                f"puises-y le héros, l'enjeu, le contexte, le conflit et le renversement.\n{dossier}"
+                if dossier
+                else "",
                 f"DURÉE VISÉE : {target} s, soit environ {aim} mots dits (entre {lo} et {hi}) : environ {round(aim / 11)} "
                 f"phrases en {max(5, round(target / 9))} à {max(7, round(target / 6))} temps · Langue du récit : {lang}",
                 prompt_text(ctx.db, "rules_hook_title", HOOK_RULES),
                 f"Stratégie validée :\n{guidance_text(active_strategies(ctx.db))}",
                 lessons_text(ctx.db, "script", channel_id=prod.get("channel_id"), recipe="story"),  # leçons validées (docs/25)
                 "Histoires de la chaîne qui ont bien marché (pour le ton, jamais pour les faits) :\n" + "\n---\n".join(told)
-                if told else "",
+                if told
+                else "",
             )
             if part
         )
@@ -195,9 +203,14 @@ class ScriptStep(Step):
                 break
             ctx.log("script.reprise", tour=attempt, issues=issues, relecture=problems)
             ctx.progress(25 + 10 * attempt, f"Réécriture de l'histoire ({attempt})")
-            draft = normalize_draft(ask(
-                system, f"{user}\n\n{rewrite_request(issues, problems)}\n\nHistoire précédente :\n{draft.model_dump_json()}",
-                StoryDraft), lang)
+            draft = normalize_draft(
+                ask(
+                    system,
+                    f"{user}\n\n{rewrite_request(issues, problems)}\n\nHistoire précédente :\n{draft.model_dump_json()}",
+                    StoryDraft,
+                ),
+                lang,
+            )
             issues = lint_story(draft, lang, target)
             problems = []
             if attempt == 1:
@@ -208,20 +221,31 @@ class ScriptStep(Step):
         if issues:
             ctx.log("script.forme", issues=issues)
             ctx.progress(45, "Reprise de la forme (rythme, longueurs)")
-            fix = normalize_draft(ask(
-                system, f"{user}\n\n{polish_request(issues)}\n\nHistoire précédente :\n{draft.model_dump_json()}", StoryDraft),
-                lang)
+            fix = normalize_draft(
+                ask(
+                    system, f"{user}\n\n{polish_request(issues)}\n\nHistoire précédente :\n{draft.model_dump_json()}", StoryDraft
+                ),
+                lang,
+            )
             fix_issues = lint_story(fix, lang, target)
             if len(fix_issues) < len(issues):
                 draft, issues = fix, fix_issues
-        ctx.log("script.histoire", mots=story_words(draft, lang), temps=len(draft.beats), moteur=draft.engine,
-                idee=draft.central_idea, problemes=issues)
+        ctx.log(
+            "script.histoire",
+            mots=story_words(draft, lang),
+            temps=len(draft.beats),
+            moteur=draft.engine,
+            idee=draft.central_idea,
+            problemes=issues,
+        )
         ctx.progress(50, "Découpage en plans")
         chunks = split_scenes(draft, lang)
         shots = self._shots(ctx, llm, prod, series, draft, chunks, langs, facts_txt, dossier)
         script = normalize_story(build_script(draft, chunks, shots, lang, langs, title=prod.get("title") or ""))
         lint_langs = langs if prod["format"] == "A_voiceover" else []
-        remaining = lint_script(script, lint_langs, target) + [f"récit : {i}" for i in lint_story(draft, lang, target, shared=False)]
+        remaining = lint_script(script, lint_langs, target) + [
+            f"récit : {i}" for i in lint_story(draft, lang, target, shared=False)
+        ]
         if remaining:
             ctx.log("script.problemes_restants", level="warn", issues=remaining)
         # quel modèle a vraiment répondu à chaque appel (chaîne d'écriture, Réglages → IA)
@@ -242,8 +266,12 @@ class ScriptStep(Step):
                     raise
                 waited = datetime.now(UTC) - ctx.job.created_at
                 if waited < STRONG_WAIT_MAX:
-                    raise Postpone("modèles d'écriture forts épuisés", STRONG_WAIT_S,
-                                   label="Le conteur attend un modèle d'écriture fort (quota)", error=str(exc)[:500]) from exc
+                    raise Postpone(
+                        "modèles d'écriture forts épuisés",
+                        STRONG_WAIT_S,
+                        label="Le conteur attend un modèle d'écriture fort (quota)",
+                        error=str(exc)[:500],
+                    ) from exc
                 ctx.log("script.modele_de_secours", level="warn", attente_h=round(waited.total_seconds() / 3600, 1))
                 return fallback.complete_json(system, user, schema)
 
@@ -253,14 +281,24 @@ class ScriptStep(Step):
     def _dossier(ctx: Context, sources: list[dict[str, Any]]) -> str:
         """Pages sources entières (sources/wikipedia.source_dossier) ; sans elles, le script s'écrit sur les faits de l'idée."""
         try:
-            return source_dossier(sources, ctx.settings.data_dir / "sources" / "wikipedia", ctx.settings.effective_wikipedia_user_agent)
+            return source_dossier(
+                sources, ctx.settings.data_dir / "sources" / "wikipedia", ctx.settings.effective_wikipedia_user_agent
+            )
         except Exception as exc:  # noqa: BLE001
             ctx.log("script.dossier_indisponible", level="warn", erreur=str(exc)[:300])
             return ""
 
     @staticmethod
-    def _review_story(ctx: Context, ask: Callable[[str, str, type[Any]], Any], draft: StoryDraft, prod: dict[str, Any],
-                      facts_txt: str, dossier: str, lang: str, target: int) -> list[str]:
+    def _review_story(
+        ctx: Context,
+        ask: Callable[[str, str, type[Any]], Any],
+        draft: StoryDraft,
+        prod: dict[str, Any],
+        facts_txt: str,
+        dossier: str,
+        lang: str,
+        target: int,
+    ) -> list[str]:
         """Relecture du récit (prompt script_review, onglet Agents) : ce que le correcteur ne mesure pas, avec la
         checklist du récit. Renvoie les problèmes à corriger, [] si le relecteur laisse partir l'histoire ; un échec de
         la relecture ne bloque rien (l'attente d'un modèle fort, elle, remet la tâche à plus tard)."""
@@ -286,8 +324,18 @@ class ScriptStep(Step):
         ctx.log("script.relecture", ok=review.ok, problemes=problems)
         return [] if review.ok else problems
 
-    def _shots(self, ctx: Context, llm: LLM, prod: dict[str, Any], series: Series | None, draft: StoryDraft,
-               chunks: list[Chunk], langs: list[str], facts_txt: str, dossier: str) -> ShotList:
+    def _shots(
+        self,
+        ctx: Context,
+        llm: LLM,
+        prod: dict[str, Any],
+        series: Series | None,
+        draft: StoryDraft,
+        chunks: list[Chunk],
+        langs: list[str],
+        facts_txt: str,
+        dossier: str,
+    ) -> ShotList:
         """Le réalisateur (prompt script_shots) : un plan par scène du découpage ; une reprise s'il en oublie."""
         lang = langs[0] if langs else "fr"
         others = [x for x in langs if x != lang]
@@ -340,7 +388,9 @@ class ScriptStep(Step):
             (series.id,),
         )
         # Drame : les voix de synthèse que peuvent prendre ses personnages (série en voix constantes, docs/35)
-        voices = voices_brief(character_voices(tts_catalog(ctx.settings), langs[0] if langs else "fr")) if recipe == "drama" else ""
+        voices = (
+            voices_brief(character_voices(tts_catalog(ctx.settings), langs[0] if langs else "fr")) if recipe == "drama" else ""
+        )
         user = "\n\n".join(
             part
             for part in (
@@ -369,7 +419,9 @@ class ScriptStep(Step):
             ctx.log("script.reprise", recipe=recipe, issues=issues)
             ctx.progress(40, "Reprise du script (règles du format)")
             retry = normalize_script(
-                llm.complete_json(system, f"{user}\n\n{feedback(issues)}\n\nScript précédent :\n{script.model_dump_json()}", ScriptV1),
+                llm.complete_json(
+                    system, f"{user}\n\n{feedback(issues)}\n\nScript précédent :\n{script.model_dump_json()}", ScriptV1
+                ),
                 recipe,
             )
             retry_issues = lint_recipe_script(retry, recipe, langs, target)
@@ -416,8 +468,16 @@ class ScriptStep(Step):
                    values (%s, %s, %s, %s, %s, %s, %s, %s)
                    on conflict (production_id, channel_id) do update set narration_text = excluded.narration_text
                    returning id""",
-                (pid, ch["id"], lang, fmt, meta.title if meta else None, meta.description if meta else None,
-                 meta.tags if meta else [], narration),
+                (
+                    pid,
+                    ch["id"],
+                    lang,
+                    fmt,
+                    meta.title if meta else None,
+                    meta.description if meta else None,
+                    meta.tags if meta else [],
+                    narration,
+                ),
             )
             out.append(row["id"])
             ctx.log("dag.video", video_id=str(row["id"]), lang=lang)

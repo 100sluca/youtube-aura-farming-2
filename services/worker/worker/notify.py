@@ -161,8 +161,9 @@ def _poster(path: str | None) -> bytes | None:
 
 
 def _html(kicker: str, title: str, lines: list[str], link: str, button: str, *, with_image: bool) -> str:
-    image = ('<img src="cid:poster" width="240" alt="" style="display:block;border-radius:10px;margin:0 0 14px">'
-             if with_image else "")
+    image = (
+        '<img src="cid:poster" width="240" alt="" style="display:block;border-radius:10px;margin:0 0 14px">' if with_image else ""
+    )
     paras = "".join(f'<p style="margin:0 0 8px;font-size:14px;line-height:1.45">{escape(x)}</p>' for x in lines)
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;color:#111">'
@@ -212,15 +213,22 @@ def send_email(cfg: NotifyConfig, mail: Mail) -> tuple[bool, str]:
             r = httpx.post(
                 "https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {cfg.resend_api_key}"},
-                json={"from": "YouTube 2.0 <alerts@resend.dev>", "to": [cfg.email_to], "subject": mail.subject, "text": mail.text},
+                json={
+                    "from": "YouTube 2.0 <alerts@resend.dev>",
+                    "to": [cfg.email_to],
+                    "subject": mail.subject,
+                    "text": mail.text,
+                },
                 timeout=15,
             )
             r.raise_for_status()
             return True, f"Mail envoyé à {cfg.email_to} par Resend"
         return False, "Envoi pas encore réglé : Réglages → Notifications, mot de passe d'application du compte Gmail qui envoie"
     except smtplib.SMTPAuthenticationError as exc:
-        return False, (f"{cfg.host} refuse la connexion de {cfg.sender} ({exc.smtp_code}) : mot de passe d'application faux ou "
-                       "retiré, ou validation en deux étapes coupée sur ce compte")
+        return False, (
+            f"{cfg.host} refuse la connexion de {cfg.sender} ({exc.smtp_code}) : mot de passe d'application faux ou "
+            "retiré, ou validation en deux étapes coupée sur ce compte"
+        )
     except Exception as exc:  # noqa: BLE001
         return False, f"Envoi impossible : {type(exc).__name__}: {exc}"[:400]
 
@@ -237,12 +245,15 @@ def queue_video_ready(db: Any, settings: Settings, video_id: UUID, title: str | 
     try:
         if not load_notify_config(settings, db).on_video_ready:
             return False
-        return db.execute(
-            """insert into alerts (severity, kind, title, video_id, production_id)
+        return (
+            db.execute(
+                """insert into alerts (severity, kind, title, video_id, production_id)
                select 'info', 'video_ready', %s, v.id, v.production_id from videos v
                where v.id = %s and not exists (select 1 from alerts a where a.video_id = v.id and a.kind = 'video_ready')""",
-            (f"Vidéo terminée : {(title or '').strip() or 'Short'}", video_id),
-        ) > 0
+                (f"Vidéo terminée : {(title or '').strip() or 'Short'}", video_id),
+            )
+            > 0
+        )
     except Exception as exc:  # noqa: BLE001
         log.warning("notify.video_ready_impossible", error=str(exc)[:200])
         return False

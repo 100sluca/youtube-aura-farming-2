@@ -10,16 +10,32 @@ from worker import drama
 from worker.keyframe_qc import NO_NEW_TEXT, clip_requirements
 from worker.models import ScriptV1
 
-CAST = [{"key": "pomme", "name": "Mamie Pomme", "role": "victime", "voice": "a warm fragile elderly female voice",
-         "look": "an elderly woman whose head is a wrinkled red apple, round glasses, floral headscarf, beige cardigan"}]
+CAST = [
+    {
+        "key": "pomme",
+        "name": "Mamie Pomme",
+        "role": "victime",
+        "voice": "a warm fragile elderly female voice",
+        "look": "an elderly woman whose head is a wrinkled red apple, round glasses, floral headscarf, beige cardigan",
+    }
+]
 
 
 def _script() -> ScriptV1:
-    scenes = [{"index": i, "duration_s": 4, "visual_prompt": f"shot {i}", "motion_prompt": f"move {i}",
-               "characters": ["pomme"], "lines": [{"who": "pomme", "text": "Mais… je suis ta mère.", "tone": "whispering"}]}
-              for i in range(4)]
-    return drama.normalize(ScriptV1.model_validate({"scenes": scenes, "cast": CAST,
-                                                     "metadata": {"fr": {"title": "t", "description": "d"}}}))
+    scenes = [
+        {
+            "index": i,
+            "duration_s": 4,
+            "visual_prompt": f"shot {i}",
+            "motion_prompt": f"move {i}",
+            "characters": ["pomme"],
+            "lines": [{"who": "pomme", "text": "Mais… je suis ta mère.", "tone": "whispering"}],
+        }
+        for i in range(4)
+    ]
+    return drama.normalize(
+        ScriptV1.model_validate({"scenes": scenes, "cast": CAST, "metadata": {"fr": {"title": "t", "description": "d"}}})
+    )
 
 
 def test_the_line_is_heard_never_written_on_screen():

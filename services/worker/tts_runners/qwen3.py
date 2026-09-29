@@ -32,7 +32,9 @@ def prepare(req: dict[str, Any]) -> None:
     dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
     model = Qwen3TTSModel.from_pretrained(
         str(engine_dir / "models" / opts.get("model", "Qwen3-TTS-12Hz-0.6B-Base")),
-        device_map=device, dtype=dtype, attn_implementation="sdpa",
+        device_map=device,
+        dtype=dtype,
+        attn_implementation="sdpa",
     )
     params = req.get("voice_params") or {}
     if not params.get("ref") or not params.get("ref_text"):
@@ -42,8 +44,11 @@ def prepare(req: dict[str, Any]) -> None:
         raise FileNotFoundError(f"référence de voix absente : {ref_path} (lancer tts_runners/qwen3_design.py)")
     ref, ref_sr = sf.read(str(ref_path), dtype="float32")
     STATE.update(
-        torch=torch, model=model, seed=int(opts.get("seed", params.get("seed", 1234))),
-        max_chars=int(opts.get("max_chars", 140)), language=LANGS.get(req["lang"], "French"),
+        torch=torch,
+        model=model,
+        seed=int(opts.get("seed", params.get("seed", 1234))),
+        max_chars=int(opts.get("max_chars", 140)),
+        language=LANGS.get(req["lang"], "French"),
         prompt=model.create_voice_clone_prompt(ref_audio=(ref, ref_sr), ref_text=params["ref_text"]),
     )
 

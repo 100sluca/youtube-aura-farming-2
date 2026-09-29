@@ -40,6 +40,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 # ---- mémoire de la machine ------------------------------------------------------------------------------------------
 
+
 def memory() -> dict[str, float]:
     """RAM totale et libre, mémoire encore réservable (RAM + fichier d'échange), en Go. Windows seulement.
     C'est la mémoire réservable qui, épuisée, fait tomber ComfyUI."""
@@ -48,19 +49,29 @@ def memory() -> dict[str, float]:
     import ctypes
 
     class Status(ctypes.Structure):
-        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
 
     s = Status()
     s.dwLength = ctypes.sizeof(Status)
     if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s)):
         return {}
     gb = 2**30
-    return {"ram_total_gb": round(s.ullTotalPhys / gb, 1), "ram_free_gb": round(s.ullAvailPhys / gb, 1),
-            "commit_total_gb": round(s.ullTotalPageFile / gb, 1), "commit_free_gb": round(s.ullAvailPageFile / gb, 1)}
+    return {
+        "ram_total_gb": round(s.ullTotalPhys / gb, 1),
+        "ram_free_gb": round(s.ullAvailPhys / gb, 1),
+        "commit_total_gb": round(s.ullTotalPageFile / gb, 1),
+        "commit_free_gb": round(s.ullAvailPageFile / gb, 1),
+    }
 
 
 def vram() -> dict[str, int]:
@@ -68,8 +79,13 @@ def vram() -> dict[str, int]:
     if shutil.which("nvidia-smi") is None:
         return {}
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW).stdout
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=_NO_WINDOW,
+        ).stdout
         used, total = (int(x) for x in out.strip().splitlines()[0].split(","))
         return {"vram_used_mb": used, "vram_total_mb": total}
     except (OSError, ValueError, IndexError, subprocess.SubprocessError):
@@ -78,9 +94,17 @@ def vram() -> dict[str, int]:
 
 # ---- signe de vie et relance demandée depuis le dashboard ------------------------------------------------------------
 
+
 def publish_status(db: Any, worker_id: str, comfy_base: str, started_at: datetime, draining: bool) -> None:
-    value = {"worker_id": worker_id, "pid": os.getpid(), "started_at": started_at.isoformat(), "draining": draining,
-             "comfy_up": comfy_up(comfy_base), **memory(), **vram()}
+    value = {
+        "worker_id": worker_id,
+        "pid": os.getpid(),
+        "started_at": started_at.isoformat(),
+        "draining": draining,
+        "comfy_up": comfy_up(comfy_base),
+        **memory(),
+        **vram(),
+    }
     db.execute(
         """insert into app_settings (key, value, updated_at) values (%s, %s, now())
            on conflict (key) do update set value = excluded.value, updated_at = now()""",
@@ -156,11 +180,14 @@ def comfy_process_running() -> bool:
     """Un Python de ComfyUI (ComfyUI\\main.py) tourne-t-il déjà ? (en train de démarrer : il n'écoute pas encore)"""
     if os.name != "nt":
         return False
-    script = ("@(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-              "Where-Object { $_.CommandLine -match 'ComfyUI[\\\\/]main\\.py' }).Count")
+    script = (
+        "@(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "Where-Object { $_.CommandLine -match 'ComfyUI[\\\\/]main\\.py' }).Count"
+    )
     try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True,
-                             timeout=60, creationflags=_NO_WINDOW).stdout
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=60, creationflags=_NO_WINDOW
+        ).stdout
         return int(out.strip() or 0) > 0
     except (OSError, ValueError, subprocess.SubprocessError):
         return False

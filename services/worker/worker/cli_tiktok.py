@@ -1,22 +1,22 @@
 """Commandes `yt2 tiktok` : publication des Shorts sur TikTok par Zernio (docs/36-publication-tiktok.md).
 
-    yt2 tiktok key CLE | -                 enregistre la clé API Zernio (chiffrée en base) ; « - » la lit sur l'entrée
-                                           standard, pour qu'elle n'apparaisse pas dans l'historique du terminal
-    yt2 tiktok accounts                    comptes TikTok connectés à Zernio
-    yt2 tiktok link <chaîne> <compte> [--off]
-                                           relie une chaîne YouTube (slug) à un compte TikTok (@nom ou id Zernio) ;
-                                           chaque Short programmé ensuite part aussi sur TikTok (--off : relié, sans
-                                           publication automatique)
-    yt2 tiktok status                      réglages, chaînes reliées, dernières publications
-    yt2 tiktok check <chaîne>              ce que TikTok autorise pour le compte relié (visibilités, interactions)
-    yt2 tiktok post <vidéo> [--now] [--draft] [--here]
-                                           publie une vidéo : au créneau YouTube s'il est à venir, sinon tout de suite
-                                           (--now : tout de suite ; --draft : dans la boîte de réception TikTok, rien de
-                                           public ; --here : dans ce terminal au lieu du worker)
-    yt2 tiktok stats [--here]              relève les statistiques TikTok des comptes (docs/39), comme chaque heure
-    yt2 tiktok backlog <chaîne> [--on|--off]
-                                           rattrapage (docs/39) : vidéos déjà sorties sur YouTube qui partiront sur
-                                           TikTok, une par créneau resté vide ; --on / --off l'active ou le coupe
+yt2 tiktok key CLE | -                 enregistre la clé API Zernio (chiffrée en base) ; « - » la lit sur l'entrée
+                                       standard, pour qu'elle n'apparaisse pas dans l'historique du terminal
+yt2 tiktok accounts                    comptes TikTok connectés à Zernio
+yt2 tiktok link <chaîne> <compte> [--off]
+                                       relie une chaîne YouTube (slug) à un compte TikTok (@nom ou id Zernio) ;
+                                       chaque Short programmé ensuite part aussi sur TikTok (--off : relié, sans
+                                       publication automatique)
+yt2 tiktok status                      réglages, chaînes reliées, dernières publications
+yt2 tiktok check <chaîne>              ce que TikTok autorise pour le compte relié (visibilités, interactions)
+yt2 tiktok post <vidéo> [--now] [--draft] [--here]
+                                       publie une vidéo : au créneau YouTube s'il est à venir, sinon tout de suite
+                                       (--now : tout de suite ; --draft : dans la boîte de réception TikTok, rien de
+                                       public ; --here : dans ce terminal au lieu du worker)
+yt2 tiktok stats [--here]              relève les statistiques TikTok des comptes (docs/39), comme chaque heure
+yt2 tiktok backlog <chaîne> [--on|--off]
+                                       rattrapage (docs/39) : vidéos déjà sorties sur YouTube qui partiront sur
+                                       TikTok, une par créneau resté vide ; --on / --off l'active ou le coupe
 """
 
 from __future__ import annotations
@@ -104,25 +104,33 @@ def tiktok_status(_: argparse.Namespace) -> None:
     cfg = load_tiktok_config(db)
     hint = db.fetch_one("select hint from app_secrets where name = 'zernio_api_key'")
     print(f"Clé Zernio : {'…' + hint['hint'] if hint else ('.env' if settings.zernio_api_key else 'absente')}")
-    print(f"Interactions : commentaires={cfg.allow_comment} duo={cfg.allow_duet} collage={cfg.allow_stitch} · "
-          f"étiquette IA={cfg.ai_label}")
+    print(
+        f"Interactions : commentaires={cfg.allow_comment} duo={cfg.allow_duet} collage={cfg.allow_stitch} · "
+        f"étiquette IA={cfg.ai_label}"
+    )
     names = {str(r["id"]): r["name"] for r in db.fetch_all("select id, name from channels")}
     for cid, ch in cfg.channels.items():
-        print(f"  {names.get(cid, cid)} → @{ch.username or ch.account_id} · auto={ch.enabled} depuis {ch.enabled_at}"
-              f" · rattrapage={ch.backlog}")
+        print(
+            f"  {names.get(cid, cid)} → @{ch.username or ch.account_id} · auto={ch.enabled} depuis {ch.enabled_at}"
+            f" · rattrapage={ch.backlog}"
+        )
     for a in db.fetch_all(
         """select a.username, a.followers, a.likes, a.fetched_at, count(p.id) as posts, coalesce(sum(p.views), 0) as views
            from tiktok_accounts a left join tiktok_posts p on p.account_id = a.id group by a.id order by a.username"""
     ):
-        print(f"  Stats @{a['username']} : {a['followers']} abonnés · {a['posts']} vidéos · {a['views']} vues · "
-              f"relevé {a['fetched_at'].astimezone(ZoneInfo('Europe/Paris')):%d/%m %H:%M}")
+        print(
+            f"  Stats @{a['username']} : {a['followers']} abonnés · {a['posts']} vidéos · {a['views']} vues · "
+            f"relevé {a['fetched_at'].astimezone(ZoneInfo('Europe/Paris')):%d/%m %H:%M}"
+        )
     for v in db.fetch_all(
         """select v.id, v.title, v.scheduled_at, v.tiktok from videos v where v.tiktok is not null
            order by coalesce(v.scheduled_at, v.updated_at) desc limit 12"""
     ):
         t = v["tiktok"] or {}
-        print(f"  {str(v['id'])[:8]} {t.get('status', '?'):<10} {t.get('url') or t.get('scheduled_for') or ''} "
-              f"{(v['title'] or '')[:50]} {('· ' + t['error']) if t.get('error') else ''}")
+        print(
+            f"  {str(v['id'])[:8]} {t.get('status', '?'):<10} {t.get('url') or t.get('scheduled_for') or ''} "
+            f"{(v['title'] or '')[:50]} {('· ' + t['error']) if t.get('error') else ''}"
+        )
 
 
 def tiktok_check(args: argparse.Namespace) -> None:
@@ -204,8 +212,10 @@ def tiktok_stats(args: argparse.Namespace) -> None:
     ):
         done = f" · {p['completion_pct']} % jusqu'au bout" if p["completion_pct"] is not None else ""
         views = "?" if p["sync_status"] == "live" else p["views"]  # tout juste sortie : Zernio n'a pas encore ses vues
-        print(f"  {views:>7} vues {p['likes']:>5} j'aime {p['comments']:>4} comm. {p['shares']:>4} part.{done}  "
-              f"{(p['title'] or '')[:50]}")
+        print(
+            f"  {views:>7} vues {p['likes']:>5} j'aime {p['comments']:>4} comm. {p['shares']:>4} part.{done}  "
+            f"{(p['title'] or '')[:50]}"
+        )
 
 
 def tiktok_backlog(args: argparse.Namespace) -> None:
@@ -229,8 +239,10 @@ def tiktok_backlog(args: argparse.Namespace) -> None:
     todo = db.fetch_all(
         "select id, title, published_at from v_tiktok_backlog where channel_id = %s order by published_at, id", (ch["id"],)
     )
-    print(f"{ch['name']} → @{link.get('username')} · rattrapage {'activé' if link.get('backlog') else 'coupé'} · "
-          f"{len(todo)} vidéo(s) à rattraper, une par créneau resté vide :")
+    print(
+        f"{ch['name']} → @{link.get('username')} · rattrapage {'activé' if link.get('backlog') else 'coupé'} · "
+        f"{len(todo)} vidéo(s) à rattraper, une par créneau resté vide :"
+    )
     for v in todo:
         day = v["published_at"].astimezone(ZoneInfo("Europe/Paris"))
         print(f"  {str(v['id'])[:8]} sortie sur YouTube le {day:%d/%m} · {(v['title'] or '')[:60]}")

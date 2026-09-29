@@ -59,34 +59,34 @@ STYLE_PRESETS: dict[str, str] = {
     # l'image générée est celle du bâtiment FINI (le chantier se fait à rebours, docs/15 §10), le style ajoutait des
     # échafaudages et des engins
     "timelapse_site": "photorealistic architectural photography, static wide shot, 24mm lens, natural daylight, high "
-                      "detail, realistic materials and scale, sharp focus, deep depth of field",
+    "detail, realistic materials and scale, sharp focus, deep depth of field",
     # Visites de luxe : photographie immobilière haut de gamme
     "luxury_realestate": "photorealistic luxury real estate photography, wide angle 20mm, eye level, bright natural "
-                         "light, high dynamic range, architectural digest style, crisp details, warm elegant palette",
+    "light, high dynamic range, architectural digest style, crisp details, warm elegant palette",
     # Maisons de rêve
     "modern_minimal": "photorealistic, architectural photography, soft daylight, clean lines, 35mm, shallow depth of field",
     "warm_wood": "photorealistic, warm oak textures, golden hour light through windows, cozy, cinematic",
     "night_led": "photorealistic, night interior, diffused LED strips, moody, high contrast, cinematic",
     # Animaux étranges : documentaire animalier
     "wildlife_doc": "wildlife documentary photography, telephoto lens, natural light, shallow depth of field, "
-                    "ultra detailed skin and fur textures, BBC Earth style, cinematic color grade",
+    "ultra detailed skin and fur textures, BBC Earth style, cinematic color grade",
     # Histoires vraies : reconstitution cinématographique
     "history_cinematic": "cinematic historical reconstruction, film still, anamorphic lens, volumetric light, "
-                         "muted color grade, period-accurate props and materials, dramatic composition",
+    "muted color grade, period-accurate props and materials, dramatic composition",
     # Minecraft : rendu du jeu avec shaders
     "minecraft": "Minecraft game render, blocky voxel world, cube characters, 16x16 pixel textures, "
-                 "soft global illumination shaders, cinematic camera, vivid colors",
+    "soft global illumination shaders, cinematic camera, vivid colors",
     # Drames (worker/drama.py, docs/35) : film d'animation, fruits, humains ou animaux (essai du 28/09, docs/31 §8)
     "pixar_fruit": "3D animated feature film still in the style of Pixar and Illumination. Stylized anthropomorphic fruit "
-                   "characters: a realistic fruit forms the whole head, with big expressive cartoon eyes, eyebrows and a "
-                   "mouth on the fruit skin, on a human body wearing clothes, with human hands. Detailed fruit skin with "
-                   "subsurface scattering, cinematic lighting, rich saturated colors, soft depth of field, highly detailed",
+    "characters: a realistic fruit forms the whole head, with big expressive cartoon eyes, eyebrows and a "
+    "mouth on the fruit skin, on a human body wearing clothes, with human hands. Detailed fruit skin with "
+    "subsurface scattering, cinematic lighting, rich saturated colors, soft depth of field, highly detailed",
     "pixar_human": "3D animated feature film still in the style of Pixar and Disney. Stylized characters with big "
-                   "expressive eyes, soft skin shading, detailed hair and fabrics, cinematic lighting, rich colors, soft "
-                   "depth of field, highly detailed",
+    "expressive eyes, soft skin shading, detailed hair and fabrics, cinematic lighting, rich colors, soft "
+    "depth of field, highly detailed",
     "dreamworks_animal": "3D animated feature film still in the style of DreamWorks (The Bad Guys, Zootopia). "
-                         "Anthropomorphic animal characters standing and wearing clothes, expressive faces, detailed fur, "
-                         "cinematic golden-hour lighting, rich colors, highly detailed",
+    "Anthropomorphic animal characters standing and wearing clothes, expressive faces, detailed fur, "
+    "cinematic golden-hour lighting, rich colors, highly detailed",
     # Clip d'un drame : l'image de départ porte déjà le style, le prompt du clip dit le film (drama.clip_prompt)
     "animation_motion": "smooth expressive character animation, cinematic lighting",
 }
@@ -126,8 +126,10 @@ def styled(prompt: str, style_preset: str | None) -> str:
 # Luca ne veut aucun texte écrit par le générateur. Ces modèles lisent le prompt avec un modèle de langue (Qwen3-VL,
 # Qwen2.5-VL, Qwen3 pour Z-Image), qui comprend une négation : on le leur dit dans le prompt. Pas aux encodeurs T5 (Wan,
 # LTX, Flux), qu'un « no subtitles » pousserait plutôt vers des sous-titres.
-NO_TEXT = ("No text anywhere in the picture: no subtitles, no captions, no letters or words, no writing on signs or "
-           "screens, no watermark, no logo.")
+NO_TEXT = (
+    "No text anywhere in the picture: no subtitles, no captions, no letters or words, no writing on signs or "
+    "screens, no watermark, no logo."
+)
 LLM_TEXT_ENCODERS = frozenset({"minimax", "qwen_image", "lumina2"})
 
 
@@ -138,15 +140,21 @@ def ignores_negative(wf: dict[str, Any]) -> bool:
     negatives = [nid for nid, n in wf.items() if isinstance(n, dict) and n.get("_meta", {}).get("title") == "NEGATIVE"]
     if not any(nid in used for nid in negatives):
         return True
-    cfgs = [n["inputs"]["cfg"] for n in wf.values()
-            if isinstance(n, dict) and isinstance(n.get("inputs", {}).get("cfg"), (int, float))]
+    cfgs = [
+        n["inputs"]["cfg"]
+        for n in wf.values()
+        if isinstance(n, dict) and isinstance(n.get("inputs", {}).get("cfg"), (int, float))
+    ]
     return bool(cfgs) and max(cfgs) <= 1.0
 
 
 def says_no_text(wf: dict[str, Any]) -> bool:
     """L'interdiction du texte doit-elle être écrite dans le prompt ? (négatif ignoré, encodeur qui comprend « no »)"""
-    encoders = {str(n["inputs"].get("type", "")) for n in wf.values()
-                if isinstance(n, dict) and "CLIPLoader" in str(n.get("class_type", "")) and "inputs" in n}
+    encoders = {
+        str(n["inputs"].get("type", ""))
+        for n in wf.values()
+        if isinstance(n, dict) and "CLIPLoader" in str(n.get("class_type", "")) and "inputs" in n
+    }
     return ignores_negative(wf) and bool(encoders & LLM_TEXT_ENCODERS)
 
 
@@ -329,8 +337,9 @@ class ComfyClient:
                 # ComfyUI mort pendant le calcul (le 28/09 : RAM épuisée au chargement de MiniMax H3) : le prompt est
                 # perdu ; on relance ComfyUI tout de suite pour que la reprise automatique du job le trouve debout
                 ensure_comfy(self.base)
-                raise RuntimeError("ComfyUI s'est arrêté pendant le calcul (mémoire saturée ?) : relancé, la tâche "
-                                   "sera reprise") from exc
+                raise RuntimeError(
+                    "ComfyUI s'est arrêté pendant le calcul (mémoire saturée ?) : relancé, la tâche sera reprise"
+                ) from exc
             if h:
                 status = h.get("status", {})
                 if status.get("status_str") == "error":
@@ -425,8 +434,18 @@ class ComfyVideo:
         self.negative = negative_for(workflow)
         self.no_text = says_no_text(self.wf)  # MiniMax H3 : sans CFG, « pas de texte » passe par le prompt
 
-    def generate(self, *, prompt, style_preset, duration_s, out_path, on_progress, dry_run=False, image_path=None,  # noqa: ANN001
-                 end_image_path=None) -> ClipInfo:
+    def generate(
+        self,
+        *,
+        prompt,
+        style_preset,
+        duration_s,
+        out_path,
+        on_progress,
+        dry_run=False,
+        image_path=None,  # noqa: ANN001
+        end_image_path=None,
+    ) -> ClipInfo:
         seed = random.randint(0, 2**31)
         # Première + dernière image : toujours la longueur complète (le clip doit atteindre l'image finale,
         # le montage l'accélère au besoin, docs/15)
@@ -439,8 +458,15 @@ class ComfyVideo:
         image_name = self.client.upload_image(image_path) if (self.image_to_video and image_path) else None
         end_name = self.client.upload_image(end_image_path) if (self.first_last and end_image_path) else None
         wf = patch_workflow(
-            self.wf, prompt=full_prompt(prompt, style_preset, self.no_text), negative=self.negative, seed=seed,
-            width=self.width, height=self.height, frames=frames, image_name=image_name, prefix=f"yt2/{out_path.stem}",
+            self.wf,
+            prompt=full_prompt(prompt, style_preset, self.no_text),
+            negative=self.negative,
+            seed=seed,
+            width=self.width,
+            height=self.height,
+            frames=frames,
+            image_name=image_name,
+            prefix=f"yt2/{out_path.stem}",
             end_image_name=end_name,
         )
         entry = self.client.wait(self.client.submit(wf), on_progress)
@@ -462,8 +488,16 @@ class ComfyImage:
         self.no_text = says_no_text(self.wf)  # Qwen-Image 2.1, Z-Image : CFG 1, « pas de texte » passe par le prompt
         self.references = supports_references(self.wf)  # fiches des personnages d'un drame en références (docs/35)
 
-    def generate(self, *, prompt: str, style_preset: str | None, out_path: Path, seed: int, dry_run: bool = False,
-                 refs: list[Path] | None = None) -> Path:
+    def generate(
+        self,
+        *,
+        prompt: str,
+        style_preset: str | None,
+        out_path: Path,
+        seed: int,
+        dry_run: bool = False,
+        refs: list[Path] | None = None,
+    ) -> Path:
         """`refs` : images de référence (fiches des personnages), citées <image1>… dans le prompt ; ignorées par un
         workflow qui n'en accepte pas (l'appelant décrit alors les personnages dans le prompt, self.references)."""
         if dry_run:
@@ -471,8 +505,13 @@ class ComfyImage:
             return out_path
         negative = ANIMATED_NEGATIVE if style_preset in ANIMATED_STYLES else self.negative
         wf = patch_workflow(
-            self.wf, prompt=full_prompt(prompt, style_preset, self.no_text), negative=negative, seed=seed,
-            width=self.width, height=self.height, prefix=f"yt2/{out_path.stem}",
+            self.wf,
+            prompt=full_prompt(prompt, style_preset, self.no_text),
+            negative=negative,
+            seed=seed,
+            width=self.width,
+            height=self.height,
+            prefix=f"yt2/{out_path.stem}",
         )
         if refs and self.references:
             add_references(wf, [self.client.upload_image(p) for p in refs])
@@ -497,8 +536,17 @@ class ComfyImageEdit:
     def _load(self, name: str) -> dict[str, Any]:
         return json.loads(workflow_path(self.settings.comfy_workflow_dir, name).read_text(encoding="utf-8"))
 
-    def edit(self, *, image_path: Path, instruction: str, description: str, style_preset: str | None, out_path: Path,
-             seed: int, dry_run: bool = False) -> Path:
+    def edit(
+        self,
+        *,
+        image_path: Path,
+        instruction: str,
+        description: str,
+        style_preset: str | None,
+        out_path: Path,
+        seed: int,
+        dry_run: bool = False,
+    ) -> Path:
         if dry_run:
             out_path.write_bytes(b"")
             return out_path
@@ -507,16 +555,32 @@ class ComfyImageEdit:
             self._freed = True
         name = self.client.upload_image(image_path)
         try:
-            wf = patch_workflow(self._load(self.settings.comfy_edit_workflow), prompt=instruction, negative="", seed=seed,
-                                width=self.width, height=self.height, image_name=name, prefix=f"yt2/{out_path.stem}")
+            wf = patch_workflow(
+                self._load(self.settings.comfy_edit_workflow),
+                prompt=instruction,
+                negative="",
+                seed=seed,
+                width=self.width,
+                height=self.height,
+                image_name=name,
+                prefix=f"yt2/{out_path.stem}",
+            )
             entry = self.client.wait(self.client.submit(wf), lambda _p: None)
         except WorkflowError as exc:
             fb = self.settings.comfy_edit_fallback
             if not fb or fb == self.settings.comfy_edit_workflow:
                 raise
             self.fallback_reason, self.name = str(exc)[:300], f"comfy_{fb}"
-            wf = patch_workflow(self._load(fb), prompt=styled(description, style_preset), negative=negative_for(fb), seed=seed,
-                                width=self.width, height=self.height, image_name=name, prefix=f"yt2/{out_path.stem}")
+            wf = patch_workflow(
+                self._load(fb),
+                prompt=styled(description, style_preset),
+                negative=negative_for(fb),
+                seed=seed,
+                width=self.width,
+                height=self.height,
+                image_name=name,
+                prefix=f"yt2/{out_path.stem}",
+            )
             entry = self.client.wait(self.client.submit(wf), lambda _p: None)
         return self.client.download_output(entry, output_node_id(wf), out_path)
 
@@ -530,8 +594,18 @@ class CloudVideo:
     def __init__(self, settings: Settings, name: str) -> None:
         self.name = name
 
-    def generate(self, *, prompt, style_preset, duration_s, out_path, on_progress, dry_run=False, image_path=None,  # noqa: ANN001
-                 end_image_path=None) -> ClipInfo:
+    def generate(
+        self,
+        *,
+        prompt,
+        style_preset,
+        duration_s,
+        out_path,
+        on_progress,
+        dry_run=False,
+        image_path=None,  # noqa: ANN001
+        end_image_path=None,
+    ) -> ClipInfo:
         if dry_run:
             out_path.write_bytes(b"")
             return ClipInfo(duration_s, 1080, 1920)

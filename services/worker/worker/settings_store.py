@@ -57,13 +57,22 @@ def parse_chain(raw: Any) -> list[ChainEntry]:
             out.append(entry)
     return out[:CHAIN_MAX]
 
+
 # Modèles proposés par défaut dans le dashboard (liste vérifiée sur ai.google.dev le 2026-09-21 ; le bouton
 # « Charger depuis Google » complète avec ce que la clé voit réellement). Le premier de chaque liste est le défaut.
 PRESET_MODELS: dict[str, list[str]] = {
     "gemini": [
-        "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite",
-        "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-3-flash-preview",
-        "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-pro",
     ],
     "anthropic": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
     "mistral": ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"],
@@ -119,10 +128,17 @@ def from_env(settings: Settings) -> LlmConfig:
     return LlmConfig(
         provider=settings.llm_provider,
         fallbacks=settings.llm_fallback_list,
-        models={"gemini": settings.gemini_model, "anthropic": settings.anthropic_model,
-                "mistral": settings.mistral_model, "ollama": settings.ollama_model},
-        api_keys={"gemini": settings.gemini_api_key, "anthropic": settings.anthropic_api_key,
-                  "mistral": settings.mistral_api_key},
+        models={
+            "gemini": settings.gemini_model,
+            "anthropic": settings.anthropic_model,
+            "mistral": settings.mistral_model,
+            "ollama": settings.ollama_model,
+        },
+        api_keys={
+            "gemini": settings.gemini_api_key,
+            "anthropic": settings.anthropic_api_key,
+            "mistral": settings.mistral_api_key,
+        },
         source="env",
     )
 

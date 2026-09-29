@@ -120,7 +120,9 @@ class RenderPlan:
         return round(sum(self.scene_durations) - sum(self.overlaps), 3)
 
 
-def scene_titles(script: ScriptV1, lang: str, starts: Sequence[float], durations: Sequence[float]) -> list[tuple[float, float, str]]:
+def scene_titles(
+    script: ScriptV1, lang: str, starts: Sequence[float], durations: Sequence[float]
+) -> list[tuple[float, float, str]]:
     """Texte à l'écran de chaque scène ; il s'arrête quand la scène suivante commence (pendant une transition, deux
     titres superposés devenaient illisibles : « BIB SUITE · VUE SUR LE PIC INE », essai du 25/09)."""
     titles = []
@@ -132,7 +134,9 @@ def scene_titles(script: ScriptV1, lang: str, starts: Sequence[float], durations
     return titles
 
 
-def plan_from(script: ScriptV1, lang: str, timeline: NarrationTimeline | None) -> tuple[list[float], list[list[WordTiming]], list[tuple[float, float, str]]]:
+def plan_from(
+    script: ScriptV1, lang: str, timeline: NarrationTimeline | None
+) -> tuple[list[float], list[list[WordTiming]], list[tuple[float, float, str]]]:
     """Durées, mots par scène et titres de scène, depuis la timeline (ou le script en format B). Les nombres s'affichent
     en chiffres, même dits en lettres par une narration d'avant la règle (worker/numbers.py : « huit » « cent »
     « cinquante-deux » → « 852 »)."""
@@ -149,8 +153,16 @@ def plan_from(script: ScriptV1, lang: str, timeline: NarrationTimeline | None) -
     return durations, words, scene_titles(script, lang, starts, durations)
 
 
-def _clip_chain(i: int, d: float, native: float | None, fit: str, interpolate: bool, max_speedup: float = MAX_SPEEDUP,
-                trails: bool = False, offset: float = 0.0) -> str:
+def _clip_chain(
+    i: int,
+    d: float,
+    native: float | None,
+    fit: str,
+    interpolate: bool,
+    max_speedup: float = MAX_SPEEDUP,
+    trails: bool = False,
+    offset: float = 0.0,
+) -> str:
     """Filtre d'un clip : début coupé (`offset`, drame calé sur la bouche : worker/lipsync.py), cadrage 9:16, calage sur
     la durée de la scène (ralenti, accéléré ou image tenue) ; un clip accéléré d'au moins ×1,5 reçoit les traînées du
     time-lapse si la recette le demande."""
@@ -195,7 +207,9 @@ def music_chain(plan: RenderPlan, total: float, *, ducked: bool) -> str:
     duck = duck_expression(plan.speech, plan.duck_db) if ducked else None
     if duck:
         steps.append(f"asetnsamples=n=256:p=0,volume='{duck}':eval=frame")
-    steps.append(f"atrim=0:{total:.3f},afade=t=in:st=0:d={FADE_IN_S},afade=t=out:st={max(0.0, total - FADE_OUT_S):.3f}:d={FADE_OUT_S}")
+    steps.append(
+        f"atrim=0:{total:.3f},afade=t=in:st=0:d={FADE_IN_S},afade=t=out:st={max(0.0, total - FADE_OUT_S):.3f}:d={FADE_OUT_S}"
+    )
     return ",".join(steps)
 
 
@@ -237,8 +251,16 @@ def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subt
     fits = plan.fit or ["trim"] * n
     offsets = plan.clip_offsets or [0.0] * n
     parts = [
-        _clip_chain(i, d, native, fits[i] if i < len(fits) else "trim", plan.interpolate, plan.max_speedup, plan.trails,
-                    offsets[i] if i < len(offsets) else 0.0)
+        _clip_chain(
+            i,
+            d,
+            native,
+            fits[i] if i < len(fits) else "trim",
+            plan.interpolate,
+            plan.max_speedup,
+            plan.trails,
+            offsets[i] if i < len(offsets) else 0.0,
+        )
         for i, (d, native) in enumerate(zip(plan.scene_durations, plan.clip_durations, strict=True))
     ]
     ov, starts = plan.overlaps, plan.starts
@@ -269,7 +291,18 @@ def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subt
     sound, audio = audio_filters(plan, nar_idx, mus_idx, sfx_idx)
     cmd += ["-filter_complex", ";".join(parts + sound), "-map", "[vout]"]
     cmd += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"] if audio else ["-an"]
-    cmd += [*encoder_args, "-pix_fmt", "yuv420p", "-r", str(FPS), "-t", f"{plan.total_s:.3f}", "-movflags", "+faststart", str(out)]
+    cmd += [
+        *encoder_args,
+        "-pix_fmt",
+        "yuv420p",
+        "-r",
+        str(FPS),
+        "-t",
+        f"{plan.total_s:.3f}",
+        "-movflags",
+        "+faststart",
+        str(out),
+    ]
     return cmd
 
 
@@ -280,8 +313,11 @@ def sound_command(plan: RenderPlan, video: Path, out: Path) -> list[str]:
     args, nar_idx, mus_idx, sfx_idx = _voice_music_inputs(plan, 1)
     cmd += args + _sfx_inputs(plan)
     sound, audio = audio_filters(plan, nar_idx, mus_idx, sfx_idx)
-    cmd += (["-filter_complex", ";".join(sound), "-map", "0:v", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
-            if audio else ["-map", "0:v", "-an"])
+    cmd += (
+        ["-filter_complex", ";".join(sound), "-map", "0:v", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
+        if audio
+        else ["-map", "0:v", "-an"]
+    )
     cmd += ["-c:v", "copy", "-t", f"{plan.total_s:.3f}", "-movflags", "+faststart", str(out)]
     return cmd
 
@@ -336,7 +372,9 @@ def render(plan: RenderPlan, out: Path, *, fonts: FontRegistry, encoder: str = "
     workdir = out.parent
     flt = None
     if plan.profile and (any(plan.words_by_scene) or plan.titles or plan.ticks):
-        ass = build_ass(plan.words_by_scene, plan.profile, plan.titles, fonts=fonts, ticks=plan.ticks, title_style=plan.title_style)
+        ass = build_ass(
+            plan.words_by_scene, plan.profile, plan.titles, fonts=fonts, ticks=plan.ticks, title_style=plan.title_style
+        )
         flt = write_subtitles(workdir, ass, plan.profile, fonts, plan.title_style)
     run(build_command(plan, out, video_encode_args(encoder), flt), cwd=workdir)
 
@@ -358,15 +396,43 @@ def fix_level(final: Path) -> float:
     gain = level_fix_db(measure_loudness(final).lufs)
     if gain:
         fixed = final.with_name(f"{final.stem}.niveau{final.suffix}")
-        run(["ffmpeg", "-y", "-v", "error", "-i", str(final), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-             "-af", f"volume={gain:.2f}dB,alimiter=limit=0.891:level=false:latency=true", "-c:a", "aac", "-b:a", "192k",
-             "-movflags", "+faststart", str(fixed)])
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                str(final),
+                "-map",
+                "0:v",
+                "-map",
+                "0:a",
+                "-c:v",
+                "copy",
+                "-af",
+                f"volume={gain:.2f}dB,alimiter=limit=0.891:level=false:latency=true",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                str(fixed),
+            ]
+        )
         fixed.replace(final)
     return gain
 
 
 def apply_template(
-    plan: RenderPlan, template: MontageTemplate, recipe: str, *, hook: str, workdir: Path, fonts: FontRegistry,
+    plan: RenderPlan,
+    template: MontageTemplate,
+    recipe: str,
+    *,
+    hook: str,
+    workdir: Path,
+    fonts: FontRegistry,
     hook_display: HookDisplay | None = None,
 ) -> dict[str, Any]:
     """Habillage du modèle de montage (onglet Montage, worker/montage.py), après apply_recipe : style et position des
@@ -395,14 +461,23 @@ def apply_template(
 
 
 def apply_audio(
-    plan: RenderPlan, audio: AudioLayer, track: Track | None, *, narration_lufs: float | None = None,
+    plan: RenderPlan,
+    audio: AudioLayer,
+    track: Track | None,
+    *,
+    narration_lufs: float | None = None,
     words: Sequence[WordTiming] = (),
 ) -> dict[str, Any]:
     """Son du modèle de montage (onglet Montage → Son, worker/music.py) : piste et départ, gains de la voix, de la musique
     et des bruitages, passages parlés où la musique baisse. Renvoie ce qui a été retenu (videos.audio_mix)."""
     with_voice = plan.narration is not None
-    levels = mix_levels(audio, with_voice=with_voice, track_lufs=track.lufs if track else None,
-                        track_gain_db=track.gain_db if track else 0.0, narration_lufs=narration_lufs)
+    levels = mix_levels(
+        audio,
+        with_voice=with_voice,
+        track_lufs=track.lufs if track else None,
+        track_gain_db=track.gain_db if track else 0.0,
+        narration_lufs=narration_lufs,
+    )
     plan.voice_gain_db, plan.sfx_gain_db = levels.voice_gain_db, levels.sfx_gain_db
     plan.music = track.path if track else None
     plan.music_start_s = music_start(track, plan.total_s) if track else 0.0
@@ -436,8 +511,7 @@ def apply_recipe(plan: RenderPlan, script: ScriptV1, lang: str, recipe: str, *, 
     report: dict[str, Any] = {}
     tags = [parse_tags(s.sfx) for s in script.scenes]
     effective = list(zip((t for t, _ in plan.transitions), [*plan.overlaps, 0.0], strict=True))
-    plan.sfx = plan_cues(tags, plan.starts, plan.scene_durations, effective,
-                         lambda tag, k: pick_sfx(sfx_dir, tag, k), key=key)
+    plan.sfx = plan_cues(tags, plan.starts, plan.scene_durations, effective, lambda tag, k: pick_sfx(sfx_dir, tag, k), key=key)
     moves = any(k in WHOOSH_TRANSITIONS for k, _ in plan.transitions)
     wanted = {t for ts in tags for t in ts} | ({"whoosh"} if moves else set())
     missing = sorted(t for t in wanted if not pick_sfx(sfx_dir, t, key))
@@ -524,18 +598,27 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool
         clip_offsets=heads,
         words_by_scene=words,
         titles=titles,
-        narration=dialogue_track or (settings.data_dir / "videos" / str(vid) / "narration.wav" if v["format"] == "A_voiceover" else None),
+        narration=dialogue_track
+        or (settings.data_dir / "videos" / str(vid) / "narration.wav" if v["format"] == "A_voiceover" else None),
     )
     extras: dict[str, Any] = {}
     if is_visual(recipe):
         extras = apply_recipe(plan, script, v["lang"], recipe, sfx_dir=settings.effective_sfx_dir, key=str(vid))
         # Gemini en ligne rend 10 s pour une étape de 1,5 s : sans plafond, sinon la fin (l'image suivante) est coupée
-        plan.fit = ["fill" if f == "speed" and c.get("provider") == "gemini_web" else f for f, c in zip(plan.fit, clips, strict=False)]
+        plan.fit = [
+            "fill" if f == "speed" and c.get("provider") == "gemini_web" else f for f, c in zip(plan.fit, clips, strict=False)
+        ]
     return VideoMontage(plan, script, v["lang"], recipe, timeline, v["music_track"], extras, retouch, auto_subtitles, lipsync)
 
 
 def choose_music(
-    db: Any, settings: Any, template: MontageTemplate, recipe: str, script: ScriptV1, pid: Any, current: str | None,
+    db: Any,
+    settings: Any,
+    template: MontageTemplate,
+    recipe: str,
+    script: ScriptV1,
+    pid: Any,
+    current: str | None,
     forced: MusicChoice | None = None,
 ) -> tuple[Track | None, dict[str, Any]]:
     """Piste de la vidéo et pourquoi : celle du montage précédent si elle est toujours là et active (« Refaire le
@@ -562,8 +645,15 @@ def choose_music(
     if not path:
         return None, {"reason": f"bibliothèque vide ({settings.effective_music_library_dir})"}
     loud = measure_loudness(path) if not settings.dry_run else None
-    old = Track(id=f"{path.parent.name}/{path.stem}", file=path.name, title=path.stem, formats=(recipe,), path=path,
-                lufs=loud.lufs if loud else None, duration_s=loud.duration_s if loud else None)
+    old = Track(
+        id=f"{path.parent.name}/{path.stem}",
+        file=path.name,
+        title=path.stem,
+        formats=(recipe,),
+        path=path,
+        lufs=loud.lufs if loud else None,
+        duration_s=loud.duration_s if loud else None,
+    )
     return old, {"reason": "ancienne bibliothèque générée (DATA_DIR/music)"}
 
 
@@ -595,21 +685,36 @@ class AssembleStep(Step):
             ctx.log("assemble.retouche", parts=retouch.parts())
         if m.lipsync is not None and plan.narration:  # voix calées sur les bouches : la piste sert d'ici comme narration
             ctx.log("assemble.levres", **m.lipsync)
-            ctx.db.add_asset(video_id=vid, kind="narration", local_path=str(plan.narration),
-                             duration_s=timeline.duration_s if timeline else None, meta={"provider": "lipsync", **m.lipsync})
+            ctx.db.add_asset(
+                video_id=vid,
+                kind="narration",
+                local_path=str(plan.narration),
+                duration_s=timeline.duration_s if timeline else None,
+                meta={"provider": "lipsync", **m.lipsync},
+            )
         # Son (onglet Montage → Son) : piste de la bibliothèque, voix et musique ramenées au même niveau puis réglées
         fmt = montage_format(recipe)  # un drame se monte comme un récit (onglet Montage : récit, chantier, visite)
         track, why = choose_music(ctx.db, ctx.settings, template, fmt, script, pid, m.music_track, forced=retouch.music)
         nar_lufs = narration_loudness(plan, ctx.settings.dry_run)
-        audio_mix = {**apply_audio(plan, retouch.audio_layer(template.audio), track, narration_lufs=nar_lufs,
-                                   words=timeline.words if timeline else ()),
-                     "title": track.title if track else None, **why, "template": template_name,
-                     **({"retouch": retouch.parts()} if retouch else {})}
+        audio_mix = {
+            **apply_audio(
+                plan,
+                retouch.audio_layer(template.audio),
+                track,
+                narration_lufs=nar_lufs,
+                words=timeline.words if timeline else (),
+            ),
+            "title": track.title if track else None,
+            **why,
+            "template": template_name,
+            **({"retouch": retouch.parts()} if retouch else {}),
+        }
         if not track and retouch.music is None:  # aussi pour les récits : une ambiance sans piste se voit dans le journal
             ctx.log("assemble.sans_musique", level="warn", mood=script.music_mood, **why)
         auto_hook = hook_text(script, m.lang)
-        dressing = apply_template(plan, template, fmt, hook=retouch.hook(auto_hook), workdir=vdir, fonts=fonts,
-                                  hook_display=retouch.hook_display)
+        dressing = apply_template(
+            plan, template, fmt, hook=retouch.hook(auto_hook), workdir=vdir, fonts=fonts, hook_display=retouch.hook_display
+        )
         if dressing:
             ctx.log("assemble.habillage_incomplet", level="warn", template=template_name, **dressing)
         extras.update(dressing)
@@ -619,23 +724,56 @@ class AssembleStep(Step):
                 p.write_bytes(b"")
         else:
             (vdir / "subtitles.ass").unlink(missing_ok=True)  # d'un montage précédent : ne pas l'enregistrer à tort
-            ctx.progress(10, f"Montage · modèle « {template_name} »" + (f" · musique « {track.title} »" if track else "")
-                         + (f" · {len(plan.sfx)} bruitages" if plan.sfx else "") + (" · retouche" if retouch else ""))
+            ctx.progress(
+                10,
+                f"Montage · modèle « {template_name} »"
+                + (f" · musique « {track.title} »" if track else "")
+                + (f" · {len(plan.sfx)} bruitages" if plan.sfx else "")
+                + (" · retouche" if retouch else ""),
+            )
             render(plan, final, fonts=fonts, encoder=ctx.settings.video_encoder)
             if gain := fix_level(final):  # niveau final hors de −14 ± 0,5 LUFS : corrigé (docs/34 §5)
                 audio_mix["level_fix_db"] = gain
                 ctx.log("assemble.niveau_corrige", gain_db=gain)
             ctx.progress(70, "Preview + poster")
-            run(["ffmpeg", "-y", "-v", "error", "-i", str(final), "-vf", "scale=480:-2", "-c:v", "libx264", "-crf", "28",
-                 "-preset", "veryfast", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(preview)])
+            run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(final),
+                    "-vf",
+                    "scale=480:-2",
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    "28",
+                    "-preset",
+                    "veryfast",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "96k",
+                    "-movflags",
+                    "+faststart",
+                    str(preview),
+                ]
+            )
             run(["ffmpeg", "-y", "-v", "error", "-ss", "0.5", "-i", str(final), "-frames:v", "1", "-q:v", "3", str(poster)])
 
         ctx.progress(85, "Envoi de l'aperçu")
         preview_path = upload_preview(ctx.settings, preview, f"{vid}/preview.mp4", "video/mp4")
         poster_path = upload_preview(ctx.settings, poster, f"{vid}/poster.jpg", "image/jpeg")
         final_id = ctx.db.add_asset(
-            video_id=vid, kind="final", local_path=str(final), width=W, height=H,
-            duration_s=plan.total_s, bytes=final.stat().st_size,
+            video_id=vid,
+            kind="final",
+            local_path=str(final),
+            width=W,
+            height=H,
+            duration_s=plan.total_s,
+            bytes=final.stat().st_size,
         )
         preview_id = ctx.db.add_asset(
             video_id=vid, kind="preview", local_path=str(preview), storage_bucket="previews", storage_path=preview_path
@@ -644,14 +782,18 @@ class AssembleStep(Step):
             video_id=vid, kind="poster", local_path=str(poster), storage_bucket="previews", storage_path=poster_path
         )
         if (vdir / "subtitles.ass").exists():
-            ctx.db.add_asset(video_id=vid, kind="subtitles", local_path=str(vdir / "subtitles.ass"), meta={"template": template_name})
+            ctx.db.add_asset(
+                video_id=vid, kind="subtitles", local_path=str(vdir / "subtitles.ass"), meta={"template": template_name}
+            )
         ctx.db.execute(
             "update videos set final_asset_id = %s, preview_asset_id = %s, poster_asset_id = %s, duration_s = %s where id = %s",
             (final_id, preview_id, poster_id, plan.total_s, vid),
         )
         try:  # musique de la vidéo, pour les statistiques et pour qu'un nouveau montage la reprenne (migration 0018)
-            ctx.db.execute("update videos set music_track = %s, audio_mix = %s where id = %s",
-                           (track.id if track else None, Jsonb(audio_mix), vid))
+            ctx.db.execute(
+                "update videos set music_track = %s, audio_mix = %s where id = %s",
+                (track.id if track else None, Jsonb(audio_mix), vid),
+            )
         except Exception as exc:  # noqa: BLE001
             ctx.log("assemble.musique_non_enregistree", level="warn", error=str(exc)[:200])
         return {

@@ -10,8 +10,11 @@ from worker.timeline import LEAD_IN, TAIL, SceneSpeech, estimate_speech_s, plan_
 
 def test_plan_timeline_stretches_long_scenes_and_places_words():
     tl = plan_timeline(
-        [SceneSpeech(0, 5.0, "Une phrase courte.", 2.0), SceneSpeech(1, 5.0, "Une très longue phrase qui déborde.", 6.0),
-         SceneSpeech(2, 5.0, "", None)],
+        [
+            SceneSpeech(0, 5.0, "Une phrase courte.", 2.0),
+            SceneSpeech(1, 5.0, "Une très longue phrase qui déborde.", 6.0),
+            SceneSpeech(2, 5.0, "", None),
+        ],
         "fr",
     )
     assert [s.duration for s in tl.scenes] == [5.0, pytest.approx(LEAD_IN + 6.0 + TAIL), 5.0]
@@ -25,15 +28,21 @@ def test_plan_timeline_stretches_long_scenes_and_places_words():
 def test_estimate_speech():
     assert estimate_speech_s("") is None
     # 3 mots par seconde (voix mesurée à 3,2 le 28/09, docs/24)
-    assert estimate_speech_s("un deux trois quatre cinq six sept huit neuf dix onze douze treize quatorze quinze") == pytest.approx(5.0)
+    assert estimate_speech_s(
+        "un deux trois quatre cinq six sept huit neuf dix onze douze treize quatorze quinze"
+    ) == pytest.approx(5.0)
 
 
 def _script() -> ScriptV1:
-    return ScriptV1.model_validate({
-        "scenes": [{"index": i, "duration_s": 5, "visual_prompt": "x", "on_screen_text": {"fr": "Titre"} if i == 1 else {}}
-                   for i in range(4)],
-        "metadata": {"fr": {"title": "t", "description": "d"}},
-    })
+    return ScriptV1.model_validate(
+        {
+            "scenes": [
+                {"index": i, "duration_s": 5, "visual_prompt": "x", "on_screen_text": {"fr": "Titre"} if i == 1 else {}}
+                for i in range(4)
+            ],
+            "metadata": {"fr": {"title": "t", "description": "d"}},
+        }
+    )
 
 
 def test_plan_from_uses_timeline_and_places_titles():
@@ -60,8 +69,15 @@ def test_build_command_stretches_short_clips_and_holds_last_frame():
 
 
 def test_build_command_ducks_music_under_narration_and_burns_subtitles():
-    plan = _plan(narration=Path("narration.wav"), music=Path("m.mp3"), music_gain_db=-12.5, voice_gain_db=0.8, duck_db=4.0,
-                 speech=[(0.4, 3.2), (4.1, 9.0)], profile=BUILTIN_PROFILES["impact"])
+    plan = _plan(
+        narration=Path("narration.wav"),
+        music=Path("m.mp3"),
+        music_gain_db=-12.5,
+        voice_gain_db=0.8,
+        duck_db=4.0,
+        speech=[(0.4, 3.2), (4.1, 9.0)],
+        profile=BUILTIN_PROFILES["impact"],
+    )
     cmd = build_command(plan, Path("out.mp4"), ["-c:v", "h264_nvenc"], "subtitles=subtitles.ass:fontsdir=fonts")
     graph = cmd[cmd.index("-filter_complex") + 1]
     assert cmd[cmd.index("-stream_loop") + 3] == "m.mp3"  # musique en boucle

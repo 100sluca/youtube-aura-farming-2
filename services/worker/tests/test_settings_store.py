@@ -57,12 +57,24 @@ def test_db_settings_and_secrets_override_env():
 
 
 def test_generation_config_db_overrides_env():
-    s = SimpleNamespace(comfy_image_workflow="qwen_image_21", video_provider="comfy_wan22_i2v_4step", storyboard_candidates=2,
-                        kokoro_voice_fr="ff_siwis", kokoro_voice_en="af_heart")
+    s = SimpleNamespace(
+        comfy_image_workflow="qwen_image_21",
+        video_provider="comfy_wan22_i2v_4step",
+        storyboard_candidates=2,
+        kokoro_voice_fr="ff_siwis",
+        kokoro_voice_en="af_heart",
+    )
     env = load_generation_config(s, None)
     assert env.source == "env" and env.image_workflow == "qwen_image_21" and env.video_provider == "comfy_wan22_i2v_4step"
-    db = FakeDb({"image_workflow": "zimage_turbo", "video_workflow": "comfy_wan22_i2v_20step", "storyboard_candidates": 3,
-                 "voices": {"en": "am_adam", "fr": ""}}, [])
+    db = FakeDb(
+        {
+            "image_workflow": "zimage_turbo",
+            "video_workflow": "comfy_wan22_i2v_20step",
+            "storyboard_candidates": 3,
+            "voices": {"en": "am_adam", "fr": ""},
+        },
+        [],
+    )
     cfg = load_generation_config(s, db, use_cache=False)
     assert cfg.source == "db" and cfg.image_workflow == "zimage_turbo" and cfg.video_workflow == "wan22_i2v_20step"
     assert cfg.video_provider == "comfy_wan22_i2v_20step" and cfg.storyboard_candidates == 3

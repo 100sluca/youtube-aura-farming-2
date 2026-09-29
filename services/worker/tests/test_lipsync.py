@@ -22,15 +22,45 @@ def _words(spec: list[tuple[str, float, float]]) -> tuple[dict, ...]:
 
 
 # Ce que Whisper et le détecteur de voix ont donné sur le clip de la scène 1 (le premier mot part de 0 s)
-CLIP = Heard(_words([("mon", 0.0, 0.66), ("fils", 0.66, 1.04), ("se", 1.04, 1.3), ("marie", 1.3, 1.64), ("demain", 1.64, 2.6),
-                     ("et", 3.3, 3.46), ("il", 3.46, 3.6), ("me", 3.6, 3.74), ("veut", 3.74, 3.98), ("en", 3.98, 4.1),
-                     ("servante.", 4.1, 4.82)]),
-             ((0.51, 2.69), (3.27, 4.96)), 0.95)
+CLIP = Heard(
+    _words(
+        [
+            ("mon", 0.0, 0.66),
+            ("fils", 0.66, 1.04),
+            ("se", 1.04, 1.3),
+            ("marie", 1.3, 1.64),
+            ("demain", 1.64, 2.6),
+            ("et", 3.3, 3.46),
+            ("il", 3.46, 3.6),
+            ("me", 3.6, 3.74),
+            ("veut", 3.74, 3.98),
+            ("en", 3.98, 4.1),
+            ("servante.", 4.1, 4.82),
+        ]
+    ),
+    ((0.51, 2.69), (3.27, 4.96)),
+    0.95,
+)
 # La voix de synthèse : plus rapide, une pause plus courte après « demain… »
-TTS = Heard(_words([("Mon", 0.0, 0.22), ("fils", 0.22, 0.5), ("se", 0.5, 0.62), ("marie", 0.62, 0.95), ("demain…", 0.95, 1.45),
-                    ("et", 1.75, 1.86), ("il", 1.86, 1.98), ("me", 1.98, 2.1), ("veut", 2.1, 2.35), ("en", 2.35, 2.47),
-                    ("servante.", 2.47, 3.3)]),
-            ((0.02, 1.48), (1.72, 3.3)), 1.0)
+TTS = Heard(
+    _words(
+        [
+            ("Mon", 0.0, 0.22),
+            ("fils", 0.22, 0.5),
+            ("se", 0.5, 0.62),
+            ("marie", 0.62, 0.95),
+            ("demain…", 0.95, 1.45),
+            ("et", 1.75, 1.86),
+            ("il", 1.86, 1.98),
+            ("me", 1.98, 2.1),
+            ("veut", 2.1, 2.35),
+            ("en", 2.35, 2.47),
+            ("servante.", 2.47, 3.3),
+        ]
+    ),
+    ((0.02, 1.48), (1.72, 3.3)),
+    1.0,
+)
 
 
 def test_the_mouth_starts_where_the_voice_detector_hears_it():
@@ -56,7 +86,9 @@ def test_each_phrase_of_the_line_is_laid_on_the_mouth_that_says_it():
     assert second.factor == pytest.approx(1.07, abs=0.01)
     assert plan.duration == pytest.approx(second.end + lipsync.TAIL_S, abs=0.002)
     words = dict((w, (a, b)) for w, a, b in plan.words)
-    assert words["Mon"][0] == pytest.approx(0.35) and words["et"][0] == pytest.approx(second.at, abs=0.05)  # sous-titres sur la voix calée
+    assert words["Mon"][0] == pytest.approx(0.35) and words["et"][0] == pytest.approx(
+        second.at, abs=0.05
+    )  # sous-titres sur la voix calée
 
 
 def test_a_clip_that_does_not_say_the_line_uses_whoever_speaks_or_the_old_pose():
@@ -72,8 +104,12 @@ def test_a_long_silence_before_the_mouth_opens_is_cut_from_the_clip():
     late = Heard(_words([(w["w"], w["start"] + 2.5, w["end"] + 2.5) for w in CLIP.words[:5]]), ((3.0, 5.1),), 0.9)
     plan = plan_scene("Mon fils se marie demain…", "fr", late, Heard(TTS.words[:5], ((0.02, 1.48),), 1.0), 5.17, 1.5)
     assert plan.head == lipsync.HEAD_MAX and plan.pieces[0].at == pytest.approx(3.0 - lipsync.HEAD_MAX)
-    cmd = build_command(RenderPlan(clips=[Path("c0.mp4")], clip_durations=[5.17], scene_durations=[plan.duration],
-                                   clip_offsets=[plan.head]), Path("o.mp4"), [], None)
+    cmd = build_command(
+        RenderPlan(clips=[Path("c0.mp4")], clip_durations=[5.17], scene_durations=[plan.duration], clip_offsets=[plan.head]),
+        Path("o.mp4"),
+        [],
+        None,
+    )
     graph = cmd[cmd.index("-filter_complex") + 1]
     assert graph.startswith("[0:v]trim=start=2.000,setpts=PTS-STARTPTS,scale=1080:1920")
 
@@ -101,8 +137,12 @@ def test_real_render_starts_the_clip_later(tmp_path):
     out = tmp_path / "o.mp4"
     plan = RenderPlan(clips=[clip], clip_durations=[5.0], scene_durations=[2.0], clip_offsets=[1.5])
     subprocess.run(build_command(plan, out, ["-c:v", "libx264", "-preset", "ultrafast"], None), check=True, cwd=tmp_path)
-    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
-                           capture_output=True, text=True, check=True)
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert float(probe.stdout) == pytest.approx(2.0, abs=0.1)
 
 
@@ -127,7 +167,9 @@ def test_the_last_sync_is_reused_without_recomputing(tmp_path):
     (vdir / "narration.wav").write_bytes(b"RIFFvoix")
     tts = NarrationTimeline(lang="fr", scenes=[SceneTiming(index=0, start=0, duration=3.0, speech_start=0.15, speech_end=2.0)])
     stamp = lipsync._stamp(vdir / "narration.wav")
-    (vdir / "lines" / "lines.json").write_text(json.dumps({"narration": stamp, "tts_timeline": tts.model_dump()}), encoding="utf-8")
+    (vdir / "lines" / "lines.json").write_text(
+        json.dumps({"narration": stamp, "tts_timeline": tts.model_dump()}), encoding="utf-8"
+    )
     assert lipsync.tts_timeline(settings, "v1") == tts
     (vdir / "narration.wav").write_bytes(b"RIFFautre voix")  # voix refaite : la timeline gardée ne vaut plus
     assert lipsync.tts_timeline(settings, "v1") is None
@@ -159,12 +201,37 @@ def test_the_line_is_never_cut_inside_a_word():
     « quoi… » à 2,8 s). Désormais le souffle ne porte aucun mot, et la seule coupe tombe dans le blanc après « Prune ».
     """
     text = "Prune… Pourquoi elle dort dans ta chambre ?"
-    clip = Heard(_words([("Prune,", 0.0, 1.92), ("pourquoi", 2.5, 3.34), ("elle", 3.34, 3.66), ("dort", 3.66, 4.08),
-                         ("dans", 4.08, 4.28), ("ta", 4.28, 4.46), ("chambre?", 4.46, 5.16)]),
-                 ((0.514, 0.734), (1.538, 2.078), (3.01, 5.184)), 1.0)
-    tts = Heard(_words([("Prune,", 0.0, 0.32), ("pourquoi", 0.96, 1.64), ("elle", 1.64, 1.84), ("dort", 1.84, 1.94),
-                        ("dans", 1.94, 2.12), ("ta", 2.12, 2.28), ("chambre", 2.28, 2.58), ("?", 2.58, 2.64)]),
-                ((0.098, 0.478), (1.378, 2.67)), 1.0)
+    clip = Heard(
+        _words(
+            [
+                ("Prune,", 0.0, 1.92),
+                ("pourquoi", 2.5, 3.34),
+                ("elle", 3.34, 3.66),
+                ("dort", 3.66, 4.08),
+                ("dans", 4.08, 4.28),
+                ("ta", 4.28, 4.46),
+                ("chambre?", 4.46, 5.16),
+            ]
+        ),
+        ((0.514, 0.734), (1.538, 2.078), (3.01, 5.184)),
+        1.0,
+    )
+    tts = Heard(
+        _words(
+            [
+                ("Prune,", 0.0, 0.32),
+                ("pourquoi", 0.96, 1.64),
+                ("elle", 1.64, 1.84),
+                ("dort", 1.84, 1.94),
+                ("dans", 1.94, 2.12),
+                ("ta", 2.12, 2.28),
+                ("chambre", 2.28, 2.58),
+                ("?", 2.58, 2.64),
+            ]
+        ),
+        ((0.098, 0.478), (1.378, 2.67)),
+        1.0,
+    )
     plan = plan_scene(text, "fr", clip, tts, 5.17, 2.67)
     assert [p.src for p in plan.pieces] == [(0.098, 0.478), (1.378, 2.67)]  # « Prune… » puis « pourquoi … chambre ? »
     assert plan.pieces[1].at + plan.head == pytest.approx(3.01, abs=0.01)  # quand la bouche dit « pourquoi »

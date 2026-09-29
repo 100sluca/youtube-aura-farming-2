@@ -1,13 +1,13 @@
 """Commandes `yt2 gemini` : Gemini en ligne pour les clips vidéo (docs/17-gemini-en-ligne.md).
 
-    yt2 gemini open                      ouvre gemini.google.com dans le Chrome dédié (s'y connecter une fois)
-    yt2 gemini status                    réglages, Chrome dédié, dernier résultat, quota
-    yt2 gemini check [--image scene.png] parcours complet jusqu'au bouton « Envoyer », sans rien envoyer (capture dans
-                                         DATA_DIR/gemini-debug) : sert à vérifier les repères de l'interface
-    yt2 gemini clip --image scene.png --prompt "slow push-in…" [--seconds 4] [--out clip.mp4]
-                                         une vraie vidéo (consomme le quota Google AI), attendue jusqu'au bout
-    yt2 gemini send <production>         valide le storyboard et fait fabriquer les clips par Gemini (comme le bouton
-                                         Gemini de Création)
+yt2 gemini open                      ouvre gemini.google.com dans le Chrome dédié (s'y connecter une fois)
+yt2 gemini status                    réglages, Chrome dédié, dernier résultat, quota
+yt2 gemini check [--image scene.png] parcours complet jusqu'au bouton « Envoyer », sans rien envoyer (capture dans
+                                     DATA_DIR/gemini-debug) : sert à vérifier les repères de l'interface
+yt2 gemini clip --image scene.png --prompt "slow push-in…" [--seconds 4] [--out clip.mp4]
+                                     une vraie vidéo (consomme le quota Google AI), attendue jusqu'au bout
+yt2 gemini send <production>         valide le storyboard et fait fabriquer les clips par Gemini (comme le bouton
+                                     Gemini de Création)
 """
 
 from __future__ import annotations
@@ -38,7 +38,9 @@ def gemini_open(_args: argparse.Namespace) -> None:
     settings, db = _db()
     rt = Runtime.load(settings, db)
     open_tab(rt, rt.home)
-    print(f"Gemini ouvert dans le Chrome dédié (profil {rt.profile}, port {rt.port}) : s'y connecter au compte Google AI si besoin.")
+    print(
+        f"Gemini ouvert dans le Chrome dédié (profil {rt.profile}, port {rt.port}) : s'y connecter au compte Google AI si besoin."
+    )
 
 
 def gemini_status(_args: argparse.Namespace) -> None:
@@ -48,12 +50,27 @@ def gemini_status(_args: argparse.Namespace) -> None:
     settings, db = _db()
     rt = Runtime.load(settings, db)
     cfg = load_gemini_config(settings, db, use_cache=False)
-    print(json.dumps({
-        "chrome": str(rt.chrome) if rt.chrome else None, "profil": str(rt.profile), "profil_créé": rt.profile.exists(),
-        "port": rt.port, "chrome_dédié_ouvert": devtools_up(rt.port), "adresse": rt.home,
-        "réglages": {"compte": cfg.authuser, "modèle": cfg.model or "(celui de l'appli)", "durée": cfg.duration, "source": cfg.source},
-        "dernier_résultat": load_gemini_status(db),
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "chrome": str(rt.chrome) if rt.chrome else None,
+                "profil": str(rt.profile),
+                "profil_créé": rt.profile.exists(),
+                "port": rt.port,
+                "chrome_dédié_ouvert": devtools_up(rt.port),
+                "adresse": rt.home,
+                "réglages": {
+                    "compte": cfg.authuser,
+                    "modèle": cfg.model or "(celui de l'appli)",
+                    "durée": cfg.duration,
+                    "source": cfg.source,
+                },
+                "dernier_résultat": load_gemini_status(db),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 def gemini_check(args: argparse.Namespace) -> None:
@@ -70,13 +87,21 @@ def gemini_clip(args: argparse.Namespace) -> None:
 
     settings, db = _db()
     provider = GeminiWebVideo(settings, db)
-    out = Path(args.out) if args.out else Path(tempfile.gettempdir()) / "yt2_gemini" / f"clip_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+    out = (
+        Path(args.out) if args.out else Path(tempfile.gettempdir()) / "yt2_gemini" / f"clip_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     image = Path(args.image) if args.image else None
     while True:
         try:
-            info = provider.generate(prompt=args.prompt, style_preset=args.style, duration_s=args.seconds, out_path=out,
-                                     on_progress=lambda p: print(f"  {p} %", flush=True), image_path=image)
+            info = provider.generate(
+                prompt=args.prompt,
+                style_preset=args.style,
+                duration_s=args.seconds,
+                out_path=out,
+                on_progress=lambda p: print(f"  {p} %", flush=True),
+                image_path=image,
+            )
         except Postpone as later:
             print(f"{time.strftime('%H:%M:%S')} {later.reason}", flush=True)
             if later.error:  # quota : inutile d'attendre des heures dans un terminal
@@ -107,7 +132,9 @@ def gemini_send(args: argparse.Namespace) -> None:
     if missing:
         sys.exit(f"scènes sans image retenue : {[m['scene_index'] for m in missing]} (yt2 storyboard pick …)")
     db.execute("update productions set video_provider = 'gemini_web' where id = %s", (pid,))
-    if not db.fetch_one("select 1 from jobs where production_id = %s and type = 'render' and status in ('queued', 'running')", (pid,)):
+    if not db.fetch_one(
+        "select 1 from jobs where production_id = %s and type = 'render' and status in ('queued', 'running')", (pid,)
+    ):
         db.enqueue("render", production_id=pid, priority=90)
     db.execute("update productions set status = 'generating' where id = %s and status = 'storyboard_review'", (pid,))
     print(f"Production {str(pid)[:8]} : clips confiés à Gemini (render en file)")
@@ -118,7 +145,9 @@ def register(sub: Any) -> None:
     g.add_parser("open", help="ouvrir Gemini dans le Chrome dédié").set_defaults(fn=gemini_open)
     g.add_parser("status", help="réglages, Chrome dédié, dernier résultat").set_defaults(fn=gemini_status)
     c = g.add_parser("check", help="parcours jusqu'au bouton Envoyer, sans rien envoyer")
-    c.add_argument("--image", action="append", help="image à joindre (répéter pour deux images, départ puis arrivée) ; rien n'est envoyé")
+    c.add_argument(
+        "--image", action="append", help="image à joindre (répéter pour deux images, départ puis arrivée) ; rien n'est envoyé"
+    )
     c.set_defaults(fn=gemini_check)
     cl = g.add_parser("clip", help="une vraie vidéo (consomme le quota Google AI)")
     cl.add_argument("--image")

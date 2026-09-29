@@ -58,8 +58,11 @@ class SyncTikTokStep(Step):
                     out[f"@{acc.get('username') or acc.get('_id')}"] = sync_account(ctx.db, zc, acc)
             except ZernioError as exc:
                 if exc.status == 429:
-                    raise Postpone(f"Zernio demande d'attendre : {exc}", exc.retry_after or 60,
-                                   label="TikTok : limite de Zernio, nouvel essai bientôt") from exc
+                    raise Postpone(
+                        f"Zernio demande d'attendre : {exc}",
+                        exc.retry_after or 60,
+                        label="TikTok : limite de Zernio, nouvel essai bientôt",
+                    ) from exc
                 if exc.status == 402:
                     raise RuntimeError("Zernio refuse les statistiques : option Analytics absente de l'abonnement") from exc
                 raise
@@ -88,8 +91,19 @@ def sync_account(db: Db, zc: ZernioClient, acc: dict[str, Any]) -> dict[str, Any
              following = coalesce(excluded.following, tiktok_accounts.following),
              likes = coalesce(excluded.likes, tiktok_accounts.likes),
              videos = coalesce(excluded.videos, tiktok_accounts.videos), fetched_at = excluded.fetched_at""",
-        (aid, info["username"], info["display_name"], info["avatar_url"], info["profile_url"], info["business"],
-         counters["followers"], counters["following"], counters["likes"], counters["videos"], taken),
+        (
+            aid,
+            info["username"],
+            info["display_name"],
+            info["avatar_url"],
+            info["profile_url"],
+            info["business"],
+            counters["followers"],
+            counters["following"],
+            counters["likes"],
+            counters["videos"],
+            taken,
+        ),
     )
     if any(v is not None for v in counters.values()):
         db.execute(
@@ -131,9 +145,7 @@ def video_links(db: Db) -> dict[str, Any]:
     """Publication Zernio (et id TikTok tiré du lien) → vidéo de l'appli, d'après videos.tiktok écrit par
     steps/tiktok_publish.py."""
     out: dict[str, Any] = {}
-    for r in db.fetch_all(
-        "select id, tiktok->>'post_id' as post_id, tiktok->>'url' as url from videos where tiktok is not null"
-    ):
+    for r in db.fetch_all("select id, tiktok->>'post_id' as post_id, tiktok->>'url' as url from videos where tiktok is not null"):
         for k in (r["post_id"], tiktok_id_of(r["url"])):
             if k:
                 out[k] = r["id"]
@@ -163,8 +175,20 @@ def mark_manual(db: Db, v: dict[str, Any], p: TikTokPost, account: dict[str, Any
             return  # une publication est en cours : son step écrit l'état
         db.execute(
             "update videos set tiktok = %s, updated_at = now() where id = %s and tiktok is null",
-            (Jsonb({"status": "published", "source": "manuel", "url": p.url, "published_at": published_at,
-                    "account_id": account["id"], "username": account["username"], "external_post_id": p.key}), v["id"]),
+            (
+                Jsonb(
+                    {
+                        "status": "published",
+                        "source": "manuel",
+                        "url": p.url,
+                        "published_at": published_at,
+                        "account_id": account["id"],
+                        "username": account["username"],
+                        "external_post_id": p.key,
+                    }
+                ),
+                v["id"],
+            ),
         )
     elif state.get("draft") and state.get("status") == "published":
         db.execute(
@@ -213,10 +237,35 @@ def store_post(db: Db, account_id: str, p: TikTokPost, video_id: Any, taken: dat
              audience_countries = coalesce(excluded.audience_countries, tiktok_posts.audience_countries),
              sync_status = excluded.sync_status, metrics_at = coalesce(excluded.metrics_at, tiktok_posts.metrics_at),
              fetched_at = excluded.fetched_at""",
-        (p.key, account_id, video_id, p.tiktok_id, p.zernio_post_id, p.is_external, p.url, p.caption, p.thumbnail_url,
-         p.published_at, p.views, p.likes, p.comments, p.shares, p.saves, p.reach, p.follows, p.profile_views,
-         p.avg_watch_s, p.total_watch_s, p.completion_pct, _json(p.impression_sources), _json(p.audience_types),
-         _json(p.audience_countries), p.sync_status, p.metrics_at, taken),
+        (
+            p.key,
+            account_id,
+            video_id,
+            p.tiktok_id,
+            p.zernio_post_id,
+            p.is_external,
+            p.url,
+            p.caption,
+            p.thumbnail_url,
+            p.published_at,
+            p.views,
+            p.likes,
+            p.comments,
+            p.shares,
+            p.saves,
+            p.reach,
+            p.follows,
+            p.profile_views,
+            p.avg_watch_s,
+            p.total_watch_s,
+            p.completion_pct,
+            _json(p.impression_sources),
+            _json(p.audience_types),
+            _json(p.audience_countries),
+            p.sync_status,
+            p.metrics_at,
+            taken,
+        ),
     )
     same = [i for i in {p.tiktok_id if real_tiktok_id(p.tiktok_id) else None, tiktok_id_of(p.url)} if i]
     if p.sync_status != "live" and same:

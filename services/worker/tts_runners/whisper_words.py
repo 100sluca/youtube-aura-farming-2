@@ -25,18 +25,33 @@ def main() -> None:
     from faster_whisper.audio import decode_audio
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-    model = WhisperModel(req.get("model", "large-v3-turbo"), device="cpu", compute_type="int8",
-                         cpu_threads=int(req.get("threads", 8)))
+    model = WhisperModel(
+        req.get("model", "large-v3-turbo"), device="cpu", compute_type="int8", cpu_threads=int(req.get("threads", 8))
+    )
     # une pause de 0,2 s sépare deux phrases ; 30 ms de marge ; un souffle de moins de 0,12 s n'est pas une phrase
     vad = VadOptions(threshold=0.5, min_silence_duration_ms=200, speech_pad_ms=30, min_speech_duration_ms=120)
     files = list(req["files"])
     results = []
     for i, path in enumerate(files):
-        segments, _info = model.transcribe(path, language=req.get("lang", "fr"), word_timestamps=True, vad_filter=False,
-                                           beam_size=5, condition_on_previous_text=False)
-        words = [{"w": w.word.strip(), "start": round(float(w.start), 3), "end": round(float(w.end), 3),
-                  "p": round(float(w.probability), 3)}
-                 for seg in segments for w in (seg.words or []) if w.word.strip()]
+        segments, _info = model.transcribe(
+            path,
+            language=req.get("lang", "fr"),
+            word_timestamps=True,
+            vad_filter=False,
+            beam_size=5,
+            condition_on_previous_text=False,
+        )
+        words = [
+            {
+                "w": w.word.strip(),
+                "start": round(float(w.start), 3),
+                "end": round(float(w.end), 3),
+                "p": round(float(w.probability), 3),
+            }
+            for seg in segments
+            for w in (seg.words or [])
+            if w.word.strip()
+        ]
         try:
             audio = decode_audio(path, sampling_rate=SR)
             speech = [[round(r["start"] / SR, 3), round(r["end"] / SR, 3)] for r in get_speech_timestamps(audio, vad)]

@@ -38,8 +38,7 @@ PROMPTS = [
     ),
     (
         "pool_reveal",
-        "Backyard at dusk, a luxury infinity pool with a wooden deck and underwater lights, wide static shot, "
-        "photorealistic",
+        "Backyard at dusk, a luxury infinity pool with a wooden deck and underwater lights, wide static shot, photorealistic",
         "Slow rising crane shot over the pool at dusk, water gently rippling, underwater lights glowing, steady motion",
     ),
     (
@@ -131,8 +130,11 @@ def main() -> None:
                     try:
                         if provider.image_to_video:  # route image → vidéo : l'image d'abord, chronométrée à part
                             image = ComfyImage(settings).generate(
-                                prompt=image_prompt, style_preset="modern_minimal", out_path=out.with_suffix(".png"),
-                                seed=run * 1000 + len(key), dry_run=args.dry_run,
+                                prompt=image_prompt,
+                                style_preset="modern_minimal",
+                                out_path=out.with_suffix(".png"),
+                                seed=run * 1000 + len(key),
+                                dry_run=args.dry_run,
                             )
                             image_s = round(time.perf_counter() - t0, 1)
                             t0 = time.perf_counter()

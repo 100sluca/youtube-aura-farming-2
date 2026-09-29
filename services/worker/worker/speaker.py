@@ -22,8 +22,11 @@ from .models import CastMember, ScriptScene, ScriptV1
 
 log = structlog.get_logger(__name__)
 
-_GARMENT = re.compile(r"\b(suit|dress|gown|tuxedo|coat|tailcoat|jacket|hoodie|cardigan|uniform|shirt|boubou|apron|"
-                      r"sweater|overalls|headscarf|scarf|veil|t-shirt|jeans|trousers|robe|blouse|vest|waistcoat)\b", re.I)
+_GARMENT = re.compile(
+    r"\b(suit|dress|gown|tuxedo|coat|tailcoat|jacket|hoodie|cardigan|uniform|shirt|boubou|apron|"
+    r"sweater|overalls|headscarf|scarf|veil|t-shirt|jeans|trousers|robe|blouse|vest|waistcoat)\b",
+    re.I,
+)
 TAG_WORDS = 14  # le début de la fiche jusqu'à ≈ 14 mots : qui il est et sa tête
 
 
@@ -104,9 +107,12 @@ def requirement(script: ScriptV1, scene: ScriptScene) -> str | None:
     if not scene.lines or len(members) < 2:
         return None
     speaker, others = members[0], members[1:]
-    return (f"C'est {speaker.name} ({visual_tag(speaker)}) qui parle : sa bouche est ouverte ou en mouvement sur au moins "
-            f"une des images 2 à 4 ; " + " ; ".join(f"{o.name} ({visual_tag(o)}) garde la bouche fermée" for o in others)
-            + " sur les images 2 à 4.")
+    return (
+        f"C'est {speaker.name} ({visual_tag(speaker)}) qui parle : sa bouche est ouverte ou en mouvement sur au moins "
+        f"une des images 2 à 4 ; "
+        + " ; ".join(f"{o.name} ({visual_tag(o)}) garde la bouche fermée" for o in others)
+        + " sur les images 2 à 4."
+    )
 
 
 class DirectorNote(BaseModel):
@@ -121,8 +127,14 @@ mouth, gestures, expressions, camera. Never quote the line itself, never ask for
 name a character without describing them. Answer in JSON."""
 
 
-def director_note(llm: Any, script: ScriptV1, scene: ScriptScene, instruction: str, image: Path | None = None,
-                  where: dict[str, str] | None = None) -> str:
+def director_note(
+    llm: Any,
+    script: ScriptV1,
+    scene: ScriptScene,
+    instruction: str,
+    image: Path | None = None,
+    where: dict[str, str] | None = None,
+) -> str:
     """La consigne de Luca pour ce plan (« c'est l'ananas qui parle, pas la mère »), en note de réalisation anglaise ;
     en cas d'échec du modèle de langue, la consigne telle quelle (Qwen3-VL, l'encodeur de H3, lit aussi le français)."""
     instruction = " ".join((instruction or "").split())[:600]
@@ -130,8 +142,10 @@ def director_note(llm: Any, script: ScriptV1, scene: ScriptScene, instruction: s
         return ""
     members = shot_members(script, scene)
     who = members[0].name if scene.lines and members else "nobody"
-    user = (f"{legend(members, where)}\nSpeaker: {who}.\nLine: {' '.join(ln.text for ln in scene.lines) or '(none)'}\n"
-            f"What moves in the shot: {scene.motion_prompt or scene.visual_prompt}\nAuthor's instruction (French): {instruction}")
+    user = (
+        f"{legend(members, where)}\nSpeaker: {who}.\nLine: {' '.join(ln.text for ln in scene.lines) or '(none)'}\n"
+        f"What moves in the shot: {scene.motion_prompt or scene.visual_prompt}\nAuthor's instruction (French): {instruction}"
+    )
     try:
         out = llm.complete_json(NOTE_SYSTEM, user, DirectorNote, images=[image] if image and image.is_file() else [])
         note = " ".join(out.note.split())

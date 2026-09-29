@@ -43,11 +43,23 @@ class Series:
     @classmethod
     def from_row(cls, r: dict[str, Any]) -> Series:
         return cls(
-            id=r["id"], slug=r["slug"], name=r["name"], source=r["source"], source_config=r["source_config"] or {},
-            brief=r["brief"], categories=list(r["categories"] or []), style_preset=r["style_preset"], format=r["format"],
-            target_duration_s=int(r["target_duration_s"]), subtitle_profile=r["subtitle_profile"],
-            music_moods=list(r["music_moods"] or []), video_provider=r["video_provider"], weight=float(r["weight"]),
-            is_active=bool(r["is_active"]), channel_id=r["channel_id"], recipe=r.get("recipe") or "story",
+            id=r["id"],
+            slug=r["slug"],
+            name=r["name"],
+            source=r["source"],
+            source_config=r["source_config"] or {},
+            brief=r["brief"],
+            categories=list(r["categories"] or []),
+            style_preset=r["style_preset"],
+            format=r["format"],
+            target_duration_s=int(r["target_duration_s"]),
+            subtitle_profile=r["subtitle_profile"],
+            music_moods=list(r["music_moods"] or []),
+            video_provider=r["video_provider"],
+            weight=float(r["weight"]),
+            is_active=bool(r["is_active"]),
+            channel_id=r["channel_id"],
+            recipe=r.get("recipe") or "story",
         )
 
     @property
@@ -111,9 +123,24 @@ def next_concepts(db: Any, n: int) -> list[dict[str, Any]]:
     if not by_series:
         return []
     pseudo = [
-        Series(id=UUID(int=0), slug=slug, name=slug, source="llm", source_config={}, brief="", categories=[], style_preset=None,
-               format="A_voiceover", target_duration_s=30, subtitle_profile=None, music_moods=[], video_provider=None,
-               weight=float(items[0]["weight"]), is_active=True, channel_id=None)
+        Series(
+            id=UUID(int=0),
+            slug=slug,
+            name=slug,
+            source="llm",
+            source_config={},
+            brief="",
+            categories=[],
+            style_preset=None,
+            format="A_voiceover",
+            target_duration_s=30,
+            subtitle_profile=None,
+            music_moods=[],
+            video_provider=None,
+            weight=float(items[0]["weight"]),
+            is_active=True,
+            channel_id=None,
+        )
         for slug, items in by_series.items()
     ]
     picked: list[dict[str, Any]] = []

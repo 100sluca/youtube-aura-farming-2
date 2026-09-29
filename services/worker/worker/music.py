@@ -77,25 +77,76 @@ RELATED: dict[str, tuple[str, ...]] = {
 }
 # Mots des anciens prompts, des séries (series.music_moods) et de la bibliothèque ACE-Step, et variantes françaises
 ALIASES: dict[str, tuple[str, ...]] = {
-    "mysterious": ("mystere",), "mystery": ("mystere",), "suspense": ("mystere",), "investigation": ("mystere",),
-    "intriguing": ("mystere",), "tension": ("mystere",), "dark": ("mystere",), "mysterieux": ("mystere",),
-    "mysterieuse": ("mystere",), "enquete": ("mystere",), "intrigant": ("mystere",), "intrigante": ("mystere",),
-    "epic": ("epique",), "heroic": ("epique",), "powerful": ("epique",), "triumphant": ("epique",),
-    "badass": ("epique",), "inspiring": ("epique", "joyeux"), "epopee": ("epique",),
-    "majestic": ("majestueux",), "grand": ("majestueux",), "medieval": ("majestueux",), "solemn": ("majestueux",),
+    "mysterious": ("mystere",),
+    "mystery": ("mystere",),
+    "suspense": ("mystere",),
+    "investigation": ("mystere",),
+    "intriguing": ("mystere",),
+    "tension": ("mystere",),
+    "dark": ("mystere",),
+    "mysterieux": ("mystere",),
+    "mysterieuse": ("mystere",),
+    "enquete": ("mystere",),
+    "intrigant": ("mystere",),
+    "intrigante": ("mystere",),
+    "epic": ("epique",),
+    "heroic": ("epique",),
+    "powerful": ("epique",),
+    "triumphant": ("epique",),
+    "badass": ("epique",),
+    "inspiring": ("epique", "joyeux"),
+    "epopee": ("epique",),
+    "majestic": ("majestueux",),
+    "grand": ("majestueux",),
+    "medieval": ("majestueux",),
+    "solemn": ("majestueux",),
     "majestueuse": ("majestueux",),
-    "emotional": ("sentimental",), "romantic": ("sentimental",), "tender": ("sentimental",), "love": ("sentimental",),
-    "romantique": ("sentimental",), "sentimentale": ("sentimental",), "emouvant": ("sentimental",),
-    "tragic": ("tragique",), "dramatic": ("tragique",), "drama": ("tragique",), "dramatique": ("tragique",),
-    "sad": ("triste",), "melancholic": ("triste",), "melancholy": ("triste",), "melancolique": ("triste",),
-    "travel": ("voyage",), "journey": ("voyage",), "nostalgic": ("voyage", "sentimental"), "lonely": ("voyage",),
-    "adventure": ("voyage", "epique"), "nostalgique": ("voyage", "sentimental"), "nostalgie": ("voyage", "sentimental"),
-    "luxury": ("decouverte",), "elegant": ("decouverte",), "chill": ("decouverte", "pose"), "discovery": ("decouverte",),
-    "wonder": ("decouverte",), "luxe": ("decouverte",), "visite": ("decouverte",), "elegante": ("decouverte",),
-    "upbeat": ("joyeux",), "happy": ("joyeux",), "joyful": ("joyeux",), "cheerful": ("joyeux",), "fun": ("joyeux",),
-    "joyeuse": ("joyeux",), "gai": ("joyeux",),
-    "calm": ("pose",), "neutral": ("pose",), "documentary": ("pose",), "ambient": ("pose",), "peaceful": ("pose",),
-    "calme": ("pose",), "narratif": ("pose",), "neutre": ("pose",), "posee": ("pose",),
+    "emotional": ("sentimental",),
+    "romantic": ("sentimental",),
+    "tender": ("sentimental",),
+    "love": ("sentimental",),
+    "romantique": ("sentimental",),
+    "sentimentale": ("sentimental",),
+    "emouvant": ("sentimental",),
+    "tragic": ("tragique",),
+    "dramatic": ("tragique",),
+    "drama": ("tragique",),
+    "dramatique": ("tragique",),
+    "sad": ("triste",),
+    "melancholic": ("triste",),
+    "melancholy": ("triste",),
+    "melancolique": ("triste",),
+    "travel": ("voyage",),
+    "journey": ("voyage",),
+    "nostalgic": ("voyage", "sentimental"),
+    "lonely": ("voyage",),
+    "adventure": ("voyage", "epique"),
+    "nostalgique": ("voyage", "sentimental"),
+    "nostalgie": ("voyage", "sentimental"),
+    "luxury": ("decouverte",),
+    "elegant": ("decouverte",),
+    "chill": ("decouverte", "pose"),
+    "discovery": ("decouverte",),
+    "wonder": ("decouverte",),
+    "luxe": ("decouverte",),
+    "visite": ("decouverte",),
+    "elegante": ("decouverte",),
+    "upbeat": ("joyeux",),
+    "happy": ("joyeux",),
+    "joyful": ("joyeux",),
+    "cheerful": ("joyeux",),
+    "fun": ("joyeux",),
+    "joyeuse": ("joyeux",),
+    "gai": ("joyeux",),
+    "calm": ("pose",),
+    "neutral": ("pose",),
+    "documentary": ("pose",),
+    "ambient": ("pose",),
+    "peaceful": ("pose",),
+    "calme": ("pose",),
+    "narratif": ("pose",),
+    "neutre": ("pose",),
+    "posee": ("pose",),
 }
 FORMATS = ("story", "timelapse", "tour")
 
@@ -143,11 +194,17 @@ class Track:
     @classmethod
     def from_row(cls, row: dict[str, Any], path: Path | None) -> Track:
         return cls(
-            id=row["id"], file=row["file"], title=row.get("title") or row["id"], description=row.get("description") or "",
+            id=row["id"],
+            file=row["file"],
+            title=row.get("title") or row["id"],
+            description=row.get("description") or "",
             moods=tuple(m for m in row.get("moods") or () if m in MOODS),
             formats=tuple(f for f in row.get("formats") or () if f in FORMATS),
-            weight=float(row["weight"] if row.get("weight") is not None else 1.0), enabled=bool(row.get("enabled", True)),
-            gain_db=float(row.get("gain_db") or 0.0), start_s=float(row.get("start_s") or 0.0), note=row.get("note") or "",
+            weight=float(row["weight"] if row.get("weight") is not None else 1.0),
+            enabled=bool(row.get("enabled", True)),
+            gain_db=float(row.get("gain_db") or 0.0),
+            start_s=float(row.get("start_s") or 0.0),
+            note=row.get("note") or "",
             lufs=float(row["lufs"]) if row.get("lufs") is not None else None,
             duration_s=float(row["duration_s"]) if row.get("duration_s") is not None else None,
             path=path,
@@ -169,8 +226,12 @@ def _same_file(row: dict[str, Any], path: Path) -> bool:
     millisecondes, le worker en microsecondes) ?"""
     st = path.stat()
     mtime = row.get("file_mtime")
-    return (row.get("file") == path.name and row.get("file_size") == st.st_size and mtime is not None
-            and abs(mtime.timestamp() - st.st_mtime) < 1.0)
+    return (
+        row.get("file") == path.name
+        and row.get("file_size") == st.st_size
+        and mtime is not None
+        and abs(mtime.timestamp() - st.st_mtime) < 1.0
+    )
 
 
 def load_library(db: Any, folder: Path) -> list[Track]:
@@ -199,8 +260,10 @@ def sync_library(db: Any, folder: Path, *, measure: bool = True) -> list[Track]:
     for tid, path in files.items():
         row = rows.get(tid)
         if row is None:
-            db.execute("insert into music_tracks (id, file, title) values (%s, %s, %s) on conflict (id) do nothing",
-                       (tid, path.name, tid.replace("_", " ").strip().capitalize()))
+            db.execute(
+                "insert into music_tracks (id, file, title) values (%s, %s, %s) on conflict (id) do nothing",
+                (tid, path.name, tid.replace("_", " ").strip().capitalize()),
+            )
             row, changed = {"id": tid, "missing": False, "lufs": None}, True
         if measure and (row.get("lufs") is None or not _same_file(row, path)):
             loud = measure_loudness(path)
@@ -208,8 +271,15 @@ def sync_library(db: Any, folder: Path, *, measure: bool = True) -> list[Track]:
             db.execute(
                 """update music_tracks set file = %s, lufs = %s, peak_db = %s, duration_s = %s, file_size = %s,
                      file_mtime = %s, missing = false where id = %s""",
-                (path.name, loud.lufs, loud.peak_db, loud.duration_s, st.st_size,
-                 datetime.fromtimestamp(int(st.st_mtime), UTC), tid),
+                (
+                    path.name,
+                    loud.lufs,
+                    loud.peak_db,
+                    loud.duration_s,
+                    st.st_size,
+                    datetime.fromtimestamp(int(st.st_mtime), UTC),
+                    tid,
+                ),
             )
             log.info("music.mesure", piste=tid, lufs=loud.lufs, duree_s=loud.duration_s)
             changed = True
@@ -290,7 +360,11 @@ def _leveling(target: float, measured: float | None, unknown: float) -> float:
 
 
 def mix_levels(
-    audio: Any, *, with_voice: bool, track_lufs: float | None = None, track_gain_db: float = 0.0,
+    audio: Any,
+    *,
+    with_voice: bool,
+    track_lufs: float | None = None,
+    track_gain_db: float = 0.0,
     narration_lufs: float | None = None,
 ) -> MixLevels:
     """Gains du mixage d'une vidéo : `audio` est la couche AudioLayer du modèle de montage (worker/montage.py). Une
@@ -324,8 +398,9 @@ def speech_segments(words: Iterable[Any], merge_gap: float = DUCK_MERGE_GAP_S) -
     return [(round(a, 3), round(b, 3)) for a, b in out]
 
 
-def duck_amount(t: float, segments: Sequence[tuple[float, float]], attack: float = DUCK_ATTACK_S,
-                release: float = DUCK_RELEASE_S) -> float:
+def duck_amount(
+    t: float, segments: Sequence[tuple[float, float]], attack: float = DUCK_ATTACK_S, release: float = DUCK_RELEASE_S
+) -> float:
     """Part de la baisse à l'instant t (0 : musique à son niveau, 1 : baissée de duck_db) : rampe de `attack` s avant
     chaque passage parlé, palier, rampe de `release` s après. Même courbe que duck_expression et que l'écoute du
     dashboard."""
@@ -342,15 +417,15 @@ def _max_tree(terms: list[str]) -> str:
     return terms[0]
 
 
-def duck_expression(segments: Sequence[tuple[float, float]], duck_db: float, attack: float = DUCK_ATTACK_S,
-                    release: float = DUCK_RELEASE_S) -> str | None:
+def duck_expression(
+    segments: Sequence[tuple[float, float]], duck_db: float, attack: float = DUCK_ATTACK_S, release: float = DUCK_RELEASE_S
+) -> str | None:
     """Gain de la musique à l'instant t, pour le filtre volume de FFmpeg (eval=frame) : 1 hors de la voix,
     10^(-duck_db/20) pendant ; None s'il n'y a rien à baisser."""
     if duck_db <= 0 or not segments:
         return None
     depth = 1 - 10 ** (-duck_db / 20)
     terms = [
-        f"clip(min((t-({a - attack:.3f}))*{1 / attack:.4f},({b + release:.3f}-t)*{1 / release:.4f}),0,1)"
-        for a, b in segments
+        f"clip(min((t-({a - attack:.3f}))*{1 / attack:.4f},({b + release:.3f}-t)*{1 / release:.4f}),0,1)" for a, b in segments
     ]
     return f"1-{depth:.4f}*{_max_tree(terms)}"

@@ -103,27 +103,53 @@ CREATE_VIDEO = _rx(r"^\s*cr[ée]er (une|des) vid[ée]os?\s*$", r"^\s*create (a )
 VIDEOS_ENTRY = _rx(r"^\s*vid[ée]os?\s*$")
 # Menus du champ de saisie qui peuvent contenir l'entrée vidéo (relevé le 25/09/2026, déconnecté : bouton « + » nommé
 # « Importation et outils » ; les versions précédentes avaient « Outils » et « Ouvrir le menu d'importation »)
-COMPOSER_MENUS = _rx(r"^\s*\+\s*$", r"importation et outils", r"uploads? (and|&) tools", r"menu d.importation", r"upload file menu",
-                     r"^\s*(ajouter|add)( des fichiers| files| du contenu| content)?\s*$", r"^\s*(outils|tools)\s*$")
+COMPOSER_MENUS = _rx(
+    r"^\s*\+\s*$",
+    r"importation et outils",
+    r"uploads? (and|&) tools",
+    r"menu d.importation",
+    r"upload file menu",
+    r"^\s*(ajouter|add)( des fichiers| files| du contenu| content)?\s*$",
+    r"^\s*(outils|tools)\s*$",
+)
 VIDEO_TOOL = _rx(r"^(?!.*(ajouter|add|importer|upload|mes |my )).*\bvid[ée]os?\b")
 # Page vidéo connectée (relevé le 25/09/2026, …/u/0/videos) : puce « Vidéos », « Importation de fichiers »,
 # « Format, Portrait (9:16) », champ « Décrivez votre vidéo », « Envoyer un message » ; pas de réglage de durée visible
-ADD_IMAGE = _rx(r"^\s*(ajouter|importer) (une |des )?(images?|photos?)\s*$", r"^\s*(add|upload) (an |a )?(images?|photos?)\s*$",
-                r"^\s*importation de fichiers\s*$", r"^\s*upload files\s*$")
-UPLOAD_MENU = _rx(r"importation et outils", r"uploads? (and|&) tools", r"menu d.importation", r"upload file menu",
-                  r"^\s*(ajouter|add|importer|upload)( des fichiers| files| du contenu| content| un fichier| a file)?\s*$", r"^\s*\+\s*$")
+ADD_IMAGE = _rx(
+    r"^\s*(ajouter|importer) (une |des )?(images?|photos?)\s*$",
+    r"^\s*(add|upload) (an |a )?(images?|photos?)\s*$",
+    r"^\s*importation de fichiers\s*$",
+    r"^\s*upload files\s*$",
+)
+UPLOAD_MENU = _rx(
+    r"importation et outils",
+    r"uploads? (and|&) tools",
+    r"menu d.importation",
+    r"upload file menu",
+    r"^\s*(ajouter|add|importer|upload)( des fichiers| files| du contenu| content| un fichier| a file)?\s*$",
+    r"^\s*\+\s*$",
+)
 # Sélecteur de modèle du champ de saisie (« Ouvrir le sélecteur de mode, actuellement 3.5 Flash-Lite »)
 MODE_PICKER = _rx(r"s[ée]lecteur de mod", r"(mode|model) (selector|picker|switcher)")
 # Bandeau cookies de Google (profil neuf) : on refuse le facultatif, le choix le plus protecteur
 CONSENT_REJECT = _rx(r"^\s*tout refuser\s*$", r"^\s*reject all\s*$")
 # Fenêtres qui s'intercalent (« Gemini est plus pertinent avec la localisation », nouveautés…, relevé le 26/09) : on
 # prend toujours la réponse qui ne donne rien, jamais « Utiliser la position exacte », « Autoriser » ni « Accepter »
-DISMISS = _rx(r"^\s*(fermer|close|non merci|no thanks|plus tard|later|pas maintenant|not now|ignorer|dismiss|j.ai compris|got it)\s*$")
+DISMISS = _rx(
+    r"^\s*(fermer|close|non merci|no thanks|plus tard|later|pas maintenant|not now|ignorer|dismiss|j.ai compris|got it)\s*$"
+)
 DIALOGS = "[role='dialog'], [role='alertdialog'], mat-dialog-container"
 VIDEO_CHIP = _rx(r"(close|fermer|d[ée]s[ée]lectionner|deselect|retirer|remove)[^\n]{0,30}vid[ée]os?")  # « close Vidéos »
 FORMAT_BUTTON = _rx(r"^\s*format\s*,")  # « Format, Portrait (9:16) »
-UPLOAD_ITEM = _rx(r"importer des fichiers", r"importer depuis", r"upload files?", r"upload from", r"depuis (l.|votre )ordinateur",
-                  r"from (your |this )?(computer|device)", r"^\s*(photos?|images?|fichiers?|files?)\s*$")
+UPLOAD_ITEM = _rx(
+    r"importer des fichiers",
+    r"importer depuis",
+    r"upload files?",
+    r"upload from",
+    r"depuis (l.|votre )ordinateur",
+    r"from (your |this )?(computer|device)",
+    r"^\s*(photos?|images?|fichiers?|files?)\s*$",
+)
 SEND = _rx(r"^\s*(envoyer( un| le)?( message)?|send( message)?|submit|g[ée]n[ée]rer|generate|cr[ée]er|create)\s*$")
 PORTRAIT = _rx(r"portrait", r"9\s*:\s*16", r"vertical")
 ASPECT_CONTROL = _rx(r"paysage", r"landscape", r"16\s*:\s*9", r"portrait", r"9\s*:\s*16", r"format", r"aspect", r"rapport")
@@ -134,18 +160,28 @@ SHARE = _rx(r"^\s*(partager|share)")
 
 # Réponse de Gemini sans vidéo
 QUOTA_RX = _rx(
-    r"(utilis[ée]|used|consomm[ée])\s+(tout|all|l.int[ée]gralit[ée] de)\s+(votre|your|du)\s+quota", r"quota\s+(?:est\s+)?([ée]puis[ée]|exhausted|used up)",
+    r"(utilis[ée]|used|consomm[ée])\s+(tout|all|l.int[ée]gralit[ée] de)\s+(votre|your|du)\s+quota",
+    r"quota\s+(?:est\s+)?([ée]puis[ée]|exhausted|used up)",
     r"(atteint|reached|d[ée]pass[ée]|exceeded|hit)[^.!?\n]{0,80}(limite|limit|quota|plafond)",
     r"(limite|limit|quota|plafond)[^.!?\n]{0,60}(atteint|reached|d[ée]pass[ée]|exceeded)",
     r"(plus de|no more) (g[ée]n[ée]rations?|vid[ée]os?|videos?|generations?)",
     r"(r[ée]essayez|r[ée]essayer|try again)[^.!?\n]{0,30}(plus tard|later|dans \d|in \d|apr[èe]s|after|[àa] \d|at \d)",
 )
 REFUSED_RX = _rx(
-    r"je ne (peux|suis) pas", r"pas en mesure", r"i can.?t (help|create|make|generate|do)", r"i.?m (not able|unable)", r"i cannot",
+    r"je ne (peux|suis) pas",
+    r"pas en mesure",
+    r"i can.?t (help|create|make|generate|do)",
+    r"i.?m (not able|unable)",
+    r"i cannot",
     r"(ne respecte|enfreint|contraire|violates?|against)[^.]{0,50}(r[èe]gles|consignes|politiques|conditions|policy|policies|guidelines)",
 )
-ERROR_RX = _rx(r"un probl[èe]me (est survenu|s.est produit)", r"une erreur (est survenue|s.est produite)", r"something went wrong",
-               r"an error occurred", r"(impossible|unable) (de g[ée]n[ée]rer|to generate)")
+ERROR_RX = _rx(
+    r"un probl[èe]me (est survenu|s.est produit)",
+    r"une erreur (est survenue|s.est produite)",
+    r"something went wrong",
+    r"an error occurred",
+    r"(impossible|unable) (de g[ée]n[ée]rer|to generate)",
+)
 
 
 def classify_response(text: str) -> str | None:
@@ -163,8 +199,9 @@ def classify_response(text: str) -> str | None:
 
 
 _IN = re.compile(r"(?<!\w)(?:dans|in)\s+(\d{1,3})\s*(h\b|heures?|hours?|hrs?|min\b|minutes?|mins?)", re.I)
-_AT = re.compile(r"(?<!\w)(?:[àa]|at|apr[èe]s|after|vers|around|from|d[èe]s)\s+(\d{1,2})\s*(?:h|:)\s*(\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?",
-                 re.I)
+_AT = re.compile(
+    r"(?<!\w)(?:[àa]|at|apr[èe]s|after|vers|around|from|d[èe]s)\s+(\d{1,2})\s*(?:h|:)\s*(\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?", re.I
+)
 
 
 def parse_retry_at(text: str, now: datetime) -> datetime | None:
@@ -201,21 +238,32 @@ def pick_duration(scene_s: float, setting: str = "auto") -> int:
     return next((d for d in DURATIONS if d + 0.05 >= scene_s), DURATIONS[-1])
 
 
-def build_prompt(motion: str, style_preset: str | None, scene_s: float, target_s: int, *, with_image: bool, chat: bool = False,
-                 end_frame: bool = False) -> str:
+def build_prompt(
+    motion: str,
+    style_preset: str | None,
+    scene_s: float,
+    target_s: int,
+    *,
+    with_image: bool,
+    chat: bool = False,
+    end_frame: bool = False,
+) -> str:
     """Prompt en anglais, en phrases (Gemini Omni comprend la langue naturelle mieux qu'une liste de mots-clés).
     end_frame : clip « première + dernière image » (chantier en accéléré, passage d'une visite) : deux images jointes,
     le clip entier est gardé et accéléré au montage."""
     motion = " ".join((motion or "").split()).rstrip(" .")
     parts = ["Create a video (not an image)."] if chat else []
     if end_frame:
-        parts.append("Vertical 9:16 video that starts exactly on the first attached image and ends exactly on the second attached image: "
-                     "same fixed camera position and framing from start to end, only what differs between the two images changes, "
-                     "gradually.")
+        parts.append(
+            "Vertical 9:16 video that starts exactly on the first attached image and ends exactly on the second attached image: "
+            "same fixed camera position and framing from start to end, only what differs between the two images changes, "
+            "gradually."
+        )
     else:
         parts.append(
             "Animate the attached image into a vertical 9:16 video: it is the first frame, keep its framing, subject, colors and style."
-            if with_image else "Vertical 9:16 video."
+            if with_image
+            else "Vertical 9:16 video."
         )
     if motion:
         parts.append(f"Action and camera: {motion}.")
@@ -224,8 +272,10 @@ def build_prompt(motion: str, style_preset: str | None, scene_s: float, target_s
         parts.append(f"Look: {style}.")
     if not end_frame and target_s - scene_s >= 1:
         parts.append(f"The key motion happens in the first {max(1, round(scene_s))} seconds.")
-    parts.append("No on-screen text, captions, logos or watermark. No music, no voice-over, no dialogue: natural ambient sound only. "
-                 "Do not add people who are not in the images.")
+    parts.append(
+        "No on-screen text, captions, logos or watermark. No music, no voice-over, no dialogue: natural ambient sound only. "
+        "Do not add people who are not in the images."
+    )
     return " ".join(parts)
 
 
@@ -276,10 +326,17 @@ def chrome_executable(explicit: Path | None = None) -> Path | None:
 
 def chrome_command(chrome: Path, profile: Path, port: int, url: str, *, minimized: bool) -> list[str]:
     return [
-        str(chrome), f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+        str(chrome),
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={profile}",
+        "--no-first-run",
+        "--no-default-browser-check",
         # un onglet en arrière-plan doit continuer d'afficher la vidéo quand elle arrive
-        "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
-        *(["--start-minimized"] if minimized else []), url,
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        *(["--start-minimized"] if minimized else []),
+        url,
     ]
 
 
@@ -331,7 +388,12 @@ def ensure_browser(rt: Runtime, *, url: str = "about:blank", minimized: bool = T
     if rt.chrome is None:
         raise GeminiError("Chrome introuvable : installer Google Chrome ou renseigner GEMINI_CHROME_PATH")
     rt.profile.mkdir(parents=True, exist_ok=True)
-    kwargs: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "close_fds": True}
+    kwargs: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
     if os.name == "nt":  # détaché : Chrome survit au worker
         kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
@@ -359,11 +421,17 @@ def _chrome_pids(profile: Path) -> list[int]:
     """Processus principal du Chrome dédié (Windows : ligne de commande avec ce profil et sans --type=)."""
     if os.name != "nt":
         return []
-    query = ("Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like "
-             f"'*--user-data-dir={profile}*' -and $_.CommandLine -notlike '*--type=*' }} | ForEach-Object {{ $_.ProcessId }}")
+    query = (
+        "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like "
+        f"'*--user-data-dir={profile}*' -and $_.CommandLine -notlike '*--type=*' }} | ForEach-Object {{ $_.ProcessId }}"
+    )
     try:
-        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", query],  # noqa: S607
-                             capture_output=True, text=True, timeout=60).stdout
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=60,
+        ).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     return [int(x) for x in out.split() if x.isdigit()]
@@ -397,7 +465,9 @@ def browser_context(rt: Runtime, *, minimized: bool = True) -> Iterator[BrowserC
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
-        raise GeminiError("Playwright manquant pour piloter Gemini : `uv sync --extra web` dans services/worker (docs/17)") from exc
+        raise GeminiError(
+            "Playwright manquant pour piloter Gemini : `uv sync --extra web` dans services/worker (docs/17)"
+        ) from exc
     ensure_browser(rt, minimized=minimized)
     with sync_playwright() as pw:
         endpoint = f"http://127.0.0.1:{rt.port}"
@@ -410,7 +480,9 @@ def browser_context(rt: Runtime, *, minimized: bool = True) -> Iterator[BrowserC
             try:
                 browser = pw.chromium.connect_over_cdp(endpoint, timeout=40_000)
             except PlaywrightError as exc:
-                raise GeminiError(f"impossible de piloter le Chrome dédié, même relancé : {str(exc).splitlines()[0][:200]}") from exc
+                raise GeminiError(
+                    f"impossible de piloter le Chrome dédié, même relancé : {str(exc).splitlines()[0][:200]}"
+                ) from exc
         try:
             yield browser.contexts[0] if browser.contexts else browser.new_context()
         finally:
@@ -525,10 +597,17 @@ def _name(loc: Locator) -> str:
 
 
 def _editor(page: Page, timeout_s: float = 0.0) -> Locator | None:
-    return _first_visible(page, [
-        page.locator("rich-textarea [contenteditable='true']"), page.locator("div.ql-editor[contenteditable='true']"),
-        page.locator("[contenteditable='true'][role='textbox']"), page.locator("[contenteditable='true']"), page.locator("textarea"),
-    ], timeout_s)
+    return _first_visible(
+        page,
+        [
+            page.locator("rich-textarea [contenteditable='true']"),
+            page.locator("div.ql-editor[contenteditable='true']"),
+            page.locator("[contenteditable='true'][role='textbox']"),
+            page.locator("[contenteditable='true']"),
+            page.locator("textarea"),
+        ],
+        timeout_s,
+    )
 
 
 def _send_button(page: Page) -> Locator | None:
@@ -560,8 +639,10 @@ def signed_in(page: Page) -> bool | None:
         return False
     if _first_visible(page, [page.get_by_role("button", name=SIGN_IN), page.get_by_role("link", name=SIGN_IN)]):
         return False
-    account = page.locator("a[aria-label*='Google Account' i], a[aria-label*='Compte Google' i], [aria-label*='Google Account' i], "
-                           "[aria-label*='Compte Google' i], a[href*='SignOutOptions']")
+    account = page.locator(
+        "a[aria-label*='Google Account' i], a[aria-label*='Compte Google' i], [aria-label*='Google Account' i], "
+        "[aria-label*='Compte Google' i], a[href*='SignOutOptions']"
+    )
     return True if _first_visible(page, [account]) else None
 
 
@@ -592,8 +673,16 @@ def dismiss_popups(page: Page) -> list[str]:
 
 def open_home(page: Page, rt: Runtime) -> None:
     page.goto(rt.home, wait_until="domcontentloaded", timeout=60_000)
-    _first_visible(page, [page.locator("rich-textarea"), page.locator("[contenteditable='true']"),
-                          page.get_by_role("button", name=SIGN_IN), page.get_by_role("link", name=SIGN_IN)], 30)
+    _first_visible(
+        page,
+        [
+            page.locator("rich-textarea"),
+            page.locator("[contenteditable='true']"),
+            page.get_by_role("button", name=SIGN_IN),
+            page.get_by_role("link", name=SIGN_IN),
+        ],
+        30,
+    )
     dismiss_consent(page)
     page.wait_for_timeout(1500)  # les fenêtres de bienvenue ou de localisation arrivent un peu après la page
     dismiss_popups(page)
@@ -613,8 +702,16 @@ def video_mode(page: Page) -> bool:
     with suppress(PlaywrightError):
         if re.search(r"vid[ée]o", page.evaluate(_PLACEHOLDER_JS) or "", re.I):
             return True
-    return bool(_first_visible(page, [page.get_by_role("button", name=FORMAT_BUTTON), page.get_by_role("button", name=ADD_IMAGE),
-                                      page.get_by_role("button", name=_rx(r"^\s*(ajouter|add) (une |a )?vid[ée]o\s*$"))]))
+    return bool(
+        _first_visible(
+            page,
+            [
+                page.get_by_role("button", name=FORMAT_BUTTON),
+                page.get_by_role("button", name=ADD_IMAGE),
+                page.get_by_role("button", name=_rx(r"^\s*(ajouter|add) (une |a )?vid[ée]o\s*$")),
+            ],
+        )
+    )
 
 
 def enter_video_mode(page: Page) -> str:
@@ -628,7 +725,9 @@ def enter_video_mode(page: Page) -> str:
         toggle = _first_visible(page, [page.get_by_role("button", name=OPEN_SIDEBAR)], 2)
         if _try_click(toggle):
             page.wait_for_timeout(800)
-        item = _first_visible(page, _clickables(page, CREATE_VIDEO), 3) or _first_visible(page, _clickables(page, VIDEOS_ENTRY), 1)
+        item = _first_visible(page, _clickables(page, CREATE_VIDEO), 3) or _first_visible(
+            page, _clickables(page, VIDEOS_ENTRY), 1
+        )
     if _try_click(item):
         page.wait_for_timeout(1500)
         dismiss_popups(page)  # la page Vidéos peut ouvrir une fenêtre (localisation…) qui masque le champ de saisie
@@ -639,8 +738,15 @@ def enter_video_mode(page: Page) -> str:
     opener = _first_visible(page, [page.get_by_role("button", name=COMPOSER_MENUS)], 1)
     if _try_click(opener):
         page.wait_for_timeout(700)
-        entry = _first_visible(page, _clickables(page, CREATE_VIDEO) + [page.get_by_role(r, name=VIDEO_TOOL) for r in
-                                                                         ("menuitem", "menuitemcheckbox", "menuitemradio", "option", "button")], 3)
+        entry = _first_visible(
+            page,
+            _clickables(page, CREATE_VIDEO)
+            + [
+                page.get_by_role(r, name=VIDEO_TOOL)
+                for r in ("menuitem", "menuitemcheckbox", "menuitemradio", "option", "button")
+            ],
+            3,
+        )
         if _try_click(entry) and _wait(page, lambda: video_mode(page), 10):
             return "menu du champ de saisie"
         with suppress(PlaywrightError):
@@ -715,7 +821,9 @@ def apply_options(page: Page, *, duration: int, model: str) -> list[str]:
     except PlaywrightError as exc:
         notes.append(f"format : {str(exc)[:80]}")
     try:
-        current = _first_visible(page, [page.get_by_role(r, name=DURATION_TEXT) for r in ("button", "combobox")] + [page.get_by_text(DURATION_TEXT)], 1)
+        current = _first_visible(
+            page, [page.get_by_role(r, name=DURATION_TEXT) for r in ("button", "combobox")] + [page.get_by_text(DURATION_TEXT)], 1
+        )
         if current:
             shown = DURATION_TEXT.match(_name(current) or "")
             if shown and int(shown.group(1)) == duration:
@@ -734,7 +842,9 @@ def apply_options(page: Page, *, duration: int, model: str) -> list[str]:
         notes.append(f"durée : {str(exc)[:80]}")
     if model:
         try:
-            switch = _first_visible(page, [page.get_by_role("button", name=MODE_PICKER), page.get_by_role("button", name=MODEL_SWITCH)], 1)
+            switch = _first_visible(
+                page, [page.get_by_role("button", name=MODE_PICKER), page.get_by_role("button", name=MODEL_SWITCH)], 1
+            )
             if switch and model.lower() not in _name(switch).lower():
                 switch.click()
                 page.wait_for_timeout(500)
@@ -808,7 +918,12 @@ class Result:
 
 def read_result(page: Page) -> Result:
     r = page.evaluate(_RESULT_JS) or {}
-    return Result(videos=list(r.get("videos") or []), text=str(r.get("text") or ""), alerts=str(r.get("alerts") or ""), url=str(r.get("url") or ""))
+    return Result(
+        videos=list(r.get("videos") or []),
+        text=str(r.get("text") or ""),
+        alerts=str(r.get("alerts") or ""),
+        url=str(r.get("url") or ""),
+    )
 
 
 def download(ctx: BrowserContext, page: Page, src: str, out: Path) -> str:
@@ -842,8 +957,22 @@ def probe(path: Path) -> tuple[float, int, int]:
     """Durée, largeur, hauteur du clip (ffprobe)."""
     try:
         out = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", str(path)],
-            capture_output=True, text=True, timeout=30, check=True,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height:format=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
         ).stdout
         data = json.loads(out or "{}")
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -860,8 +989,13 @@ def dump(page: Page, rt: Runtime, stage: str) -> str:
         page.screenshot(path=str(stem.with_suffix(".png")))
     with suppress(Exception):
         rows = page.evaluate(_UI_MAP_JS) or []
-        lines = [f"url : {page.url}", f"titre : {page.title()}", f"bandeau de quota : {quota_banner(page) or '(aucun)'}",
-                 "tag | rôle | aria-label | texte | data-test-id | placeholder | src | x,y", ""]
+        lines = [
+            f"url : {page.url}",
+            f"titre : {page.title()}",
+            f"bandeau de quota : {quota_banner(page) or '(aucun)'}",
+            "tag | rôle | aria-label | texte | data-test-id | placeholder | src | x,y",
+            "",
+        ]
         lines += [" | ".join(str(c) for c in row) for row in rows]
         stem.with_suffix(".txt").write_text("\n".join(lines), encoding="utf-8")
     return str(stem)
@@ -919,14 +1053,32 @@ class GeminiWebVideo:
             clear_state(out_path)
             raise GeminiError(f"Gemini refuse toujours (limite) après {hits - 1} essais : « {' '.join(text.split())[:200]} »")
         clear_state(out_path, keep={"quota_hits": hits})
-        save_gemini_status(self.db, ok=False, quota_until=until.isoformat(timespec="minutes"),
-                           message=f"Limite Gemini atteinte : « {' '.join(text.split())[:180]} »")
-        return Postpone(f"Gemini : limite atteinte, nouvel essai vers {until:%H:%M}", (until - now).total_seconds() + 60,
-                        label=f"Gemini · quota atteint, reprise vers {until:%H:%M}", error="Quota Gemini atteint")
+        save_gemini_status(
+            self.db,
+            ok=False,
+            quota_until=until.isoformat(timespec="minutes"),
+            message=f"Limite Gemini atteinte : « {' '.join(text.split())[:180]} »",
+        )
+        return Postpone(
+            f"Gemini : limite atteinte, nouvel essai vers {until:%H:%M}",
+            (until - now).total_seconds() + 60,
+            label=f"Gemini · quota atteint, reprise vers {until:%H:%M}",
+            error="Quota Gemini atteint",
+        )
 
     # -- contrat VideoProvider ---------------------------------------------------------------------------------
-    def generate(self, *, prompt: str, style_preset: str | None, duration_s: float, out_path: Path, on_progress: Callable[[int], None],
-                 dry_run: bool = False, image_path: Path | None = None, end_image_path: Path | None = None) -> ClipInfo:
+    def generate(
+        self,
+        *,
+        prompt: str,
+        style_preset: str | None,
+        duration_s: float,
+        out_path: Path,
+        on_progress: Callable[[int], None],
+        dry_run: bool = False,
+        image_path: Path | None = None,
+        end_image_path: Path | None = None,
+    ) -> ClipInfo:
         target = pick_duration(duration_s, self.rt.duration)
         if dry_run:
             out_path.write_bytes(b"")
@@ -935,8 +1087,12 @@ class GeminiWebVideo:
         if not state.get("chat_url"):
             until = self.quota_until()
             if until:  # limite connue : on n'ouvre même pas Gemini
-                raise Postpone(f"Gemini : limite atteinte jusque vers {until:%H:%M}", (until - _now()).total_seconds() + 60,
-                               label=f"Gemini · quota atteint, reprise vers {until:%H:%M}", error="Quota Gemini atteint")
+                raise Postpone(
+                    f"Gemini : limite atteinte jusque vers {until:%H:%M}",
+                    (until - _now()).total_seconds() + 60,
+                    label=f"Gemini · quota atteint, reprise vers {until:%H:%M}",
+                    error="Quota Gemini atteint",
+                )
         with _LOCK, browser_context(self.rt) as ctx:
             if state.get("chat_url"):
                 try:
@@ -944,17 +1100,42 @@ class GeminiWebVideo:
                 except PlaywrightError as exc:  # page lente, onglet fermé pendant la lecture : on repassera
                     errors = int(state.get("errors") or 0) + 1
                     if errors >= 5:
-                        raise GeminiError(f"lecture de la demande Gemini impossible ({errors} fois) : {str(exc)[:300]} ; "
-                                          f"conversation : {state['chat_url']}") from exc
+                        raise GeminiError(
+                            f"lecture de la demande Gemini impossible ({errors} fois) : {str(exc)[:300]} ; "
+                            f"conversation : {state['chat_url']}"
+                        ) from exc
                     state["errors"] = errors
                     write_state(out_path, state)
-                    raise Postpone(f"Gemini : lecture impossible ({str(exc)[:200]}), nouvel essai", self.rt.poll_s,
-                                   label="Gemini · nouvel essai de lecture") from exc
-            raise self._submit(ctx, prompt=prompt, style_preset=style_preset, scene_s=duration_s, target=target,
-                               out_path=out_path, image_path=image_path, end_image_path=end_image_path, on_progress=on_progress)
+                    raise Postpone(
+                        f"Gemini : lecture impossible ({str(exc)[:200]}), nouvel essai",
+                        self.rt.poll_s,
+                        label="Gemini · nouvel essai de lecture",
+                    ) from exc
+            raise self._submit(
+                ctx,
+                prompt=prompt,
+                style_preset=style_preset,
+                scene_s=duration_s,
+                target=target,
+                out_path=out_path,
+                image_path=image_path,
+                end_image_path=end_image_path,
+                on_progress=on_progress,
+            )
 
-    def _submit(self, ctx: BrowserContext, *, prompt: str, style_preset: str | None, scene_s: float, target: int, out_path: Path,
-                image_path: Path | None, end_image_path: Path | None, on_progress: Callable[[int], None]) -> Postpone:
+    def _submit(
+        self,
+        ctx: BrowserContext,
+        *,
+        prompt: str,
+        style_preset: str | None,
+        scene_s: float,
+        target: int,
+        out_path: Path,
+        image_path: Path | None,
+        end_image_path: Path | None,
+        on_progress: Callable[[int], None],
+    ) -> Postpone:
         page = ctx.new_page()
         page.on("filechooser", lambda _chooser: None)  # jamais de fenêtre système « Ouvrir » sur l'écran de Luca
         end_frame = image_path is not None and end_image_path is not None
@@ -974,17 +1155,28 @@ class GeminiWebVideo:
                 model = ""
                 with suppress(PlaywrightError):
                     model = (picker.get_attribute("aria-label") or "") if picker else ""
-                reason = " ".join(filter(None, [quota_banner(page) or banner, f"mode vidéo indisponible ({model})" if model
-                                                else "mode vidéo indisponible"]))
+                reason = " ".join(
+                    filter(
+                        None,
+                        [
+                            quota_banner(page) or banner,
+                            f"mode vidéo indisponible ({model})" if model else "mode vidéo indisponible",
+                        ],
+                    )
+                )
                 if not int(read_state(out_path).get("quota_hits") or 0):  # une capture au premier constat, pas à chaque heure
                     dump(page, self.rt, "sans_mode_video")
                 with suppress(PlaywrightError):
                     page.close()
                 return self._quota(reason, out_path)
             # image de départ, puis (première + dernière image) celle d'arrivée : l'ordre compte pour le prompt
-            how = ", ".join(attach_image(page, p) for p in (image_path, end_image_path if end_frame else None) if p) or "sans image"
+            how = (
+                ", ".join(attach_image(page, p) for p in (image_path, end_image_path if end_frame else None) if p) or "sans image"
+            )
             notes = apply_options(page, duration=target, model=self.rt.model) if mode else []
-            text = build_prompt(prompt, style_preset, scene_s, target, with_image=image_path is not None, chat=not mode, end_frame=end_frame)
+            text = build_prompt(
+                prompt, style_preset, scene_s, target, with_image=image_path is not None, chat=not mode, end_frame=end_frame
+            )
             start_url = page.url
             write_prompt(page, text)
             send(page)
@@ -992,9 +1184,17 @@ class GeminiWebVideo:
             marker = f"yt2-{uuid.uuid4().hex[:10]}"
             with suppress(PlaywrightError):
                 page.evaluate("m => { window.name = m }", marker)
-            state = {"chat_url": start_url, "marker": marker, "submitted_at": _now().isoformat(timespec="seconds"),
-                     "mode": mode or "conversation", "image": how, "options": notes, "duration_s": target, "prompt": text,
-                     "quota_hits": int(read_state(out_path).get("quota_hits") or 0)}
+            state = {
+                "chat_url": start_url,
+                "marker": marker,
+                "submitted_at": _now().isoformat(timespec="seconds"),
+                "mode": mode or "conversation",
+                "image": how,
+                "options": notes,
+                "duration_s": target,
+                "prompt": text,
+                "quota_hits": int(read_state(out_path).get("quota_hits") or 0),
+            }
             write_state(out_path, state)
             chat_url = state["chat_url"] = wait_chat_url(page, start_url)
             write_state(out_path, state)
@@ -1033,8 +1233,13 @@ class GeminiWebVideo:
             message = " ".join(f"{result.text} {result.alerts}".split())[:300]
             save_gemini_status(self.db, ok=False, message=f"Gemini a répondu sans vidéo : « {message} »")
             raise GeminiError(f"Gemini a répondu sans vidéo : « {message} »")
-        save_gemini_status(self.db, ok=True, quota_until=None, last_submit_at=state["submitted_at"],
-                           message=f"Vidéo demandée ({state['mode']}, image : {how}{', ' + ', '.join(notes) if notes else ''})")
+        save_gemini_status(
+            self.db,
+            ok=True,
+            quota_until=None,
+            last_submit_at=state["submitted_at"],
+            message=f"Vidéo demandée ({state['mode']}, image : {how}{', ' + ', '.join(notes) if notes else ''})",
+        )
         at = _now()
         return Postpone(f"Gemini : vidéo demandée ({chat_url})", self.rt.poll_s, label=f"Gemini · vidéo demandée à {at:%H:%M}")
 
@@ -1044,8 +1249,11 @@ class GeminiWebVideo:
         if page is None:
             if not re.search(r"/(app|video|videos|c)/[A-Za-z0-9_-]{6,}", state["chat_url"]):
                 clear_state(out_path, keep={"quota_hits": state.get("quota_hits", 0)})  # onglet perdu, conversation introuvable
-                raise Postpone("Gemini : onglet de la demande perdu (Chrome relancé ?), nouvelle demande", 30,
-                               label="Gemini · nouvelle demande")
+                raise Postpone(
+                    "Gemini : onglet de la demande perdu (Chrome relancé ?), nouvelle demande",
+                    30,
+                    label="Gemini · nouvelle demande",
+                )
             page = ctx.new_page()
             page.on("filechooser", lambda _chooser: None)
             page.goto(state["chat_url"], wait_until="domcontentloaded", timeout=60_000)
@@ -1058,7 +1266,9 @@ class GeminiWebVideo:
                 page.reload(wait_until="domcontentloaded", timeout=60_000)
                 _wait(page, lambda: bool(read_result(page).videos) or bool(read_result(page).text), 20)
         if signed_in(page) is False:
-            raise GeminiNotSignedIn("session Google perdue dans le Chrome dédié : s'y reconnecter (Réglages → Gemini en ligne), puis relancer")
+            raise GeminiNotSignedIn(
+                "session Google perdue dans le Chrome dédié : s'y reconnecter (Réglages → Gemini en ligne), puis relancer"
+            )
         result = read_result(page)
         if result.kind == "ready":
             try:
@@ -1072,8 +1282,13 @@ class GeminiWebVideo:
             clear_state(out_path)
             with suppress(PlaywrightError):
                 page.close()
-            save_gemini_status(self.db, ok=True, quota_until=None, last_clip_at=_now().isoformat(timespec="seconds"),
-                               message=f"Clip récupéré ({how}, {width}×{height}, {duration:.1f} s)")
+            save_gemini_status(
+                self.db,
+                ok=True,
+                quota_until=None,
+                last_clip_at=_now().isoformat(timespec="seconds"),
+                message=f"Clip récupéré ({how}, {width}×{height}, {duration:.1f} s)",
+            )
             on_progress(100)
             return ClipInfo(duration, width, height, None)
         if result.kind == "quota":
@@ -1093,13 +1308,18 @@ class GeminiWebVideo:
             clear_state(out_path)
             with suppress(PlaywrightError):
                 page.close()
-            raise GeminiError(f"pas de vidéo après {waited / 3600:.1f} h ; la conversation reste dans Gemini : {state['chat_url']}")
+            raise GeminiError(
+                f"pas de vidéo après {waited / 3600:.1f} h ; la conversation reste dans Gemini : {state['chat_url']}"
+            )
         state["polls"] = polls
         write_state(out_path, state)
         on_progress(min(90, 10 + int(80 * waited / 600)))
         minutes = max(1, round(waited / 60))
-        raise Postpone(f"Gemini : vidéo en cours depuis {minutes} min ({state['chat_url']})", self.rt.poll_s,
-                       label=f"Gemini · en cours depuis {minutes} min")
+        raise Postpone(
+            f"Gemini : vidéo en cours depuis {minutes} min ({state['chat_url']})",
+            self.rt.poll_s,
+            label=f"Gemini · en cours depuis {minutes} min",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1112,14 +1332,27 @@ def check(settings: Settings, db: Any | None, images: list[Path] | None = None) 
     vérifier « première + dernière image »), réglages. Laisse une capture et la liste des boutons dans
     DATA_DIR/gemini-debug."""
     rt = Runtime.load(settings, db)
-    report: dict[str, Any] = {"chrome": str(rt.chrome) if rt.chrome else None, "profil": str(rt.profile), "port": rt.port, "adresse": rt.home}
+    report: dict[str, Any] = {
+        "chrome": str(rt.chrome) if rt.chrome else None,
+        "profil": str(rt.profile),
+        "port": rt.port,
+        "adresse": rt.home,
+    }
     with browser_context(rt, minimized=False) as ctx:
         page = ctx.new_page()
         page.on("filechooser", lambda _chooser: None)
         try:
             page.goto(rt.home, wait_until="domcontentloaded", timeout=60_000)
-            _first_visible(page, [page.locator("rich-textarea"), page.locator("[contenteditable='true']"),
-                                  page.get_by_role("button", name=SIGN_IN), page.get_by_role("link", name=SIGN_IN)], 30)
+            _first_visible(
+                page,
+                [
+                    page.locator("rich-textarea"),
+                    page.locator("[contenteditable='true']"),
+                    page.get_by_role("button", name=SIGN_IN),
+                    page.get_by_role("link", name=SIGN_IN),
+                ],
+                30,
+            )
             report["bandeau cookies refusé"] = dismiss_consent(page)
             page.wait_for_timeout(1500)
             report["fenêtres fermées"] = dismiss_popups(page)

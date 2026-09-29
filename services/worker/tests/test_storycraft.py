@@ -38,14 +38,24 @@ TARGET = 40  # une histoire courte suffit aux tests : 116 mots visés (99 à 130
 BEATS = [
     ("hook", "Ce gardien de phare a sauvé 300 navires sans jamais voir la mer.", "Un vieux phare sur un rocher, la nuit"),
     ("promise", "Pourtant, une nuit lui a tout pris.", "La lampe du phare vacille"),
-    ("context", "Alors tout commence en 1890, sur un rocher battu par les vents. Paul est aveugle depuis l'enfance. "
-                "Il veut une chose : garder la lampe allumée, chaque nuit, pour que son frère rentre du large.",
-     "Un homme aveugle monte l'escalier du phare"),
-    ("conflict", "Mais une tempête noie le village en une heure. Le feu s'éteint. Donc Paul grimpe les 120 marches à "
-                 "tâtons, une allumette entre les dents. Personne ne l'aide.", "La tempête frappe le phare"),
+    (
+        "context",
+        "Alors tout commence en 1890, sur un rocher battu par les vents. Paul est aveugle depuis l'enfance. "
+        "Il veut une chose : garder la lampe allumée, chaque nuit, pour que son frère rentre du large.",
+        "Un homme aveugle monte l'escalier du phare",
+    ),
+    (
+        "conflict",
+        "Mais une tempête noie le village en une heure. Le feu s'éteint. Donc Paul grimpe les 120 marches à "
+        "tâtons, une allumette entre les dents. Personne ne l'aide.",
+        "La tempête frappe le phare",
+    ),
     ("twist", "Sauf qu'au sommet, la lampe n'a plus de verre, et le vent souffle chaque flamme.", "La vitre brisée"),
-    ("payoff", "Alors il colle son propre corps contre la vitre brisée toute la nuit. À l'aube, 12 bateaux rentrent.",
-     "Des bateaux rentrent au port à l'aube"),
+    (
+        "payoff",
+        "Alors il colle son propre corps contre la vitre brisée toute la nuit. À l'aube, 12 bateaux rentrent.",
+        "Des bateaux rentrent au port à l'aube",
+    ),
     ("ending", "Son frère n'était pas dedans.", "Le rocher vide au matin"),
 ]
 
@@ -68,14 +78,25 @@ def _shots(n: int, skip: set[int] | None = None, map_at: int | None = None) -> S
     for i in range(n):
         if skip and i in skip:
             continue
-        shot: dict[str, Any] = {"index": i, "visual_prompt": f"shot {i}, lighthouse on a rock, 1890", "motion_prompt": "slow push in",
-                                "continues_previous": True, "on_screen_text": {"fr": "300 navires"} if i == 0 else {}}
+        shot: dict[str, Any] = {
+            "index": i,
+            "visual_prompt": f"shot {i}, lighthouse on a rock, 1890",
+            "motion_prompt": "slow push in",
+            "continues_previous": True,
+            "on_screen_text": {"fr": "300 navires"} if i == 0 else {},
+        }
         if map_at is not None and i in (map_at, map_at + 2):  # deux cartes proposées : seule la première reste
             shot["map"] = {"place": "Phare du Créach", "context": ["Bretagne"]}
         shots.append(shot)
-    return ShotList.model_validate({"shots": shots, "loop_note": "retour au phare", "music_mood": "emotional",
-                                    "design_bible": "1890 Brittany, stormy blue light",
-                                    "metadata": {"fr": {"title": "Le gardien", "description": "d", "tags": ["phare"]}}})
+    return ShotList.model_validate(
+        {
+            "shots": shots,
+            "loop_note": "retour au phare",
+            "music_mood": "emotional",
+            "design_bible": "1890 Brittany, stormy blue light",
+            "metadata": {"fr": {"title": "Le gardien", "description": "d", "tags": ["phare"]}},
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +117,12 @@ def test_the_test_story_is_clean():
 
 
 def test_normalize_writes_numbers_in_digits_and_cleans_the_title():
-    d = normalize_draft(_draft(beats=[("hook", "  Ce  phare a sauvé trois cents navires. ", "v"), *BEATS[1:]],
-                               hook_title={"fr": "« Il n'a jamais vu la mer ». #phare"}))
+    d = normalize_draft(
+        _draft(
+            beats=[("hook", "  Ce  phare a sauvé trois cents navires. ", "v"), *BEATS[1:]],
+            hook_title={"fr": "« Il n'a jamais vu la mer ». #phare"},
+        )
+    )
     assert d.beats[0].text == "Ce phare a sauvé 300 navires."
     assert d.hook_title["fr"] == "Il n'a jamais vu la mer"
 
@@ -105,8 +130,12 @@ def test_normalize_writes_numbers_in_digits_and_cleans_the_title():
 def test_lint_story_catches_what_makes_a_list_of_facts():
     flat = [
         ("hook", "En 1937, des archéologues trouvent une cache secrète en Afghanistan pleine de trésors.", "v"),
-        ("context", "La cache contient des ivoires. Et ensuite ils trouvent des verres romains. Puis ils trouvent des laques "
-                    "chinoises venues de très loin.", "v"),
+        (
+            "context",
+            "La cache contient des ivoires. Et ensuite ils trouvent des verres romains. Puis ils trouvent des laques "
+            "chinoises venues de très loin.",
+            "v",
+        ),
         ("context", "Les archéologues notent tout dans un carnet.", "v"),
         ("payoff", "Les pièces vont au musée de Kaboul et au musée de Paris en 1938 après un partage.", "v"),
     ]
@@ -117,8 +146,10 @@ def test_lint_story_catches_what_makes_a_list_of_facts():
 
 
 def test_lint_story_measures_hook_rhythm_ending_and_numbers():
-    long_hook = [("hook", "Ce gardien de phare a sauvé des centaines de navires perdus sans jamais voir la mer de ses yeux.",
-                  "v"), *BEATS[1:]]
+    long_hook = [
+        ("hook", "Ce gardien de phare a sauvé des centaines de navires perdus sans jamais voir la mer de ses yeux.", "v"),
+        *BEATS[1:],
+    ]
     assert any("accroche de" in i for i in lint_story(_draft(beats=long_hook), "fr", TARGET))
     monotone = [(p, " ".join(["Le gardien monte encore les marches du phare dans la nuit noire."] * 2), v) for p, _, v in BEATS]
     assert any("rythme monotone" in i for i in lint_story(_draft(beats=monotone), "fr", TARGET))
@@ -126,16 +157,26 @@ def test_lint_story_measures_hook_rhythm_ending_and_numbers():
     assert any("chute de" in i for i in lint_story(_draft(beats=long_end), "fr", TARGET))
     dates = [*BEATS[:3], ("conflict", "En 1891, 1892, 1893, 1894 et 1895, cinq tempêtes frappent.", "v"), *BEATS[4:]]
     assert any("nombres dans le récit" in i for i in lint_story(_draft(beats=dates), "fr", TARGET))
-    late = [BEATS[0], ("promise", "Pourtant, une nuit lui a tout pris. Personne ne sait vraiment comment, ni pourquoi, ni "
-                                  "qui aurait pu l'aider ce soir-là.", "v"), *BEATS[2:]]
+    late = [
+        BEATS[0],
+        (
+            "promise",
+            "Pourtant, une nuit lui a tout pris. Personne ne sait vraiment comment, ni pourquoi, ni "
+            "qui aurait pu l'aider ce soir-là.",
+            "v",
+        ),
+        *BEATS[2:],
+    ]
     issues = lint_story(_draft(beats=late), "fr", TARGET)
     assert any("accroche et promesse" in i for i in issues)
     assert all("hook" not in i or "accroche" in i for i in issues)
 
 
 def test_story_only_issues_leave_out_what_lint_script_checks():
-    long_hook = [("hook", "Ce gardien de phare a sauvé des centaines de navires perdus sans jamais voir la mer de ses yeux.",
-                  "v"), *BEATS[1:]]
+    long_hook = [
+        ("hook", "Ce gardien de phare a sauvé des centaines de navires perdus sans jamais voir la mer de ses yeux.", "v"),
+        *BEATS[1:],
+    ]
     only = lint_story(_draft(beats=long_hook), "fr", TARGET, shared=False)
     assert not any("accroche de" in i for i in only)  # lint_script le dira sur la scène 1
 
@@ -187,8 +228,10 @@ def test_a_map_on_the_hook_moves_to_the_context():
     script = build_script(d, chunks, _shots(len(chunks), map_at=0), "fr", ["fr"])  # cartes proposées aux scènes 0 et 2
     assert not script.scenes[0].is_map and script.scenes[2].is_map  # l'accroche montre le sujet, la carte situe
     only_hook = _shots(len(chunks))
-    only_hook.shots[0].map = only_hook.shots[0].map or type(only_hook.shots[0]).model_validate(
-        {"index": 0, "visual_prompt": "v", "map": {"place": "Phare du Créach"}}).map
+    only_hook.shots[0].map = (
+        only_hook.shots[0].map
+        or type(only_hook.shots[0]).model_validate({"index": 0, "visual_prompt": "v", "map": {"place": "Phare du Créach"}}).map
+    )
     moved = build_script(d, chunks, only_hook, "fr", ["fr"])
     assert [s.index for s in moved.scenes if s.is_map] == [chunks[2].index] and chunks[2].role == "reveal"
 
@@ -248,8 +291,9 @@ class StoryLlm:
     """Premier récit plat (une liste de faits), relecture qui le refuse ou l'accepte, réécriture qui raconte ; le
     réalisateur peut oublier une scène la première fois."""
 
-    def __init__(self, review: ScriptReview | Exception | list[ScriptReview], flat_first: bool = True,
-                 forget: set[int] | None = None) -> None:
+    def __init__(
+        self, review: ScriptReview | Exception | list[ScriptReview], flat_first: bool = True, forget: set[int] | None = None
+    ) -> None:
         self.reviews = review if isinstance(review, list) else [review]
         self.flat_first, self.forget, self.calls = flat_first, forget, []
 
@@ -273,10 +317,20 @@ class StoryLlm:
 
 
 def _prod() -> dict[str, Any]:
-    return {"concept_id": None, "title": "Le gardien", "hook": "h", "angle": None, "premise": "p", "category": "history",
-            "visual_beats": [], "facts": [{"claim": "Le phare est allumé en 1890", "source": 0}],
-            "sources": [{"title": "Phare", "url": "u", "lang": "fr", "kind": "wikipedia"}],
-            "target_duration_s": TARGET, "format": "A_voiceover", "style_preset": "history_cinematic"}
+    return {
+        "concept_id": None,
+        "title": "Le gardien",
+        "hook": "h",
+        "angle": None,
+        "premise": "p",
+        "category": "history",
+        "visual_beats": [],
+        "facts": [{"claim": "Le phare est allumé en 1890", "source": 0}],
+        "sources": [{"title": "Phare", "url": "u", "lang": "fr", "kind": "wikipedia"}],
+        "target_duration_s": TARGET,
+        "format": "A_voiceover",
+        "style_preset": "history_cinematic",
+    }
 
 
 def _ctx(tmp_path: Path) -> Context:

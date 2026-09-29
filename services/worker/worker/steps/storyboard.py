@@ -122,7 +122,9 @@ class StoryboardStep(Step):
             src = sources[pos] if editor else None
             source = self._selected(ctx, pid, script.scenes[src].index) if src is not None else None
             if src is not None and not source:
-                raise RuntimeError(f"scène {scene.index} : retouche demandée mais la scène {script.scenes[src].index} n'a pas d'image retenue")
+                raise RuntimeError(
+                    f"scène {scene.index} : retouche demandée mais la scène {script.scenes[src].index} n'a pas d'image retenue"
+                )
             shot = shot_number(script, scene.index)  # le numéro que Luca voit dans Création
             # Scène carte (récits) : rendue par le code, une seule image ; en cas d'échec, l'image d'IA habituelle
             if scene.is_map and source is None:
@@ -139,39 +141,76 @@ class StoryboardStep(Step):
                     out = sdir / f"scene_{scene.index:02d}_{seed}.png"
                     if source and editor:  # retouche de l'image clé source, même cadre
                         instruction = edit_instruction(script, pos, recipe)
-                        editor.edit(image_path=source, instruction=instruction, description=image_prompt(script, pos, recipe),
-                                    style_preset=prod["style_preset"], out_path=out, seed=seed, dry_run=ctx.settings.dry_run)
+                        editor.edit(
+                            image_path=source,
+                            instruction=instruction,
+                            description=image_prompt(script, pos, recipe),
+                            style_preset=prod["style_preset"],
+                            out_path=out,
+                            seed=seed,
+                            dry_run=ctx.settings.dry_run,
+                        )
                         if editor.fallback_reason:
-                            ctx.log("storyboard.retouche_repli", level="warn", scene=scene.index, provider=editor.name,
-                                    raison=editor.fallback_reason)
-                        meta = {"candidate": k, "seed": seed, "prompt": instruction, "provider": editor.name, "edited_from": str(source)}
+                            ctx.log(
+                                "storyboard.retouche_repli",
+                                level="warn",
+                                scene=scene.index,
+                                provider=editor.name,
+                                raison=editor.fallback_reason,
+                            )
+                        meta = {
+                            "candidate": k,
+                            "seed": seed,
+                            "prompt": instruction,
+                            "provider": editor.name,
+                            "edited_from": str(source),
+                        }
                         size = (editor.width, editor.height)
                     elif sheets:  # drame : les fiches des personnages à l'image, citées <image1>… (docs/31 §8)
                         keys = [c for c in scene.characters if c in sheets][:CHARACTERS_MAX] if image.references else []
                         prompt = drama_scene_prompt(script, pos, keys)
-                        image.generate(prompt=prompt, style_preset=prod["style_preset"], out_path=out, seed=seed,
-                                       dry_run=ctx.settings.dry_run, refs=[sheets[c] for c in keys])
+                        image.generate(
+                            prompt=prompt,
+                            style_preset=prod["style_preset"],
+                            out_path=out,
+                            seed=seed,
+                            dry_run=ctx.settings.dry_run,
+                            refs=[sheets[c] for c in keys],
+                        )
                         meta = {"candidate": k, "seed": seed, "prompt": prompt, "provider": image.name, "refs": keys}
                         size = (image.width, image.height)
                     else:
                         prompt = image_prompt(script, pos, recipe) if visual else scene.visual_prompt
-                        image.generate(prompt=prompt, style_preset=prod["style_preset"], out_path=out, seed=seed,
-                                       dry_run=ctx.settings.dry_run)
+                        image.generate(
+                            prompt=prompt,
+                            style_preset=prod["style_preset"],
+                            out_path=out,
+                            seed=seed,
+                            dry_run=ctx.settings.dry_run,
+                        )
                         meta = {"candidate": k, "seed": seed, "prompt": prompt, "provider": image.name}
                         size = (image.width, image.height)
                     verdict = self._check(ctx, qc, out, script, pos, recipe, source) if qc else None
                     if verdict is not None:
                         meta["qc"] = verdict.model_dump()
                     asset = ctx.db.add_asset(
-                        production_id=pid, kind="storyboard", scene_index=scene.index, local_path=str(out),
-                        width=size[0], height=size[1], selected=False, meta=meta,
+                        production_id=pid,
+                        kind="storyboard",
+                        scene_index=scene.index,
+                        local_path=str(out),
+                        width=size[0],
+                        height=size[1],
+                        selected=False,
+                        meta=meta,
                     )
                     made += 1
                     chosen = asset
                     verdicts[scene.index] = verdict
                     if verdict is None or verdict.ok:
                         break
-                    ctx.log("storyboard.image_refusee", level="warn", scene=scene.index, essai=attempt + 1, problemes=verdict.problems)
+                    ctx.log(
+                        "storyboard.image_refusee", level="warn", scene=scene.index, essai=attempt + 1, problemes=verdict.problems
+                    )
                 if k == 0 and chosen is not None:  # retenue : l'image acceptée, sinon le dernier essai
                     self._select(ctx, pid, scene.index, chosen, stoppable=bool(only))
 
@@ -195,18 +234,31 @@ class StoryboardStep(Step):
                 ideas
                 + (f"Contrôle automatique : images refusées après {tries} essais{problems}\n" if failed else "")
                 + f"Planche : {sheet}\nChoisir : yt2 storyboard pick {pid} <scène>:<image>\n"
-                f"Refaire : yt2 storyboard redo {pid} <scène>\nRéinventer : yt2 storyboard reinvent {pid} <scène> [\"remarque\"]\n"
+                f'Refaire : yt2 storyboard redo {pid} <scène>\nRéinventer : yt2 storyboard reinvent {pid} <scène> ["remarque"]\n'
                 f"Valider : yt2 storyboard approve {pid}"
-                + (f"\nScènes en continuité (sans image, partent du clip précédent) : {chained_scenes}" if chained_scenes else ""),
+                + (
+                    f"\nScènes en continuité (sans image, partent du clip précédent) : {chained_scenes}" if chained_scenes else ""
+                ),
                 production_id=pid,
             )
-            return {"images": made, "sheet": str(sheet) if sheet else None, "review": True, "chained": chained_scenes, "qc": qc_info,
-                    **redone}
+            return {
+                "images": made,
+                "sheet": str(sheet) if sheet else None,
+                "review": True,
+                "chained": chained_scenes,
+                "qc": qc_info,
+                **redone,
+            }
         if autopass:
             ctx.log("storyboard.controle_ok", images=made, scenes=len(verdicts))
         return {
-            "images": made, "sheet": str(sheet) if sheet else None, "review": False, "chained": chained_scenes, "qc": qc_info,
-            **redone, **enqueue_render_dag(ctx.db, pid, ctx.settings.clip_continuity, ctx.settings.continuity_max_chain),
+            "images": made,
+            "sheet": str(sheet) if sheet else None,
+            "review": False,
+            "chained": chained_scenes,
+            "qc": qc_info,
+            **redone,
+            **enqueue_render_dag(ctx.db, pid, ctx.settings.clip_continuity, ctx.settings.continuity_max_chain),
         }
 
     @staticmethod
@@ -221,7 +273,9 @@ class StoryboardStep(Step):
 
         def dossier(sources: list[dict[str, Any]]) -> str:  # pages sources des séries documentaires (cache du script)
             try:
-                return source_dossier(sources, ctx.settings.data_dir / "sources" / "wikipedia", ctx.settings.effective_wikipedia_user_agent)
+                return source_dossier(
+                    sources, ctx.settings.data_dir / "sources" / "wikipedia", ctx.settings.effective_wikipedia_user_agent
+                )
             except Exception as exc:  # noqa: BLE001
                 ctx.log("storyboard.dossier_indisponible", level="warn", erreur=str(exc)[:300])
                 return ""
@@ -237,15 +291,19 @@ class StoryboardStep(Step):
         for v in ctx.db.fetch_all("select id, lang from videos where production_id = %s", (pid,)):
             text = " ".join(s.narration.get(v["lang"], "") for s in script.scenes).strip() or None  # type: ignore[call-overload]
             ctx.db.execute("update videos set narration_text = %s where id = %s", (text, v["id"]))
-        ctx.db.execute("delete from assets where production_id = %s and kind = 'storyboard' and scene_index = any(%s)",
-                       (pid, sorted(only)))
-        ctx.db.execute("update jobs set payload = (payload - 'reinvent') || jsonb_build_object('reinvented', %s::jsonb) where id = %s",
-                       (Jsonb(entries), ctx.job.id))
+        ctx.db.execute(
+            "delete from assets where production_id = %s and kind = 'storyboard' and scene_index = any(%s)", (pid, sorted(only))
+        )
+        ctx.db.execute(
+            "update jobs set payload = (payload - 'reinvent') || jsonb_build_object('reinvented', %s::jsonb) where id = %s",
+            (Jsonb(entries), ctx.job.id),
+        )
         return script, entries
 
     @staticmethod
-    def _sheets(ctx: Context, pid: Any, script: ScriptV1, image: ComfyImage, style_preset: str | None, sdir: Path,
-                redo: set[str]) -> dict[str, Path]:
+    def _sheets(
+        ctx: Context, pid: Any, script: ScriptV1, image: ComfyImage, style_preset: str | None, sdir: Path, redo: set[str]
+    ) -> dict[str, Path]:
         """Fiche de chaque personnage d'un drame (docs/35) : lui seul, en pied, sur fond neutre (assets kind
         'character', meta.key). Faite une fois, gardée pour les « Refaire » de scène ; refaite pour les clés de `redo`.
         Renvoie la fiche retenue de chaque personnage."""
@@ -265,9 +323,13 @@ class StoryboardStep(Step):
             prompt = sheet_prompt(member)
             image.generate(prompt=prompt, style_preset=style_preset, out_path=path, seed=seed, dry_run=ctx.settings.dry_run)
             asset = ctx.db.add_asset(
-                production_id=pid, kind="character", local_path=str(path), width=image.width, height=image.height,
-                selected=False, meta={"key": member.key, "name": member.name, "seed": seed, "prompt": prompt,
-                                      "provider": image.name},
+                production_id=pid,
+                kind="character",
+                local_path=str(path),
+                width=image.width,
+                height=image.height,
+                selected=False,
+                meta={"key": member.key, "name": member.name, "seed": seed, "prompt": prompt, "provider": image.name},
             )
             if member.key not in redo:
                 ctx.db.execute(
@@ -302,7 +364,9 @@ class StoryboardStep(Step):
             raise cancel.JobCancelled("Refaire arrêté depuis Création : les images retenues restent")
 
     @staticmethod
-    def _check(ctx: Context, qc: Any, out: Path, script: ScriptV1, pos: int, recipe: str, source: Path | None) -> KeyframeVerdict | None:
+    def _check(
+        ctx: Context, qc: Any, out: Path, script: ScriptV1, pos: int, recipe: str, source: Path | None
+    ) -> KeyframeVerdict | None:
         """Verdict du contrôle ; None si le modèle de vision n'a pas pu répondre (la revue humaine reste alors due).
         Prompt du contrôleur : version active de la clé keyframe_qc (onglet Agents du dashboard, worker/prompts.py)."""
         try:
@@ -324,15 +388,27 @@ class StoryboardStep(Step):
                 out.write_bytes(b"")
             else:
                 plan = maps.scene_plan(ctx.settings, scene.map, lang)
-                maps.render_still(plan, out, cache_root=ctx.settings.data_dir / "maps",
-                                  user_agent=ctx.settings.effective_wikipedia_user_agent, font_path=maps.font_for(ctx.settings),
-                                  lang=lang, duration_s=scene.duration_s)
+                maps.render_still(
+                    plan,
+                    out,
+                    cache_root=ctx.settings.data_dir / "maps",
+                    user_agent=ctx.settings.effective_wikipedia_user_agent,
+                    font_path=maps.font_for(ctx.settings),
+                    lang=lang,
+                    duration_s=scene.duration_s,
+                )
         except Exception as exc:  # noqa: BLE001
             ctx.log("storyboard.carte_indisponible", level="warn", scene=scene.index, lieu=scene.map.place, erreur=str(exc)[:300])
             return False
         asset = ctx.db.add_asset(
-            production_id=pid, kind="storyboard", scene_index=scene.index, local_path=str(out), width=maps.W, height=maps.H,
-            selected=False, meta={"candidate": 0, "provider": "map", "prompt": f"Carte : {scene.map.place}", "map": scene.map.model_dump()},
+            production_id=pid,
+            kind="storyboard",
+            scene_index=scene.index,
+            local_path=str(out),
+            width=maps.W,
+            height=maps.H,
+            selected=False,
+            meta={"candidate": 0, "provider": "map", "prompt": f"Carte : {scene.map.place}", "map": scene.map.model_dump()},
         )
         StoryboardStep._select(ctx, pid, scene.index, asset)
         return True

@@ -62,7 +62,9 @@ class AnalyzeStep(Step):
             # L'agent regarde aussi les vidéos (planches d'images) quand un des modèles réglés voit les images
             if ctx.job.payload.get("images", True) and any(sees_images(p) for p in getattr(llm, "chain", [llm])):
                 ctx.progress(20, "Images des vidéos")
-                shown = [(v, sheet) for v in sheet_candidates(videos) if (sheet := video_sheet(ctx.db, ctx.settings.data_dir, v.id))]
+                shown = [
+                    (v, sheet) for v in sheet_candidates(videos) if (sheet := video_sheet(ctx.db, ctx.settings.data_dir, v.id))
+                ]
                 if shown:
                     ctx.progress(35, "Appel LLM (avec les images)")
                     try:
