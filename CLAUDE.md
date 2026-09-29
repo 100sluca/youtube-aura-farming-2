@@ -1,6 +1,6 @@
 # YouTube 2.0 : règles du dépôt
 
-- Le dépôt GitHub `youtube-aura-farming` (remote `aura`, suivi par `main`) est **public** : jamais de clé, de mot de
+- Le dépôt GitHub `youtube-aura-farming-2` (remote `aura`, suivi par `main`) est **public** : jamais de clé, de mot de
   passe, d'adresse e-mail personnelle ni de vidéo d'un autre créateur. Les clés vivent dans les `.env` (ignorés par
   git) ou chiffrées en base ; `examples/` reste sur le PC.
 - La CI (`.github/workflows/ci.yml`) rejoue à chaque push : worker → `ruff check`, `ruff format --check`, `pytest` ;

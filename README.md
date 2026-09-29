@@ -260,8 +260,9 @@ uv sync --extra tts && uv run worker
 ```
 
 ## Dépôt
-`https://github.com/100sluca/youtube-aura-farming` (public), branche `main` : aucune clé, adresse e-mail ni vidéo
+`https://github.com/100sluca/youtube-aura-farming-2` (public), branche `main` : aucune clé, adresse e-mail ni vidéo
 d'un autre créateur n'y entre (clés dans les `.env` ignorés par git ou chiffrées en base ; `examples/` reste sur le PC).
-Ancien dépôt privé : `https://github.com/100sluca/youtube-shorts-daily`, plus mis à jour depuis le 29/09. Le projet a
+Anciens dépôts, plus mis à jour depuis le 29/09 : `youtube-aura-farming` (public, remplacé par celui-ci) et
+`https://github.com/100sluca/youtube-shorts-daily` (privé). Le projet a
 été conçu dans le dépôt Logements100s (branche `claude/youtube-2-0-architecture-tud7zx`, dossier `youtube-2.0/`) puis
 extrait avec son historique ; cette branche d'origine peut être supprimée.

@@ -131,7 +131,7 @@ function Initialize-Reglages {
             "CREDENTIALS_KEY=$cred",
             "AUTO_PRODUCE=0",
             "ALERT_EMAIL_TO=",
-            "WIKIPEDIA_USER_AGENT=`"youtube-aura-farming/1.0 (https://github.com/100sluca/youtube-aura-farming)`""
+            "WIKIPEDIA_USER_AGENT=`"youtube-aura-farming/1.0 (https://github.com/100sluca/youtube-aura-farming-2)`""
         ) -join "`r`n")
     }
     if (-not (Test-Path -LiteralPath $EnvFront)) {

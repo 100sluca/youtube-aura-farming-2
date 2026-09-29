@@ -1,4 +1,4 @@
-# Rejouée à chaque push sur main (dépôt public youtube-aura-farming) ; règles pour la garder verte : CLAUDE.md.
+# Rejouée à chaque push sur main (dépôt public youtube-aura-farming-2) ; règles pour la garder verte : CLAUDE.md.
 name: CI
 
 on:

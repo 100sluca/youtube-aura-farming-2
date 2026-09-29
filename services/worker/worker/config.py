@@ -185,4 +185,4 @@ class Settings(BaseSettings):
     @property
     def effective_wikipedia_user_agent(self) -> str:
         contact = f"; {self.alert_email_to}" if self.alert_email_to else ""
-        return self.wikipedia_user_agent or f"yt2-worker/0.1 (https://github.com/100sluca/youtube-aura-farming{contact})"
+        return self.wikipedia_user_agent or f"yt2-worker/0.1 (https://github.com/100sluca/youtube-aura-farming-2{contact})"
