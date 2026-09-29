@@ -18,6 +18,7 @@ import { VoicePicker } from "@/components/settings/voice-picker";
 import { VideoStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,7 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDuration, mixLevels, musicStart, speechSegments } from "@/lib/audio-mix";
 import { formatDateTime } from "@/lib/format";
 import { FORMAT_LABELS, FORMAT_SHORT, type AudioLayer, type MusicTrack } from "@/lib/montage-types";
-import { LEVEL_KEYS, type Levels, type RetouchInput, type RetouchJob, type RetouchPageData, type RetouchScene, type RetouchState } from "@/lib/retouch-types";
+import { HOOK_MIN_S, LEVEL_KEYS, type Levels, type RetouchInput, type RetouchJob, type RetouchPageData, type RetouchScene, type RetouchState } from "@/lib/retouch-types";
 import { cn } from "@/lib/utils";
 
 const KEEP = "__keep";
@@ -37,6 +38,8 @@ type Listen = "current" | "draft";
 
 interface Draft {
   hook: string;
+  hookEphemeral: boolean; // titre d'accroche affiché quelques secondes puis effacé en fondu (29/09)
+  hookS: number; // sa durée d'affichage
   subs: Record<string, string>; // index de scène → texte affiché
   music: string; // KEEP, NONE ou identifiant de piste
   startS: number | null; // départ de la musique choisie ; null = celui de la piste
@@ -47,11 +50,15 @@ interface Draft {
 /** Deux textes affichés identiques, espaces (insécables comprises) mises à part. */
 const same = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
 const levelsOf = (a: AudioLayer): Levels => ({ voice_db: a.voice_db, music_db: a.music_db, duck_db: a.duck_db, solo_db: a.solo_db, sfx_db: a.sfx_db });
+/** Durée d'affichage du titre d'accroche : celle de la retouche, sinon celle du modèle ; null = toute la vidéo. */
+const hookTime = (durationS: number | null) => ({ hookEphemeral: durationS !== null, hookS: durationS ?? HOOK_MIN_S });
+const seconds = (s: number) => `${s.toLocaleString("fr-FR")} s`;
 
 function savedDraft(d: RetouchPageData): Draft {
   const r = d.retouch;
   return {
     hook: r.hook_title?.trim() || d.hook.auto,
+    ...hookTime(r.hook_display ? r.hook_display.duration_s : d.hook.templateDurationS),
     subs: Object.fromEntries(d.scenes.map((s) => [String(s.index), s.edited ?? s.auto])),
     music: r.music ? (r.music.track ?? NONE) : KEEP,
     startS: r.music?.start_s ?? null,
@@ -63,6 +70,7 @@ function savedDraft(d: RetouchPageData): Draft {
 function automaticDraft(d: RetouchPageData): Draft {
   return {
     hook: d.hook.auto,
+    ...hookTime(d.hook.templateDurationS),
     subs: Object.fromEntries(d.scenes.map((s) => [String(s.index), s.auto])),
     music: KEEP,
     startS: null,
@@ -74,8 +82,10 @@ function automaticDraft(d: RetouchPageData): Draft {
 /** Ce que la retouche enregistre : ce qui diffère du montage automatique et du modèle de montage. */
 function toInput(d: RetouchPageData, draft: Draft): RetouchInput {
   const base = levelsOf(d.template.audio);
+  const shownFor = draft.hookEphemeral ? draft.hookS : null;
   return {
     hookTitle: same(draft.hook, d.hook.auto) ? null : draft.hook.trim(),
+    hookDisplay: shownFor === d.hook.templateDurationS ? null : { durationS: shownFor },
     subtitles: Object.fromEntries(
       d.scenes.flatMap((s) => {
         const text = draft.subs[String(s.index)] ?? s.auto;
@@ -92,6 +102,9 @@ function toInput(d: RetouchPageData, draft: Draft): RetouchInput {
 function changes(d: RetouchPageData, draft: Draft, before: Draft, trackTitle: (id: string) => string): string[] {
   const out: string[] = [];
   if (!same(draft.hook, before.hook)) out.push("Titre d’accroche");
+  if (draft.hookEphemeral !== before.hookEphemeral || (draft.hookEphemeral && draft.hookS !== before.hookS)) {
+    out.push(draft.hookEphemeral ? `Titre d’accroche · ${seconds(draft.hookS)}` : "Titre d’accroche · toute la vidéo");
+  }
   const subs = d.scenes.filter((s) => !same(draft.subs[String(s.index)] ?? "", before.subs[String(s.index)] ?? "")).length;
   if (subs) out.push(`Sous-titres · ${subs} scène${subs > 1 ? "s" : ""}`);
   if (draft.music !== before.music || draft.startS !== before.startS) {
@@ -257,6 +270,10 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
   const voiceChanged = Boolean(draft.voice) && draft.voice !== d.voice.current;
 
   const input = toInput(d, draft);
+  // Titre d'accroche éphémère : de 5 s à toute la vidéo ; « Rétablir » revient au texte et à la durée automatiques
+  const hookMax = Math.max(HOOK_MIN_S, Math.floor(totalS * 2) / 2);
+  const hookFromTemplate = input.hookDisplay === null && d.hook.templateDurationS !== null;
+  const hookTouched = !same(draft.hook, d.hook.auto) || input.hookDisplay !== null;
   const dirty = JSON.stringify(input) !== JSON.stringify(toInput(d, before));
   const summary = changes(d, draft, before, trackTitle);
   const automatic = JSON.stringify(input) === JSON.stringify(toInput(d, automaticDraft(d)));
@@ -523,8 +540,14 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
             <section className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold">Titre d’accroche</h4>
-                {!same(draft.hook, d.hook.auto) ? (
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={locked} onClick={() => edit({ hook: d.hook.auto })}>
+                {hookTouched ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    disabled={locked}
+                    onClick={() => edit({ hook: d.hook.auto, ...hookTime(d.hook.templateDurationS) })}
+                  >
                     <RotateCcw className="size-3.5" />
                     Rétablir
                   </Button>
@@ -539,6 +562,40 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                     : `Montage automatique : « ${d.hook.auto} »`}
                 {draft.hook.trim().length > 70 ? " Plus de 70 caractères : le titre risque de tenir sur 3 lignes." : ""}
               </p>
+              {d.hook.shown ? (
+                <div className="flex flex-col gap-3 rounded-lg border p-3">
+                  <label className="flex cursor-pointer items-start gap-2.5">
+                    <Checkbox
+                      checked={draft.hookEphemeral}
+                      disabled={locked}
+                      onCheckedChange={(checked) => edit({ hookEphemeral: checked === true })}
+                      className="mt-0.5"
+                      aria-label="Titre d’accroche éphémère"
+                    />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-sm font-medium">Éphémère</span>
+                      <span className="text-muted-foreground text-[11px] leading-snug">
+                        {draft.hookEphemeral
+                          ? `Affiché les ${seconds(Math.min(draft.hookS, hookMax))} du début, puis il s’efface en fondu.`
+                          : "Décoché : affiché pendant toute la vidéo."}
+                        {hookFromTemplate ? ` Réglage du modèle « ${d.template.name} ».` : ""}
+                      </span>
+                    </span>
+                  </label>
+                  {draft.hookEphemeral ? (
+                    <SliderField
+                      label="Affiché pendant"
+                      value={Math.min(draft.hookS, hookMax)}
+                      min={Math.min(HOOK_MIN_S, draft.hookS)}
+                      max={hookMax}
+                      step={0.5}
+                      unit="s"
+                      onChange={(hookS) => edit({ hookS })}
+                      hint={`de ${seconds(HOOK_MIN_S)} à toute la vidéo (${formatDuration(totalS)}) ; visible une fois la vidéo refaite`}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
             </section>
 
             <section className="flex flex-col gap-3">

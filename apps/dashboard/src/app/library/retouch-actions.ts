@@ -23,6 +23,7 @@ const level = (key: keyof typeof LEVEL_BOUNDS) => z.number().min(LEVEL_BOUNDS[ke
 
 const inputSchema = z.object({
   hookTitle: z.string().max(140).nullable(),
+  hookDisplay: z.object({ durationS: z.number().min(1).max(3600).nullable() }).nullable(),
   subtitles: z.record(z.string().regex(/^\d{1,3}$/), z.string().max(800)),
   music: z.object({ track: z.string().min(1).max(120).nullable(), startS: z.number().min(0).max(3600).nullable() }).nullable(),
   audio: z.object({ voice_db: level("voice_db"), music_db: level("music_db"), duck_db: level("duck_db"), solo_db: level("solo_db"), sfx_db: level("sfx_db") }),
@@ -44,6 +45,8 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
   const retouch: RetouchData = {};
   const hook = tidy(r.hookTitle ?? "");
   if (hook) retouch.hook_title = hook;
+  // titre éphémère (secondes, fondu compris) ou toute la vidéo ; absent : la durée du modèle de montage
+  if (r.hookDisplay) retouch.hook_display = { duration_s: r.hookDisplay.durationS === null ? null : Math.round(r.hookDisplay.durationS * 10) / 10 };
   const subtitles = Object.fromEntries(Object.entries(r.subtitles).map(([k, t]) => [k, tidy(t)]));
   if (Object.keys(subtitles).length) retouch.subtitles = subtitles;
   if (r.music) retouch.music = { track: r.music.track, start_s: r.music.track ? r.music.startS : null };

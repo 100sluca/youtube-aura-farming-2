@@ -8,6 +8,8 @@ de montage, prompts et réglages restent tels quels.
 
 videos.retouch (jsonb ; null = aucune retouche) :
 - hook_title : titre d'accroche affiché ; absent ou vide = celui du montage automatique (script) ;
+- hook_display : {"duration_s": s} = titre éphémère, affiché s secondes puis effacé en fondu ; {"duration_s": null} =
+  toute la vidéo ; absent = la durée du modèle de montage ;
 - subtitles : {index de la scène : texte affiché} ; absent = les mots de la voix (la voix lit toujours la narration) ;
 - music : {"track": identifiant | null, "start_s": s | null} ; absent = choix du montage, track null = sans musique ;
 - audio : niveaux voice_db, music_db, duck_db, solo_db, sfx_db ; absents = ceux du modèle de montage ;
@@ -45,8 +47,15 @@ class MusicChoice(BaseModel):
     start_s: float | None = Field(None, ge=0, le=3600)  # départ dans le fichier ; None : celui de la piste
 
 
+class HookDisplay(BaseModel):
+    """Durée d'affichage du titre d'accroche de cette vidéo (demande de Luca, 29/09 : un titre éphémère sur les drames)."""
+
+    duration_s: float | None = Field(None, ge=1, le=3600)  # éphémère : secondes, fondu compris ; None : toute la vidéo
+
+
 class Retouch(BaseModel):
     hook_title: str | None = None
+    hook_display: HookDisplay | None = None  # absent : la durée du modèle de montage
     subtitles: dict[str, str] = Field(default_factory=dict)
     music: MusicChoice | None = None
     audio: dict[str, float] = Field(default_factory=dict)
@@ -60,6 +69,9 @@ class Retouch(BaseModel):
         out = []
         if (self.hook_title or "").strip():
             out.append("titre d'accroche")
+        if self.hook_display is not None:
+            d = self.hook_display.duration_s
+            out.append(f"titre d'accroche éphémère ({d:g} s)" if d else "titre d'accroche sur toute la vidéo")
         if self.subtitles:
             out.append(f"sous-titres ({len(self.subtitles)} scène{'s' if len(self.subtitles) > 1 else ''})")
         if self.music is not None:

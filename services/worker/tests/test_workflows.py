@@ -5,15 +5,19 @@ import pytest
 
 from worker.config import WORKER_ROOT
 from worker.providers.video import (
+    NO_TEXT,
     ComfyVideo,
     WorkflowError,
     first_last_variant,
     frames_for,
+    full_prompt,
+    ignores_negative,
     is_image_to_video,
     load_catalog,
     nodes_titled,
     output_node_id,
     patch_workflow,
+    says_no_text,
     text_to_video_fallback,
 )
 
@@ -95,6 +99,20 @@ def test_minimax_h3_and_qwen_image_2512(tmp_path):
     assert (video.width, video.height, video.fps) == (480, 832, 24) and round(info.duration_s, 2) == 5.17  # 8 Go
     qwen = patch_workflow(_load("qwen_image_2512"), prompt="x", negative="y", seed=2, width=768, height=1344)
     assert nodes_titled(qwen, "SEED")[0]["inputs"]["steps"] == 8 and nodes_titled(qwen, "PROMPT")[0]["inputs"]["text"] == "x"
+
+
+def test_no_text_is_said_in_the_prompt_when_the_negative_is_ignored():
+    # 29/09 : MiniMax H3 (sans CFG) écrivait la réplique à l'image comme un sous-titre, son négatif « text, subtitles » ne
+    # compte pas ; Qwen-Image 2.1 (CFG 1) non plus. Leur encodeur est un modèle de langue : on le dit dans le prompt
+    for name in ("minimax_h3_i2v", "minimax_h3_flf2v", "minimax_h3_i2v_20step", "qwen_image_21", "zimage_turbo"):
+        assert ignores_negative(_load(name)) and says_no_text(_load(name)), name
+    # négatif pris en compte (CFG > 1) : rien à ajouter ; encodeurs T5 (Wan, LTX, Flux) à CFG 1 : un « no subtitles »
+    # les pousserait plutôt vers des sous-titres
+    assert not ignores_negative(_load("wan22_i2v_20step")) and not says_no_text(_load("wan22_i2v_20step"))
+    for name in ("wan22_i2v_4step", "ltxv_2b_i2v", "flux1_schnell_gguf"):
+        assert ignores_negative(_load(name)) and not says_no_text(_load(name)), name
+    assert full_prompt("Kiwi cries", "animation_motion", True).endswith(f"cinematic lighting. {NO_TEXT}")
+    assert full_prompt("Kiwi cries", "animation_motion", False) == "Kiwi cries, smooth expressive character animation, cinematic lighting"
 
 
 def test_minimax_h3_20step_is_the_official_setting():

@@ -37,7 +37,8 @@ choisis par le **format de la série** :
   choisie par le scénariste dans une liste, sinon d'après sa description : sexe, âge, rôle ; jamais la même pour deux
   personnages s'il en reste). L'étape voix dit chaque réplique avec la voix de son personnage (un appel au moteur par
   voix) et construit la timeline comme pour un récit. Le clip H3 garde la bouche qui bouge sur la réplique ; sa propre
-  voix est laissée de côté. Synchronisation labiale approchée, comme dans les vidéos étudiées.
+  voix est laissée de côté. **Depuis le 29/09, chaque réplique est calée sur la bouche de son clip** au montage
+  (worker/lipsync.py, docs/38) : avant, elle partait 0,15 s après le début du plan, la bouche parlait avant ou après.
 - **Voix des clips (format B)** : `update series set format = 'B_visual' where slug = '…'`. La voix est celle de H3,
   synchronisée au mot mais variable. Chaque clip est transcrit par Whisper (mots horodatés) : les sous-titres
   reprennent le texte du script calé sur la voix entendue, et un clip où la réplique n'est pas dite (ressemblance
@@ -96,8 +97,13 @@ références), puis un clip H3 par plan (≈ 6 à 7 min) : ≈ 40 min de storybo
 ## 5. Limites connues
 
 - Un plan dure 5,1 s au plus (un clip H3) : une réplique de 12 mots au plus.
-- En voix constantes, la bouche de H3 suit sa propre voix, qui n'est pas celle qu'on entend : synchronisation approchée.
-- Les textes du décor (enseignes, écrans) restent illisibles ; les étiquettes courtes passent (docs/31 §8).
+- En voix constantes, la bouche de H3 suit sa propre voix, qui n'est pas celle qu'on entend : depuis le 29/09 la voix
+  du personnage est posée sur les phrases de la bouche (début, pauses, fin : docs/38), pas syllabe par syllabe.
+- **Aucun texte écrit par les générateurs (règle de Luca, 29/09, docs/38)** : H3 écrivait parfois la réplique à
+  l'image comme un sous-titre (« Mamie Pomme », plans 4 et 9) et un panneau « SOLD » passait de l'image au clip. Le
+  scénariste n'écrit plus aucun texte dans l'image (ni panneau, ni étiquette, ni écran), le prompt du clip dit que la
+  réplique s'entend sans s'écrire, et chaque clip de drame est regardé par le contrôle des clips (Gemini) : un texte
+  ajouté par le clip le fait refaire une fois.
 - Un accessoire nommé dans la consigne des références passe sur tous les personnages : « keep … eyes, glasses,
   clothes » a mis des lunettes à Prune et à Kiwi (storyboard de Madame Figue, plans 2, 9, 10 et 11). La consigne
   (`drama.REFS_INTRO`) n'en nomme plus aucun depuis le 28/09 au soir ; ces quatre plans ont été refaits avec elle,
@@ -109,5 +115,5 @@ références), puis un clip H3 par plan (≈ 6 à 7 min) : ≈ 40 min de storybo
   grand que son père sur 6 plans de Papa Bruno. Le prompt d'un plan précise maintenant « a small child about half as
   tall as the adults » pour un chiot, un chaton ou un enfant de moins de 10 ans (`drama._size`) ; les enfants de
   12 ans, bien rendus, n'en ont pas besoin.
-- Un panneau à texte s'écrit dans la langue de la vidéo (« VENDU », pas « SOLD ») : le modèle rend bien les mots courts.
+- ~~Un panneau à texte s'écrit dans la langue de la vidéo (« VENDU »)~~ : remplacé le 29/09 par « aucun texte écrit ».
 - MiniMax H3 : licence de test seulement (à revoir avant publication, docs/21).

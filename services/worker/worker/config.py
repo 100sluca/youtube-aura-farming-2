@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     storyboard_autopass: bool = False  # True = le rendu part sans revue humaine quand toutes les images passent le contrôle
     clip_qc: bool = True  # contrôle des clips des formats visuels (personne, appareil de tournage ou objet inventés)
     clip_qc_retries: int = 1  # un clip refusé est refait au plus N fois (≈ 4 min 30 chacun sur la RTX 3070)
+    # Drame en voix constantes : la voix de chaque personnage calée sur la bouche de son clip (worker/lipsync.py, docs/38)
+    drama_lipsync: bool = True
     storyboard_candidates: int = 2  # images générées par scène
     comfy_image_workflow: str = "flux1_schnell_gguf"
 

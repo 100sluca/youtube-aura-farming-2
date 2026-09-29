@@ -279,7 +279,9 @@ function Stage(props: StageProps) {
 
   // ---- Rendu ----
   const h = hook.h;
-  const hookVisible = shows.hook && !(h.duration_s !== null && playing && time > h.duration_s);
+  // Titre éphémère : il s'efface en fondu de 0,4 s à la fin de son temps, comme au montage (worker/hooktitle.py, fade_filter)
+  const hookFade = h.duration_s !== null && playing ? Math.min(1, Math.max(0, (h.duration_s - time) / Math.min(0.4, h.duration_s / 2))) : 1;
+  const hookVisible = shows.hook && hookFade > 0;
   const sd = shadowOffset(subs.shadow_distance, subs.shadow_angle);
   const shadowOn = subs.shadow_opacity > 0 && (subs.shadow_distance > 0 || subs.shadow_blur > 0) && subs.background !== "box";
   const subEm = assEm(subFace.face, subs.font_size);
@@ -443,7 +445,14 @@ function Stage(props: StageProps) {
           <div
             {...layerProps("hook")}
             className="absolute cursor-move touch-none"
-            style={{ ...ghost(hookVisible), ...ring("hook"), left: hook.left, top: hook.top, width: hook.blockW, height: hook.blockH }}
+            style={{
+              ...(hookVisible && hookFade < 1 ? { opacity: hookFade } : ghost(hookVisible)),
+              ...ring("hook"),
+              left: hook.left,
+              top: hook.top,
+              width: hook.blockW,
+              height: hook.blockH,
+            }}
           >
             {hook.bg && h.background === "block" ? (
               <div

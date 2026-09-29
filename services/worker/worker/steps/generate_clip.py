@@ -12,7 +12,8 @@ image suivante ou sans variante, repli sur l'image → vidéo classique.
 
 Formats visuels : chaque clip est contrôlé par un modèle de vision (CLIP_QC, keyframe_qc.check_clip) et refait
 CLIP_QC_RETRIES fois s'il fait apparaître une personne, un appareil de tournage ou un objet étranger ; le verdict est
-gardé dans assets.meta.qc.
+gardé dans assets.meta.qc. Drames (docs/35) : même contrôle, pour un texte écrit à l'image par le modèle vidéo (la
+réplique en sous-titre, vu le 29/09).
 """
 
 from __future__ import annotations
@@ -50,7 +51,8 @@ class GenerateClipStep(Step):
             "select id, local_path from assets where production_id = %s and kind = 'clip' and scene_index = %s",
             (pid, idx),
         )
-        if existing:  # idempotence
+        # idempotence ; payload « redo » : clip refait quand même (texte écrit à l'image, 29/09), le nouveau prime au montage
+        if existing and not ctx.job.payload.get("redo"):
             return {"asset_id": str(existing["id"]), "skipped": True}
         # Scène carte dont l'image du storyboard est la carte : le clip est rendu par le code, sans modèle vidéo
         if scene.is_map and self._map_storyboard(ctx, pid, idx):
@@ -137,9 +139,11 @@ class GenerateClipStep(Step):
         ctx.progress(5, f"Clip {idx + 1} · {provider.name}" + (" · continuité" if continues else " · première + dernière image"
                      if end_image else " · depuis l'image" if image else ""))
         # Formats visuels : le clip est regardé par le modèle de vision (personne, appareil de tournage ou objet inventés,
-        # worker/keyframe_qc.py) et refait une fois s'il est refusé (docs/15 §10)
+        # worker/keyframe_qc.py) et refait une fois s'il est refusé (docs/15 §10) ; drame : texte écrit par le modèle
+        # vidéo (la réplique en sous-titre, 29/09)
         qc = (get_vision_llm(ctx.settings, ctx.db)
-              if is_visual(recipe) and image is not None and ctx.settings.clip_qc and not ctx.settings.dry_run else None)
+              if (is_visual(recipe) or is_drama(recipe)) and image is not None and ctx.settings.clip_qc
+              and not ctx.settings.dry_run else None)
         verdict: KeyframeVerdict | None = None
         # Gemini en ligne (durée imposée, asynchrone) : verdict noté, jamais de nouvel essai. Le job repart du début après
         # chaque attente (Postpone) : une reprise ici redemanderait une vidéo à chaque passage, sans fin, sur le quota
@@ -170,9 +174,10 @@ class GenerateClipStep(Step):
             if verdict.ok:
                 break
             ctx.log("clip.refuse", level="warn", scene=idx, essai=attempt + 1, problemes=verdict.problems)
-        # Drame en voix des clips (format B) : ce que dit le clip (Whisper) ; une réplique qui n'est pas dite fait refaire le
-        # clip (DIALOGUE_RETRIES). En voix constantes (format A), la voix de synthèse remplace le son du clip.
-        clip_voice = is_drama(recipe) and prod["format"] == "B_visual" and bool(scene.lines) and not ctx.settings.dry_run
+        # Drame : ce que dit le clip (Whisper : mots et passages parlés) ; une réplique qui n'est pas dite fait refaire le
+        # clip (DIALOGUE_RETRIES). Voix des clips (format B) : sous-titres et piste de voix ; voix constantes (format A) :
+        # la voix du personnage est calée sur la bouche du clip au montage (worker/lipsync.py, 29/09).
+        clip_voice = is_drama(recipe) and bool(scene.lines) and not ctx.settings.dry_run
         dialogue = self._dialogue(ctx, out, scene, script) if clip_voice else None
         for retry in range(DIALOGUE_RETRIES):
             if dialogue is None or dialogue["ratio"] >= HEARD_MIN:
@@ -180,6 +185,14 @@ class GenerateClipStep(Step):
             ctx.log("clip.replique_absente", level="warn", scene=idx, essai=retry + 1, attendu=dialogue["expected"],
                     entendu=dialogue["heard"], ressemblance=dialogue["ratio"])
             info = render()
+            if qc and image is not None and verdict is not None:  # le nouvel essai repasse le contrôle (texte écrit…)
+                try:
+                    verdict = check_clip(qc, out, image, script, pos, recipe, clips_dir / "qc",
+                                         system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM))
+                    if not verdict.ok:
+                        ctx.log("clip.refuse", level="warn", scene=idx, essai="réplique", problemes=verdict.problems)
+                except Exception as exc:  # noqa: BLE001
+                    ctx.log("clip.controle_indisponible", level="warn", scene=idx, erreur=str(exc)[:300])
             dialogue = self._dialogue(ctx, out, scene, script)
         asset_id = ctx.db.add_asset(
             production_id=pid,
@@ -213,7 +226,7 @@ class GenerateClipStep(Step):
             return None
         expected = line_text(scene)
         return {"expected": expected, "heard": heard[0]["text"], "words": heard[0]["words"],
-                "ratio": heard_ratio(expected, heard[0]["text"])}
+                "speech": heard[0].get("speech") or [], "ratio": heard_ratio(expected, heard[0]["text"])}
 
     @staticmethod
     def _map_storyboard(ctx: Context, pid: Any, idx: int) -> bool:

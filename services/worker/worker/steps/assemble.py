@@ -19,14 +19,16 @@ images intermédiaires calculées pour une caméra fluide (minterpolate), bruita
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
 from ..drama import build_dialogue_track, dialogue_timeline, is_drama
-from ..hooktitle import build_png, overlay_filter
+from ..hooktitle import build_png, fade_filter, overlay_filter, shown_for
+from ..lipsync import ALIGNER as LIPSYNC
+from ..lipsync import last_sync, sync_drama, tts_timeline
 from ..media import measure_loudness, pick_music, run, video_encode_args
 from ..models import NarrationTimeline, ScriptV1, WordTiming
 from ..montage import AudioLayer, MontageTemplate, font_registry, hook_text, load_template
@@ -44,7 +46,7 @@ from ..music import (
 )
 from ..numbers import merge_timed, to_digits
 from ..recipes import day_counter, is_visual, montage_format, recipe_for_production, spec
-from ..retouch import MusicChoice, Retouch, forced_music, load_retouch
+from ..retouch import HookDisplay, MusicChoice, Retouch, forced_music, load_retouch
 from ..sfx import WHOOSH_TRANSITIONS, SfxCue, parse_tags, pick_sfx, plan_cues
 from ..subtitles import FontRegistry, SubtitleProfile, TitleStyle, build_ass, write_subtitles
 from ..youtube.storage import upload_preview
@@ -69,6 +71,7 @@ class RenderPlan:
     clips: list[Path]
     clip_durations: list[float | None]  # durée native de chaque clip (None = inconnue)
     scene_durations: list[float]  # durées effectives sur la vidéo
+    clip_offsets: list[float] = field(default_factory=list)  # début coupé de chaque clip (drame calé sur la bouche) ; vide = 0
     words_by_scene: list[list[WordTiming]] = field(default_factory=list)
     titles: list[tuple[float, float, str]] = field(default_factory=list)
     narration: Path | None = None
@@ -87,6 +90,7 @@ class RenderPlan:
     interpolate: bool = False
     hook_png: Path | None = None
     hook_filter: str = "overlay=(W-w)/2:150"
+    hook_s: float | None = None  # titre d'accroche éphémère : secondes d'affichage, fondu compris (None = toute la vidéo)
     sfx: list[SfxCue] = field(default_factory=list)
     max_speedup: float = MAX_SPEEDUP  # accélération maximale d'un clip « speed » (recette)
     trails: bool = False  # traînées des silhouettes sur les clips accélérés (chantier)
@@ -146,10 +150,14 @@ def plan_from(script: ScriptV1, lang: str, timeline: NarrationTimeline | None) -
 
 
 def _clip_chain(i: int, d: float, native: float | None, fit: str, interpolate: bool, max_speedup: float = MAX_SPEEDUP,
-                trails: bool = False) -> str:
-    """Filtre d'un clip : cadrage 9:16, calage sur la durée de la scène (ralenti, accéléré ou image tenue) ;
-    un clip accéléré d'au moins ×1,5 reçoit les traînées du time-lapse si la recette le demande."""
+                trails: bool = False, offset: float = 0.0) -> str:
+    """Filtre d'un clip : début coupé (`offset`, drame calé sur la bouche : worker/lipsync.py), cadrage 9:16, calage sur
+    la durée de la scène (ralenti, accéléré ou image tenue) ; un clip accéléré d'au moins ×1,5 reçoit les traînées du
+    time-lapse si la recette le demande."""
     timing, held = "", 0.0
+    head = f"trim=start={offset:.3f},setpts=PTS-STARTPTS" if offset > 0.001 else ""
+    if head and native:
+        native = max(0.1, native - offset)
     if native and fit in ("speed", "fill") and native > d + 0.02:
         # « fill » (clip Gemini en ligne de 4 à 10 s, docs/17) : accéléré en entier pour finir sur l'image suivante,
         # au-delà de max_speedup ; « speed » : plafonné, la fin peut être coupée
@@ -166,12 +174,13 @@ def _clip_chain(i: int, d: float, native: float | None, fit: str, interpolate: b
     tail = f"trim=duration={d:.3f},setpts=PTS-STARTPTS[v{i}]"
     hold = f"tpad=stop_mode=clone:stop_duration={held + 0.1:.3f}" if held > 0.02 else ""
     if interpolate:
-        steps = [s for s in (timing, INTERPOLATE, hold, geom, f"fps={FPS}", tail) if s]
+        steps = [s for s in (head, timing, INTERPOLATE, hold, geom, f"fps={FPS}", tail) if s]
         return f"[{i}:v]" + ",".join(steps)
     stretch = f",{timing}" if timing else ""
     if hold:
         stretch += f",fps={FPS},{hold}"
-    return f"[{i}:v]{geom}{stretch},fps={FPS},{tail}"
+    start = f"{head}," if head else ""
+    return f"[{i}:v]{start}{geom}{stretch},fps={FPS},{tail}"
 
 
 def _gain(db: float) -> str:
@@ -219,13 +228,17 @@ def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subt
     hook_idx = None
     if plan.hook_png:
         hook_idx, k = k, k + 1
-        cmd += ["-i", str(plan.hook_png)]
+        # titre éphémère : l'image est lue en boucle le temps de son affichage, puis s'efface en fondu (fade_filter)
+        loop = ["-loop", "1", "-framerate", str(FPS), "-t", f"{plan.hook_s:.3f}"] if plan.hook_s else []
+        cmd += [*loop, "-i", str(plan.hook_png)]
     sfx_idx = k
     cmd += _sfx_inputs(plan)
 
     fits = plan.fit or ["trim"] * n
+    offsets = plan.clip_offsets or [0.0] * n
     parts = [
-        _clip_chain(i, d, native, fits[i] if i < len(fits) else "trim", plan.interpolate, plan.max_speedup, plan.trails)
+        _clip_chain(i, d, native, fits[i] if i < len(fits) else "trim", plan.interpolate, plan.max_speedup, plan.trails,
+                    offsets[i] if i < len(offsets) else 0.0)
         for i, (d, native) in enumerate(zip(plan.scene_durations, plan.clip_durations, strict=True))
     ]
     ov, starts = plan.overlaps, plan.starts
@@ -244,11 +257,14 @@ def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subt
     if hook_idx is None:
         parts.append(f"[vcat]{subtitles_filter}[vout]" if subtitles_filter else "[vcat]null[vout]")
     else:
-        cur = "vcat"
+        cur, hook_in = "vcat", f"[{hook_idx}:v]"
         if subtitles_filter:
             parts.append(f"[vcat]{subtitles_filter}[vsub]")
             cur = "vsub"
-        parts.append(f"[{cur}][{hook_idx}:v]{plan.hook_filter}[vout]")
+        if plan.hook_s:
+            parts.append(f"{hook_in}{fade_filter(plan.hook_s)}[hook]")
+            hook_in = "[hook]"
+        parts.append(f"[{cur}]{hook_in}{plan.hook_filter}[vout]")
 
     sound, audio = audio_filters(plan, nar_idx, mus_idx, sfx_idx)
     cmd += ["-filter_complex", ";".join(parts + sound), "-map", "[vout]"]
@@ -351,10 +367,12 @@ def fix_level(final: Path) -> float:
 
 def apply_template(
     plan: RenderPlan, template: MontageTemplate, recipe: str, *, hook: str, workdir: Path, fonts: FontRegistry,
+    hook_display: HookDisplay | None = None,
 ) -> dict[str, Any]:
     """Habillage du modèle de montage (onglet Montage, worker/montage.py), après apply_recipe : style et position des
     sous-titres et des textes à l'écran, et, selon le format (récit, chantier, visite), textes à l'écran, compteur et
-    titre d'accroche `hook` affichés ou non. Renvoie ce qui manque (pour le journal)."""
+    titre d'accroche `hook` affichés ou non. `hook_display` : durée d'affichage du titre choisie dans la retouche de la
+    vidéo (docs/34), à la place de celle du modèle. Renvoie ce qui manque (pour le journal)."""
     report: dict[str, Any] = {}
     plan.profile = template.profile()
     plan.title_style = template.title_style()
@@ -362,12 +380,15 @@ def apply_template(
         plan.words_by_scene = []
     if not template.shows_titles(recipe):
         plan.titles, plan.ticks = [], []
-    plan.hook_png = None
+    plan.hook_png, plan.hook_s = None, None
     if hook and template.shows_hook(recipe):
         style = template.hook_style(fonts)
+        if hook_display is not None:
+            style = replace(style, duration_s=hook_display.duration_s)
         png = build_png(hook, workdir / "hook.png", style)
         if png:
             plan.hook_png, plan.hook_filter = png, overlay_filter(style, plan.total_s)
+            plan.hook_s = shown_for(style, plan.total_s)
         else:
             report["hook_title"] = "Pillow absent : titre d'accroche non gravé"
     return report
@@ -439,10 +460,13 @@ class VideoMontage:
     extras: dict[str, Any]  # ce qui manque à la recette (bruitages absents…)
     retouch: Retouch = field(default_factory=Retouch)  # corrections à la main de cette vidéo (docs/34-retouche.md)
     auto_subtitles: dict[str, str] = field(default_factory=dict)  # texte affiché de chaque scène, sans retouche
+    lipsync: dict[str, Any] | None = None  # drame en voix constantes : voix calées sur la bouche des clips (docs/38)
 
 
-def prepare_video(db: Any, settings: Any, vid: Any, pid: Any) -> VideoMontage:
-    """Clips, durées de la narration, mots, textes à l'écran, recette (transitions, accélération, bruitages)."""
+def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool = False) -> VideoMontage:
+    """Clips, durées de la narration, mots, textes à l'écran, recette (transitions, accélération, bruitages).
+    `sync_lips` (le montage) : voix d'un drame en voix constantes calées sur la bouche des clips ; sans lui (essai du son
+    de l'onglet Montage), la piste calée du dernier montage, sans rien recalculer ni écrire."""
     # to_jsonb : colonne music_track absente sans la migration 0018 (null, rien ne casse)
     v = db.fetch_one(
         "select v.lang, v.format, v.timeline, to_jsonb(v) ->> 'music_track' as music_track from videos v where v.id = %s",
@@ -452,7 +476,7 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any) -> VideoMontage:
     assert v and prod and prod["script"], "vidéo ou script introuvable"
     script = ScriptV1.model_validate(prod["script"])
     clips = db.fetch_all(
-        """select distinct on (scene_index) scene_index, local_path, duration_s, meta->>'provider' as provider,
+        """select distinct on (scene_index) id, scene_index, local_path, duration_s, meta->>'provider' as provider,
                   meta->'dialogue' as dialogue from assets
            where production_id = %s and kind = 'clip' order by scene_index, created_at desc""",
         (pid,),
@@ -470,6 +494,23 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any) -> VideoMontage:
         db.execute("update videos set timeline = %s where id = %s", (Jsonb(timeline.model_dump()), vid))
     else:
         timeline = NarrationTimeline.model_validate(v["timeline"]) if v["timeline"] else None
+    # Drame en voix constantes (format A) : chaque réplique calée sur la bouche de son clip (worker/lipsync.py, docs/38) ;
+    # impossible (Whisper absent, voix pas faite) : la narration telle quelle, comme avant
+    heads: list[float] = []
+    lipsync: dict[str, Any] | None = None
+    if is_drama(recipe) and v["format"] == "A_voiceover" and not settings.dry_run:
+        synced = None
+        if sync_lips and settings.drama_lipsync:
+            synced = sync_drama(db, settings, vid, script, v["lang"], [dict(c) for c in clips], timeline)
+        elif timeline is not None and timeline.aligner == LIPSYNC:
+            synced = None if sync_lips else last_sync(settings, vid, timeline)
+            if synced is None and sync_lips:  # calage coupé (DRAMA_LIPSYNC=false) : la voix posée par l'étape voix
+                timeline = tts_timeline(settings, vid) or timeline
+                db.execute("update videos set timeline = %s where id = %s", (Jsonb(timeline.model_dump()), vid))
+        if synced:
+            timeline, dialogue_track, heads, lipsync = synced.timeline, synced.track, synced.heads, synced.report
+            if sync_lips:
+                db.execute("update videos set timeline = %s where id = %s", (Jsonb(timeline.model_dump()), vid))
     durations, words, titles = plan_from(script, v["lang"], timeline)
     # Retouche (docs/34) : sous-titres corrigés à la main pour cette vidéo, recalés sur les temps de la voix ; le texte
     # automatique de chaque scène reste connu de l'écran de retouche (résultat du job)
@@ -480,6 +521,7 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any) -> VideoMontage:
         clips=[Path(c["local_path"]) for c in clips],
         clip_durations=[float(c["duration_s"]) if c["duration_s"] else None for c in clips],
         scene_durations=durations,
+        clip_offsets=heads,
         words_by_scene=words,
         titles=titles,
         narration=dialogue_track or (settings.data_dir / "videos" / str(vid) / "narration.wav" if v["format"] == "A_voiceover" else None),
@@ -489,7 +531,7 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any) -> VideoMontage:
         extras = apply_recipe(plan, script, v["lang"], recipe, sfx_dir=settings.effective_sfx_dir, key=str(vid))
         # Gemini en ligne rend 10 s pour une étape de 1,5 s : sans plafond, sinon la fin (l'image suivante) est coupée
         plan.fit = ["fill" if f == "speed" and c.get("provider") == "gemini_web" else f for f, c in zip(plan.fit, clips, strict=False)]
-    return VideoMontage(plan, script, v["lang"], recipe, timeline, v["music_track"], extras, retouch, auto_subtitles)
+    return VideoMontage(plan, script, v["lang"], recipe, timeline, v["music_track"], extras, retouch, auto_subtitles, lipsync)
 
 
 def choose_music(
@@ -537,7 +579,7 @@ class AssembleStep(Step):
 
     def run(self, ctx: Context) -> dict[str, Any]:
         vid, pid = ctx.job.video_id, ctx.job.production_id
-        m = prepare_video(ctx.db, ctx.settings, vid, pid)
+        m = prepare_video(ctx.db, ctx.settings, vid, pid, sync_lips=True)
         plan, script, recipe, timeline, extras = m.plan, m.script, m.recipe, m.timeline, m.extras
         ctx.db.set_status("videos", vid, "rendering")
         ctx.db.set_status("productions", pid, "assembling")
@@ -551,6 +593,10 @@ class AssembleStep(Step):
         retouch = m.retouch  # corrections à la main de cette vidéo (Bibliothèque → Retoucher, docs/34) : elles priment
         if retouch:
             ctx.log("assemble.retouche", parts=retouch.parts())
+        if m.lipsync is not None and plan.narration:  # voix calées sur les bouches : la piste sert d'ici comme narration
+            ctx.log("assemble.levres", **m.lipsync)
+            ctx.db.add_asset(video_id=vid, kind="narration", local_path=str(plan.narration),
+                             duration_s=timeline.duration_s if timeline else None, meta={"provider": "lipsync", **m.lipsync})
         # Son (onglet Montage → Son) : piste de la bibliothèque, voix et musique ramenées au même niveau puis réglées
         fmt = montage_format(recipe)  # un drame se monte comme un récit (onglet Montage : récit, chantier, visite)
         track, why = choose_music(ctx.db, ctx.settings, template, fmt, script, pid, m.music_track, forced=retouch.music)
@@ -562,7 +608,8 @@ class AssembleStep(Step):
         if not track and retouch.music is None:  # aussi pour les récits : une ambiance sans piste se voit dans le journal
             ctx.log("assemble.sans_musique", level="warn", mood=script.music_mood, **why)
         auto_hook = hook_text(script, m.lang)
-        dressing = apply_template(plan, template, fmt, hook=retouch.hook(auto_hook), workdir=vdir, fonts=fonts)
+        dressing = apply_template(plan, template, fmt, hook=retouch.hook(auto_hook), workdir=vdir, fonts=fonts,
+                                  hook_display=retouch.hook_display)
         if dressing:
             ctx.log("assemble.habillage_incomplet", level="warn", template=template_name, **dressing)
         extras.update(dressing)
@@ -618,6 +665,7 @@ class AssembleStep(Step):
             "sfx": len(plan.sfx),
             "hook_title": bool(plan.hook_png),
             "retouch": retouch.parts(),
+            **({"lipsync": m.lipsync} if m.lipsync is not None else {}),
             # textes du montage automatique, sans retouche : l'écran de retouche part de ce qui s'afficherait (docs/34)
             "texts": {"hook": auto_hook, "subtitles": m.auto_subtitles},
             **extras,

@@ -19,7 +19,9 @@ autorisée mais pas encore partie, refusée ou en échec après son montage.
   « Revenir au montage automatique » (efface toutes les retouches au prochain « Refaire »). Pendant qu'elle est refaite :
   Voix → Montage → Contrôle, avec l'avancement ; ensuite la nouvelle vidéo s'affiche et « Publier cette vidéo ? »
   (autoriser, programmer, refuser).
-- **Onglet Textes** : le titre d'accroche, puis les sous-titres **scène par scène** (▶ joue la scène dans la vidéo ;
+- **Onglet Textes** : le titre d'accroche et **sa durée** (case **« Éphémère »**, 29/09 : décochée, il reste toute la
+  vidéo ; cochée, il s'affiche le temps réglé au curseur « Affiché pendant », de 5 s à toute la vidéo, puis s'efface
+  en fondu de 0,4 s ; départ : la durée du modèle de montage), puis les sous-titres **scène par scène** (▶ joue la scène dans la vidéo ;
   « La voix dit : … » quand l'affichage diffère de la narration ; « Rétablir » par champ). **« Nombres en chiffres »**
   remplit les champs avec la règle du montage automatique (worker/numbers.py, `to_digits`) : « treize cent cinquante
   tonnes » → « 1 350 tonnes », « en dix-neuf cent quatre-vingt-douze » → « en 1992 » ; Luca relit et corrige avant de
@@ -39,6 +41,7 @@ réglages des voix et bibliothèque de musiques ne bougent pas. On n'y garde que
 | Clé | Contenu | Absent |
 |---|---|---|
 | `hook_title` | titre d'accroche affiché | celui du script (en chiffres, docs/33) |
+| `hook_display` | `{"duration_s": 6}` : titre éphémère, 6 s fondu compris ; `{"duration_s": null}` : toute la vidéo | la durée du modèle de montage (onglet Montage → Titre d'accroche → Durée à l'écran) |
 | `subtitles` | `{index de scène : texte affiché}` ; texte vide = pas de sous-titre sur la scène | les mots de la voix |
 | `music` | `{"track": "music_7", "start_s": 12}` ; `track` null = sans musique | la musique du montage précédent (sinon tirée) |
 | `audio` | niveaux `voice_db`, `music_db`, `duck_db`, `solo_db`, `sfx_db` | ceux du modèle de montage |
@@ -66,6 +69,9 @@ l'écran part pour les champs non retouchés ; pour une vidéo montée avant le 
   un mot ajouté partage le temps de son voisin. « 1 350 » tapé avec une espace normale reste un seul mot (espace
   insécable) ; « 30 % », « 2 milliards », « 170 km » restent collés à leur nombre, dans la même légende.
 - **Titre d'accroche** : celui de la retouche remplace `hook_text` (même dessin, même position : modèle de montage).
+  Sa durée (`hook_display`) remplace celle du modèle ; un titre éphémère est lu en boucle le temps de son affichage,
+  s'efface en fondu (`hooktitle.fade_filter`), puis la vidéo passe seule (`overlay … eof_action=pass`). Une durée au
+  moins égale à celle de la vidéo vaut « toute la vidéo ». Le fondu vaut aussi pour la durée réglée dans le modèle.
 - **Musique** (`choose_music(..., forced=)`) : la piste choisie est prise **même coupée ou hors de ses formats**, même
   sur un format où le modèle ne met pas de musique ; son départ peut être propre à la vidéo. Piste retirée du dossier :
   le montage reprend son propre choix (journal `retouche.musique_absente`).
@@ -117,6 +123,7 @@ Après un échec, « Refaire la vidéo » reste possible sans rien changer (il r
 | services/worker/worker/steps/assemble.py | `prepare_video` (sous-titres retouchés, textes automatiques), `choose_music(forced=)`, niveaux et titre dans `AssembleStep`, `fix_level` (niveau du final, §5) |
 | services/worker/worker/steps/tts.py | voix imposée par le payload (`voice`) |
 | services/worker/tests/test_retouch.py | recalage des mots, nombres collés, musique et niveaux imposés, montage, voix |
+| services/worker/tests/test_hook_ephemeral.py | durée du titre retouchée (prime sur le modèle), boucle et fondu, vrai rendu FFmpeg |
 | apps/dashboard/src/app/library/[id]/retouche/page.tsx | la page |
 | apps/dashboard/src/components/library/retouch-editor.tsx | l'écran (onglets, écoute, avancement) |
 | apps/dashboard/src/lib/retouch.ts, retouch-types.ts | données de l'écran et état de la vidéo pendant qu'elle est refaite |

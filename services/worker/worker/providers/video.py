@@ -120,6 +120,42 @@ def styled(prompt: str, style_preset: str | None) -> str:
     return f"{prompt}, {STYLE_PRESETS.get(style_preset or '', STYLE_PRESETS['modern_minimal'])}"
 
 
+# Le négatif (« text, subtitles… ») n'agit qu'avec CFG > 1 : MiniMax H3 tourne sans CFG (BasicGuider, nœud NEGATIVE relié à
+# rien) et Qwen-Image 2.1 à CFG 1, leur négatif est ignoré. Le 29/09, H3 écrivait la réplique à l'image comme un
+# sous-titre, en plus des nôtres (« Mamie Pomme », scènes 4 et 9), et un panneau « SOLD » passait de l'image au clip :
+# Luca ne veut aucun texte écrit par le générateur. Ces modèles lisent le prompt avec un modèle de langue (Qwen3-VL,
+# Qwen2.5-VL, Qwen3 pour Z-Image), qui comprend une négation : on le leur dit dans le prompt. Pas aux encodeurs T5 (Wan,
+# LTX, Flux), qu'un « no subtitles » pousserait plutôt vers des sous-titres.
+NO_TEXT = ("No text anywhere in the picture: no subtitles, no captions, no letters or words, no writing on signs or "
+           "screens, no watermark, no logo.")
+LLM_TEXT_ENCODERS = frozenset({"minimax", "qwen_image", "lumina2"})
+
+
+def ignores_negative(wf: dict[str, Any]) -> bool:
+    """Le négatif est-il sans effet ? Nœud NEGATIVE absent ou relié à aucun nœud (guide sans CFG), ou échantillonneurs à
+    CFG 1 au plus (ComfyUI ne calcule alors pas la branche négative)."""
+    used = {v[0] for n in wf.values() if isinstance(n, dict) for v in n.get("inputs", {}).values() if isinstance(v, list) and v}
+    negatives = [nid for nid, n in wf.items() if isinstance(n, dict) and n.get("_meta", {}).get("title") == "NEGATIVE"]
+    if not any(nid in used for nid in negatives):
+        return True
+    cfgs = [n["inputs"]["cfg"] for n in wf.values()
+            if isinstance(n, dict) and isinstance(n.get("inputs", {}).get("cfg"), (int, float))]
+    return bool(cfgs) and max(cfgs) <= 1.0
+
+
+def says_no_text(wf: dict[str, Any]) -> bool:
+    """L'interdiction du texte doit-elle être écrite dans le prompt ? (négatif ignoré, encodeur qui comprend « no »)"""
+    encoders = {str(n["inputs"].get("type", "")) for n in wf.values()
+                if isinstance(n, dict) and "CLIPLoader" in str(n.get("class_type", "")) and "inputs" in n}
+    return ignores_negative(wf) and bool(encoders & LLM_TEXT_ENCODERS)
+
+
+def full_prompt(prompt: str, style_preset: str | None, no_text: bool) -> str:
+    """Prompt envoyé au modèle : la scène, son style, puis l'interdiction du texte écrit si le négatif ne la porte pas."""
+    text = styled(prompt, style_preset)
+    return f"{text.rstrip(' .')}. {NO_TEXT}" if no_text else text
+
+
 # ---------------------------------------------------------------------------
 # Workflows : chargement et remplacement des entrées par titre de nœud
 # ---------------------------------------------------------------------------
@@ -387,6 +423,7 @@ class ComfyVideo:
             w, h = settings.video_size.lower().replace("×", "x").split("x")
             self.width, self.height = int(w), int(h)
         self.negative = negative_for(workflow)
+        self.no_text = says_no_text(self.wf)  # MiniMax H3 : sans CFG, « pas de texte » passe par le prompt
 
     def generate(self, *, prompt, style_preset, duration_s, out_path, on_progress, dry_run=False, image_path=None,  # noqa: ANN001
                  end_image_path=None) -> ClipInfo:
@@ -402,8 +439,8 @@ class ComfyVideo:
         image_name = self.client.upload_image(image_path) if (self.image_to_video and image_path) else None
         end_name = self.client.upload_image(end_image_path) if (self.first_last and end_image_path) else None
         wf = patch_workflow(
-            self.wf, prompt=styled(prompt, style_preset), negative=self.negative, seed=seed, width=self.width,
-            height=self.height, frames=frames, image_name=image_name, prefix=f"yt2/{out_path.stem}",
+            self.wf, prompt=full_prompt(prompt, style_preset, self.no_text), negative=self.negative, seed=seed,
+            width=self.width, height=self.height, frames=frames, image_name=image_name, prefix=f"yt2/{out_path.stem}",
             end_image_name=end_name,
         )
         entry = self.client.wait(self.client.submit(wf), on_progress)
@@ -422,6 +459,7 @@ class ComfyImage:
         self.client = ComfyClient(settings.comfy_base_url, settings.comfy_timeout_s)
         self.width, self.height = 768, 1344
         self.negative = negative_for(name)
+        self.no_text = says_no_text(self.wf)  # Qwen-Image 2.1, Z-Image : CFG 1, « pas de texte » passe par le prompt
         self.references = supports_references(self.wf)  # fiches des personnages d'un drame en références (docs/35)
 
     def generate(self, *, prompt: str, style_preset: str | None, out_path: Path, seed: int, dry_run: bool = False,
@@ -433,7 +471,7 @@ class ComfyImage:
             return out_path
         negative = ANIMATED_NEGATIVE if style_preset in ANIMATED_STYLES else self.negative
         wf = patch_workflow(
-            self.wf, prompt=styled(prompt, style_preset), negative=negative, seed=seed,
+            self.wf, prompt=full_prompt(prompt, style_preset, self.no_text), negative=negative, seed=seed,
             width=self.width, height=self.height, prefix=f"yt2/{out_path.stem}",
         )
         if refs and self.references:

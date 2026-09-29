@@ -173,10 +173,27 @@ def build_png(text: str, dst: Path, style: HookStyle = DEFAULT_STYLE, canvas_w: 
     return dst
 
 
+HOOK_FADE_S = 0.4  # un titre éphémère s'efface en fondu plutôt que de disparaître d'un coup (demande de Luca, 29/09)
+
+
+def shown_for(style: HookStyle, total_s: float | None = None) -> float | None:
+    """Durée d'affichage du titre en secondes ; None = toute la vidéo (aucune durée, ou plus longue que la vidéo)."""
+    d = style.duration_s
+    return round(d, 3) if d and (total_s is None or d < total_s) else None
+
+
+def fade_filter(shown_s: float) -> str:
+    """Filtres de l'image du titre éphémère (PNG lu en boucle pendant `shown_s` secondes, assemble.build_command) :
+    effacement en fondu sur la fin."""
+    fade = min(HOOK_FADE_S, shown_s / 2)
+    return f"format=rgba,fade=t=out:st={shown_s - fade:.3f}:d={fade:.3f}:alpha=1"
+
+
 def overlay_filter(style: HookStyle, total_s: float | None = None) -> str:
     """Arguments du filtre FFmpeg `overlay` : PNG de toute la largeur (le bloc y est déjà placé à style.x), haut à
-    style.y, affiché style.duration_s secondes (toute la vidéo si None)."""
+    style.y. Titre éphémère (style.duration_s plus court que la vidéo) : son entrée s'arrête après le fondu, la vidéo
+    passe alors seule (eof_action=pass)."""
     expr = f"overlay=(W-w)/2:{style.y}"
-    if style.duration_s and (total_s is None or style.duration_s < total_s):
-        expr += f":enable='between(t,0,{style.duration_s:.3f})'"
+    if shown_for(style, total_s):
+        expr += ":eof_action=pass"
     return expr

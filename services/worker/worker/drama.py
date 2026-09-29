@@ -247,7 +247,9 @@ def clip_prompt(script: ScriptV1, pos: int, lang: str, style_preset: str | None 
         how = f", {', '.join(tone)}" if tone else ""
         said = spoken(ln.text, lang)  # « 50 000 » → « cinquante mille » : la voix dit les nombres en lettres
         parts.append(f'{who} says in {LANG_NAMES.get(lang, "French")}, in {voice}{how}: "{said}"')
-        parts.append("Only this character speaks, lips moving with the words.")
+        # H3 écrivait parfois la réplique à l'image, comme un sous-titre (« Mamie Pomme », 29/09) : elle s'entend, c'est tout
+        parts.append("Only this character speaks, lips moving with the words. The words are only heard, never written on "
+                     "screen: no subtitles, no captions.")
     else:
         parts.append("Nobody speaks: only ambient sound.")
     return " ".join(parts)
@@ -561,10 +563,12 @@ porte). Chaque scène :
   plan (sans lieu, l'image reprend le fond gris uni de la fiche du personnage), l'action,
   la valeur de plan (gros plan pour une émotion, plan large pour une humiliation publique) et la lumière ; nomme les
   personnages par leur name (leur fiche est ajoutée par le code) ; un figurant sans fiche est décrit en entier, origine
-  comprise ; les billets sont des euros ; aucun texte lisible sauf une étiquette courte, dans la langue de la vidéo
-  (« VENDU », pas « SOLD ») ;
+  comprise ; les billets sont des euros ; AUCUN TEXTE ÉCRIT dans l'image : ni panneau, ni étiquette, ni enseigne,
+  ni écran, ni lettre, ni journal avec des mots (le générateur les écrit, et ça se lit comme des sous-titres en trop) ;
+  une idée qui passerait par un écrit se montre autrement (une clé tendue, une pancarte vue de dos, un visage) ;
 - motion_prompt, en anglais : ce qui bouge pendant le plan (geste, expression, caméra lente), et le son d'ambiance
-  (« sound of heavy rain ») ; JAMAIS la réplique elle-même : le code l'ajoute avec la voix du personnage ;
+  (« sound of heavy rain ») ; JAMAIS la réplique elle-même : le code l'ajoute avec la voix du personnage ; rien d'écrit
+  qui apparaît ;
 - on_screen_text : vide, sauf le dernier plan d'une partie 1 (« Partie 2 bientôt ») ;
 - duration_s : 2,5 à 5 s (le code la recalcule d'après la réplique) ; role : laisse vide.
 hook_title : le titre d'accroche (règles ci-dessous), la prémisse plutôt que le titre de l'épisode. metadata : par langue,
@@ -577,6 +581,6 @@ REWRITE_HINT = (
     "DRAME : la scène garde ses personnages à l'image (characters : clés du cast, 1 à 3) et une réplique au plus (lines : "
     "who = clé du personnage qui parle, text dans la langue de la vidéo, 12 mots au plus, tone en anglais), dite par un "
     "seul personnage ; visual_prompt nomme les personnages par leur nom, l'émotion d'abord, et toujours le lieu (sans lui, "
-    "l'image reprend le fond gris de la fiche) ; motion_prompt sans la "
-    "réplique. Pas de narration : elle est recopiée de la réplique par le code."
+    "l'image reprend le fond gris de la fiche), sans aucun texte écrit (ni panneau, ni étiquette, ni écran avec des mots) ; "
+    "motion_prompt sans la réplique. Pas de narration : elle est recopiée de la réplique par le code."
 )

@@ -19,9 +19,13 @@ export const LEVEL_BOUNDS: Record<LevelKey, [min: number, max: number]> = {
   sfx_db: [-20, 12],
 };
 
+/** Bornes du titre d'accroche éphémère (demande de Luca, 29/09) : 5 s au moins, jusqu'à toute la vidéo. */
+export const HOOK_MIN_S = 5;
+
 /** videos.retouch (migration 0020), tel que le worker le lit. */
 export interface RetouchData {
   hook_title?: string | null;
+  hook_display?: { duration_s: number | null } | null; // éphémère : secondes ; null : toute la vidéo ; absent : le modèle
   subtitles?: Record<string, string>;
   music?: { track: string | null; start_s?: number | null } | null;
   audio?: Partial<Levels>;
@@ -73,7 +77,7 @@ export interface RetouchPageData {
   };
   /** Pourquoi la vidéo ne peut pas être retouchée (déjà sur YouTube, fichiers effacés…) ; null = retouchable. */
   blocked: string | null;
-  hook: { auto: string; shown: boolean };
+  hook: { auto: string; shown: boolean; templateDurationS: number | null }; // durée du modèle ; null : toute la vidéo
   subtitlesShown: boolean;
   scenes: RetouchScene[];
   retouch: RetouchData;
@@ -97,6 +101,7 @@ export interface RetouchPageData {
 /** Ce que l'écran envoie : l'état voulu de la retouche (complet), et la voix à refaire s'il y a lieu. */
 export interface RetouchInput {
   hookTitle: string | null;
+  hookDisplay: { durationS: number | null } | null; // null : la durée du modèle de montage
   subtitles: Record<string, string>;
   music: { track: string | null; startS: number | null } | null;
   audio: Partial<Levels>;

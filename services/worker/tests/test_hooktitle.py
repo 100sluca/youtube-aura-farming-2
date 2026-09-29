@@ -1,6 +1,15 @@
 import pytest
 
-from worker.hooktitle import HookStyle, build_png, clean_hook, lint_hook_title, overlay_filter, render_image
+from worker.hooktitle import (
+    HookStyle,
+    build_png,
+    clean_hook,
+    fade_filter,
+    lint_hook_title,
+    overlay_filter,
+    render_image,
+    shown_for,
+)
 
 
 def test_clean_hook_keeps_the_meaning_and_drops_the_noise():
@@ -35,5 +44,9 @@ def test_build_png_and_overlay(tmp_path):
     png = build_png("Tu paierais combien pour cette villa ?", tmp_path / "hook.png")
     assert png and png.exists() and png.stat().st_size > 0
     assert overlay_filter(HookStyle()) == "overlay=(W-w)/2:150"
-    assert overlay_filter(HookStyle(duration_s=4), total_s=30) == "overlay=(W-w)/2:150:enable='between(t,0,4.000)'"
+    # titre éphémère : l'image s'arrête après son fondu, la vidéo passe seule ensuite
+    assert overlay_filter(HookStyle(duration_s=4), total_s=30) == "overlay=(W-w)/2:150:eof_action=pass"
+    assert shown_for(HookStyle(duration_s=4), 30) == 4.0 and fade_filter(4.0) == "format=rgba,fade=t=out:st=3.600:d=0.400:alpha=1"
+    assert fade_filter(0.5) == "format=rgba,fade=t=out:st=0.250:d=0.250:alpha=1"  # fondu jamais plus long que la moitié
     assert overlay_filter(HookStyle(duration_s=40), total_s=30) == "overlay=(W-w)/2:150"  # plus long que la vidéo
+    assert shown_for(HookStyle(duration_s=40), 30) is None and shown_for(HookStyle(), 30) is None

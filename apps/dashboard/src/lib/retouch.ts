@@ -59,6 +59,10 @@ function retouchOf(value: unknown): RetouchData {
   if (!isObject(value)) return {};
   const out: RetouchData = {};
   if (typeof value.hook_title === "string") out.hook_title = value.hook_title;
+  if (isObject(value.hook_display)) {
+    const d = value.hook_display.duration_s;
+    out.hook_display = { duration_s: typeof d === "number" && d > 0 ? d : null };
+  }
   if (isObject(value.subtitles)) {
     out.subtitles = Object.fromEntries(Object.entries(value.subtitles).filter((e): e is [string, string] => typeof e[1] === "string"));
   }
@@ -215,7 +219,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
       youtubeVideoId: (v.youtube_video_id as string | null) ?? null,
     },
     blocked: blockedReason(v, state),
-    hook: { auto: hookAuto, shown: template.hook.formats.includes(format) },
+    hook: { auto: hookAuto, shown: template.hook.formats.includes(format), templateDurationS: template.hook.duration_s ?? null },
     subtitlesShown: voiced && template.subtitles.enabled,
     scenes: scenes.sort((a, b) => a.position - b.position),
     retouch,

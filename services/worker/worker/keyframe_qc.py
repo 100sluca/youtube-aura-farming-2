@@ -100,11 +100,18 @@ exigences sont remplies. Un léger mouvement de caméra, un changement de lumiè
 bougent sont normaux."""
 
 NO_RIG = "Aucun appareil de tournage ni machine étrangère n'apparaît (caméra, trépied, stabilisateur, grue, drone, perche)."
+# Drame (docs/35) : MiniMax H3 écrivait parfois la réplique à l'image, comme un sous-titre, en plus de ceux du montage
+# (« Mamie Pomme », 29/09). Seul le texte ajouté par le clip compte : celui de l'image de départ ne partirait pas en le
+# refaisant (la consigne du scénariste et du prompt d'image l'interdit déjà).
+NO_NEW_TEXT = ("Aucun texte n'apparaît sur les images 2 à 4 qui ne soit pas déjà dans l'image 1 : ni sous-titres, ni "
+               "légende, ni lettres ou mots écrits sur l'image. Les personnages de film d'animation sont normaux.")
 
 
 def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     """Les exigences d'un clip, d'après sa scène (en français, lues par le modèle)."""
     sc = script.scenes[pos]
+    if recipe == "drama":
+        return [NO_NEW_TEXT]
     if sc.passage:  # un passage d'une pièce à l'autre transforme l'image : seuls personnes et appareils comptent
         return ["Aucune personne n'apparaît, même au loin ou en reflet.", NO_RIG]
     if recipe == "timelapse" and sc.clip_mode == "flf" and pos < len(script.scenes) - 2:
