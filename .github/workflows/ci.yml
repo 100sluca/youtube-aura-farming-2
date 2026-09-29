@@ -1,4 +1,4 @@
-# Actif une fois le projet extrait dans son propre dépôt (voir README « Déplacer ce projet »).
+# Rejouée à chaque push sur main (dépôt public youtube-aura-farming) ; règles pour la garder verte : CLAUDE.md.
 name: CI
 
 on:
@@ -12,9 +12,10 @@ jobs:
     defaults:
       run: { working-directory: apps/dashboard }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: apps/dashboard/package-lock.json }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        # même Node que le PC de Luca et que l'installeur (LTS 24)
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/dashboard/package-lock.json }
       - run: npm ci
       - run: npm run lint
       - run: npx tsc --noEmit
@@ -26,8 +27,10 @@ jobs:
     defaults:
       run: { working-directory: services/worker }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --extra dev
+      # mêmes extras que l'installeur (tts, web) ; --locked : échoue si uv.lock ne suit pas pyproject.toml
+      # (l'installeur installe le lock tel quel, --frozen)
+      - run: uv sync --locked --extra dev --extra tts --extra web
       - run: uv run ruff check . && uv run ruff format --check .
       - run: uv run pytest -q

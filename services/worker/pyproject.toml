@@ -15,6 +15,7 @@ dependencies = [
   "cryptography>=43",
   "structlog>=24",
   "pillow>=10",  # titre d'accroche gravé (worker/hooktitle.py, repris de MJClipIt)
+  "numpy>=1.26",  # scène carte (worker/maps.py), calage des voix (worker/lipsync.py), montage (worker/timeline.py)
 ]
 
 [project.optional-dependencies]
