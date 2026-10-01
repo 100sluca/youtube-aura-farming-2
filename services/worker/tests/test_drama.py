@@ -411,13 +411,17 @@ def test_constant_voices_say_each_line_with_its_characters_voice_on_one_track(tm
         )
     )
     said: list[tuple[str, list[str]]] = []
+    tones_seen: list[list[str]] = []
 
     class Engine:  # deux moteurs de fréquences différentes : la piste suit la première
         def __init__(self, rate: int) -> None:
             self.rate = rate
 
-        def speak_many(self, texts: list[str], *, voice: str, lang: str, speed: float) -> list[Speech]:
+        def speak_many(
+            self, texts: list[str], *, voice: str, lang: str, speed: float, tones: list[str] | None = None
+        ) -> list[Speech]:
             said.append((voice, list(texts)))
+            tones_seen.append(list(tones or []))
             return [
                 Speech(samples=np.full(int(self.rate * 0.5), 0.2, dtype="float32"), rate=self.rate, voice=voice) for _ in texts
             ]
@@ -426,7 +430,9 @@ def test_constant_voices_say_each_line_with_its_characters_voice_on_one_track(tm
     monkeypatch.setattr(tts_step, "recipe_for_production", lambda db, pid: "drama")
     monkeypatch.setattr(tts_step, "tts_catalog", lambda settings: catalog)
     monkeypatch.setattr(
-        tts_step, "load_generation_config", lambda settings, db: SimpleNamespace(voices={"fr": "kokoro:ff_siwis"})
+        tts_step,
+        "load_generation_config",
+        lambda settings, db: SimpleNamespace(voices={"fr": "kokoro:ff_siwis"}, voice_acting="neutral"),
     )
     monkeypatch.setattr(tts_step, "get_engine", lambda settings, engine: Engine(24000 if not said else 22050))
     saved: list[Any] = []
@@ -453,10 +459,83 @@ def test_constant_voices_say_each_line_with_its_characters_voice_on_one_track(tm
     result = tts_step.TTSStep().run(ctx)
     # chiffres à l'écran (normalize) ; le moteur les redit en lettres (providers/tts.py : spoken)
     assert said == [("perso_humble", ["50 000 euros.", "Je vais le rendre."]), ("mystere", ["Personne ne saura."])]
+    assert tones_seen == [["trembling", "trembling"], ["trembling"]]  # le ton de chaque réplique va au moteur (docs/41)
     assert result["voices"] == {"kiwi": "qwen3:perso_humble", "prune": "qwen3:mystere", "madame_figue": "qwen3:perso_patron"}
     audio, rate = sf.read(str(tmp_path / "narration.wav"))
     assert rate == 24000 and len(audio) / rate == pytest.approx(result["duration_s"], abs=0.05)
     assert saved[-1][0] == "drama" and "kiwi=qwen3:perso_humble" in saved[-1][1]  # videos.tts_provider, tts_voice
+
+
+def test_a_retouch_redoes_each_characters_voice_with_gemini(tmp_path, monkeypatch):
+    """Retoucher → Voix → « Voix des personnages » (docs/41 §8) : payload voice = « acting:gemini ». Chaque personnage
+    garde sa voix (la voix Qwen du script, dite par Gemini), avec la description du personnage devant le ton de la
+    réplique et la durée de la bouche de son clip ; la voix est refaite même si elle existe déjà."""
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("soundfile")
+    from types import SimpleNamespace
+
+    from worker.providers.tts import Speech
+    from worker.steps import tts as tts_step
+
+    s = drama.normalize(
+        _script([_scene(0, "kiwi", "Cinquante mille euros."), _scene(1, "prune", "Personne ne saura."), _scene(2)])
+    )
+    calls: list[tuple[str, str, list[str], list[float | None]]] = []
+
+    class Engine:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def speak_many(self, texts, *, voice, lang, speed, tones=None, targets=None) -> list[Speech]:
+            calls.append((self.name, voice, list(tones or []), list(targets or [])))
+            return [Speech(samples=np.full(12000, 0.2, dtype="float32"), rate=24000, voice=voice) for _ in texts]
+
+    acting = {"engine": "gemini", "from": "qwen3", "fallback": "qwen3_emotion", "persona": True, "narration": True}
+    catalog = {
+        "voices": {"fr": [{"id": "qwen3:perso_humble"}, {"id": "qwen3:perso_patron"}, {"id": "qwen3:mystere"}]},
+        "acting": {"gemini": acting},
+    }
+    monkeypatch.setattr(tts_step, "recipe_for_production", lambda db, pid: "drama")
+    monkeypatch.setattr(tts_step, "tts_catalog", lambda settings: catalog)
+    monkeypatch.setattr(
+        tts_step,
+        "load_generation_config",
+        lambda settings, db: SimpleNamespace(voices={"fr": "kokoro:ff_siwis"}, voice_acting="neutral"),
+    )
+    monkeypatch.setattr(tts_step, "get_engine", lambda settings, engine: Engine(engine))
+    monkeypatch.setattr(tts_step, "mouth_targets", lambda db, pid, script, lang: {0: 1.8})
+    (tmp_path / "narration.wav").write_bytes(b"old")
+
+    class Db:
+        def fetch_one(self, sql: str, params: Any = None) -> dict:
+            return {
+                "lang": "fr",
+                "timeline": {"lang": "fr", "scenes": []},
+                "production_id": "p",
+                "retouch": {},
+                "script": s.model_dump(),
+                "voice_speed": 1.0,
+            }
+
+        def add_asset(self, **cols: Any) -> str:
+            return "a"
+
+        def execute(self, sql: str, params: Any = None) -> int:
+            return 1
+
+    ctx = SimpleNamespace(
+        job=SimpleNamespace(video_id="v", production_id="p", payload={"voice": "acting:gemini", "retouch": True}),
+        db=Db(),
+        settings=SimpleNamespace(dry_run=False, kokoro_speed=1.0),
+        video_dir=lambda vid: tmp_path,
+        progress=lambda *a: None,
+        log=lambda *a, **k: None,
+    )
+    result = tts_step.TTSStep().run(ctx)
+    assert result["acting"] == "gemini" and result["voices"]["kiwi"] == "qwen3:perso_humble"
+    by_voice = {voice: (name, tones, targets) for name, voice, tones, targets in calls}
+    assert by_voice["perso_humble"] == ("gemini", ["a soft trembling young male voice; trembling"], [1.8])
+    assert by_voice["mystere"][0] == "gemini" and by_voice["mystere"][2] == []  # pas de bouche connue : débit libre
 
 
 def test_a_voice_retouch_says_and_writes_the_lines_alone_never_who_speaks(tmp_path, monkeypatch):
@@ -475,7 +554,9 @@ def test_a_voice_retouch_says_and_writes_the_lines_alone_never_who_speaks(tmp_pa
     class Engine:
         name = "kokoro"
 
-        def speak_many(self, texts: list[str], *, voice: str, lang: str, speed: float, on_progress: Any = None) -> list[Speech]:
+        def speak_many(
+            self, texts: list[str], *, voice: str, lang: str, speed: float, on_progress: Any = None, tones: Any = None
+        ) -> list[Speech]:
             said.extend(texts)
             return [Speech(samples=np.full(12000, 0.2, dtype="float32"), rate=24000, voice=voice) for _ in texts]
 

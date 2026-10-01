@@ -44,7 +44,9 @@ choisis par le **format de la série** :
 - **Voix constantes (format A, défaut des trois séries)** : chaque personnage a une voix de synthèse Qwen3 (`tts_voice`,
   choisie par le scénariste dans une liste, sinon d'après sa description : sexe, âge, rôle ; jamais la même pour deux
   personnages s'il en reste). L'étape voix dit chaque réplique avec la voix de son personnage (un appel au moteur par
-  voix) et construit la timeline comme pour un récit. Le clip H3 garde la bouche qui bouge sur la réplique ; sa propre
+  voix) et construit la timeline comme pour un récit. Depuis le 29/09, le `tone` de chaque réplique va aussi au moteur
+  de voix, et Réglages → « Jeu des voix (drames) » choisit comment il est joué (docs/41 : références émues, VoiceDesign,
+  Gemini). Le clip H3 garde la bouche qui bouge sur la réplique ; sa propre
   voix est laissée de côté. **Depuis le 29/09, chaque réplique est calée sur la bouche de son clip** au montage
   (worker/lipsync.py, docs/38) : avant, elle partait 0,15 s après le début du plan, la bouche parlait avant ou après.
 - **Voix des clips (format B)** : `update series set format = 'B_visual' where slug = '…'`. La voix est celle de H3,
@@ -74,7 +76,7 @@ Neuf voix de personnages dessinées le 28/09 (Qwen3 VoiceDesign, `tts_runners/qw
 | Script | distribution `cast` (key, name, look et voice en anglais, tts_voice, role) ; par scène `characters` (3 au plus) et `lines` (une réplique : who, text, tone). Normalisation : clés, personnage qui parle mis à l'image, répliques d'un même personnage réunies, durée = 0,8 s + mots / 2,5 (5,1 s au plus, un clip H3), nombres en chiffres, narration « Nom : réplique » pour l'affichage. Correcteur : 10 à 24 plans, 2 à 6 personnages décrits (12 mots au moins) avec une voix, une voix par plan, 12 mots par réplique, 60 % de plans dialogués, titre d'accroche, durée ±25 %. Une reprise en cas d'écart | `worker/drama.py` (normalize, lint, SCRIPT_PROMPT, IDEA_GUIDE), `recipes.py` (RECIPES, has_prompt, montage_format), `steps/script.py` (liste des voix dans le message) |
 | Storyboard | une fiche par personnage (assets kind `character`, meta.key, retenue), puis chaque plan avec les fiches de ses personnages en images de référence, citées `<image1>`… (« Kiwi is the character of <image1> ») ; payload `characters` pour en refaire une | `steps/storyboard.py` (_sheets), `providers/video.py` (add_references sur TextEncodeQwenImage21, résolution 768 ; styles pixar_fruit, pixar_human, dreamworks_animal ; négatif sans « cartoon ») |
 | Clips | prompt : le film, le mouvement, puis « Kiwi says in French, in a soft trembling young male voice, stunned whisper: "cinquante mille…" » (nombres en lettres) ; plan sans réplique : « Nobody speaks » (sinon H3 invente des paroles). Format B : transcription et nouvel essai | `drama.clip_prompt`, `steps/generate_clip.py`, `tts_runners/whisper_words.py` (environnement `tts/eval`) |
-| Voix | format A : une voix par personnage (drama.assign_voices) | `steps/tts.py` (_drama) |
+| Voix | format A : une voix par personnage (drama.assign_voices), jouée selon le ton de la réplique et le jeu des voix des Réglages (docs/41) | `steps/tts.py` (_drama, _say) |
 | Montage | le drame se monte comme un récit (modèle de montage : titre, sous-titres, musique des récits) ; format B : timeline et piste de voix tirées des clips | `steps/assemble.py` (montage_format, dialogue_timeline, build_dialogue_track) |
 | Réinventer | le scénariste garde personnages et réplique de la scène | `reinvent.py` (FORMAT_HINTS, apply_rewrite) |
 

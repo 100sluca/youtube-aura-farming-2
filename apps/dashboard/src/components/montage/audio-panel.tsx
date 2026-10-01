@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDuration } from "@/lib/audio-mix";
-import { FORMAT_SHORT, type AudioLayer, type MusicLibrary, type MusicTrack, type TestVideo } from "@/lib/montage-types";
+import { FORMAT_SHORT, MUSIC_MIN_DB, MUSIC_SLIDER_MIN_DB, type AudioLayer, type MusicLibrary, type MusicTrack, type TestVideo } from "@/lib/montage-types";
 import { cn } from "@/lib/utils";
 
 export type TrackPatch = Partial<Pick<MusicTrack, "title" | "description" | "moods" | "formats" | "weight" | "enabled" | "gainDb" | "startS" | "note">>;
@@ -50,12 +50,13 @@ function LevelsPanel({ value, onChange }: { value: AudioLayer; onChange: (patch:
         <SliderField
           label="Musique sous la voix"
           value={v.music_db}
-          min={-30}
+          min={MUSIC_SLIDER_MIN_DB}
+          inputMin={MUSIC_MIN_DB}
           max={0}
           step={0.5}
           unit="dB"
           onChange={(music_db) => onChange({ music_db })}
-          hint="écart avec la voix : −10 dB, bien audible sans gêner ; −20 dB, discrète"
+          hint="écart avec la voix : −10 dB, bien audible sans gêner ; −20 dB, discrète. Plus bas que le curseur : tape la valeur dans la case (jusqu’à −120 dB, muette)"
         />
         <SliderField
           label="Baisse pendant que la voix parle"
@@ -72,12 +73,13 @@ function LevelsPanel({ value, onChange }: { value: AudioLayer; onChange: (patch:
         <SliderField
           label="Musique"
           value={v.solo_db}
-          min={-20}
+          min={MUSIC_SLIDER_MIN_DB}
+          inputMin={MUSIC_MIN_DB}
           max={12}
           step={0.5}
           unit="dB"
           onChange={(solo_db) => onChange({ solo_db })}
-          hint="0 = niveau standard, sous les bruitages"
+          hint="0 = niveau standard, sous les bruitages. Plus bas que le curseur : tape la valeur dans la case (jusqu’à −120 dB)"
         />
         <SliderField
           label="Bruitages"

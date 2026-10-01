@@ -9,7 +9,9 @@ from .generate_clip import GenerateClipStep
 from .ideate import IdeateStep
 from .import_channel import ImportChannelStep
 from .improve import ImproveStep
+from .instagram_publish import InstagramPublishStep
 from .montage_preview import MontagePreviewStep
+from .paf_publish import PafPublishStep
 from .qa import QAStep
 from .render import RenderStep
 from .script import ScriptStep
@@ -46,6 +48,8 @@ REGISTRY: dict[str, Step] = {
         MontagePreviewStep(),
         AnalyzeStep(),
         TikTokPublishStep(),
+        InstagramPublishStep(),
+        PafPublishStep(),
         SyncTikTokStep(),
     )
 }

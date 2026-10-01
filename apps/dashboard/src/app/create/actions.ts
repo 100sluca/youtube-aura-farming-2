@@ -61,3 +61,27 @@ export async function abandonStoryboard(productionId: string): Promise<ActionRes
   if (res.ok) refresh();
   return res.ok ? { ok: true, message: `Vidéo abandonnée · ${res.message.replace(/^Supprimée · /, "")}` } : res;
 }
+
+/** Pilote automatique (docs/46) : le worker choisit la meilleure idée du thème, puis fait tout sans validation. */
+export async function startAutopilot(channelId: string, seriesSlug: string, target: number): Promise<ActionResult> {
+  const n = Math.max(1, Math.min(20, Math.round(target)));
+  const db = supabaseAdmin();
+  const { data: series, error: sErr } = await db.from("series").select("name").eq("slug", seriesSlug).maybeSingle();
+  if (sErr) return fail(sErr);
+  if (!series) return { ok: false, message: "Thème inconnu" };
+  const value = { enabled: true, series: seriesSlug, target: n, channel_id: channelId, started_at: new Date().toISOString() };
+  const { error } = await db.from("app_settings").upsert({ key: "autopilot", value, updated_at: new Date().toISOString() });
+  if (error) return fail(error);
+  refresh();
+  return { ok: true, message: `Pilote automatique lancé : ${n} vidéo(s) « ${series.name} », sans validation. Premier pas dans 2 min.` };
+}
+
+export async function stopAutopilot(): Promise<ActionResult> {
+  const db = supabaseAdmin();
+  const { data } = await db.from("app_settings").select("value").eq("key", "autopilot").maybeSingle();
+  const value = { ...((data?.value ?? {}) as Record<string, unknown>), enabled: false, stopped_at: new Date().toISOString(), stopped_reason: "arrêté par Luca" };
+  const { error } = await db.from("app_settings").upsert({ key: "autopilot", value, updated_at: new Date().toISOString() });
+  if (error) return fail(error);
+  refresh();
+  return { ok: true, message: "Pilote coupé : la vidéo en route se termine, aucune autre ne démarre." };
+}

@@ -24,6 +24,7 @@ import hashlib
 import io
 import json
 import re
+import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -263,20 +264,38 @@ def failure_kind(exc: Exception) -> tuple[str, float]:
     return "other", 0.0
 
 
+# Appels en cours par (fournisseur, clé) : plusieurs scripts ou idées tournent en même temps (voie io, docs/43) ; chacun
+# prend d'abord une clé que personne n'utilise, pour étaler la charge et les limites par minute sur toutes les clés
+_BUSY: dict[tuple[str, str], int] = {}
+_BUSY_LOCK = threading.Lock()
+
+
+def _take(name: str, fp: str, delta: int) -> None:
+    with _BUSY_LOCK:
+        _BUSY[(name, fp)] = _BUSY.get((name, fp), 0) + delta
+
+
 class KeyedLLM:
     """Un modèle et toutes les clés de son fournisseur : quota épuisé ou clé refusée → la clé suivante ; une autre panne
-    remonte (le choix suivant de la chaîne la traite). Une clé qui vient d'échouer passe après les autres."""
+    remonte (le choix suivant de la chaîne la traite). Une clé qui vient d'échouer passe après les autres ; parmi les
+    clés en état, la moins occupée par les autres appels en cours passe devant (à égalité, l'ordre des Réglages)."""
 
     def __init__(self, name: str, model: str, clients: list[tuple[str, LLM]]) -> None:
         self.name, self.model, self.clients = name, model, clients  # (empreinte de la clé, client)
         self.last_key = 1  # numéro de la clé qui a répondu en dernier
 
     def complete_json(self, system: str, user: str, schema: type[T], images: Sequence[Path] = ()) -> T:
-        order = sorted(
-            self.clients, key=lambda c: _cooling(("key", self.name, c[0])) or _cooling(("quota", self.name, self.model, c[0]))
-        )
+        with _BUSY_LOCK:
+            order = sorted(
+                self.clients,
+                key=lambda c: (
+                    _cooling(("key", self.name, c[0])) or _cooling(("quota", self.name, self.model, c[0])),
+                    _BUSY.get((self.name, c[0]), 0),
+                ),
+            )
         last: Exception | None = None
         for fp, client in order:
+            _take(self.name, fp, 1)
             try:
                 out = client.complete_json(system, user, schema, images) if images else client.complete_json(system, user, schema)
                 self.last_key = next(i for i, c in enumerate(self.clients, start=1) if c[0] == fp)
@@ -289,6 +308,8 @@ class KeyedLLM:
                 _cool(("quota", self.name, self.model, fp) if kind == "quota" else ("key", self.name, fp), seconds)
                 slot = next(i for i, c in enumerate(self.clients, start=1) if c[0] == fp)
                 log.warning("llm.cle_suivante", provider=self.name, model=self.model, cle=slot, raison=kind, error=str(exc)[:200])
+            finally:
+                _take(self.name, fp, -1)
         assert last is not None
         raise last
 

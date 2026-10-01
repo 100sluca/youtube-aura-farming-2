@@ -98,6 +98,12 @@ descend en 0,12 s avant la voix et remonte en 0,45 s après) : une rampe calcul�
 l'écoute et au montage. La musique commence au « Début » réglé, avancé si la vidéo dépasserait la fin du fichier ;
 fondus de 0,6 s au début et 1,2 s à la fin.
 
+**Musique très basse (30/09, demande de Luca : « parfois c'est vraiment trop fort pour mes oreilles »)** : les curseurs
+*Musique sous la voix* et *Musique* descendent à −40 dB ; plus bas, on tape la valeur dans la case, jusqu'à −120 dB
+(muette), dans l'onglet Montage → Son comme dans Retoucher. Le garde-fou de ±30 dB ne borne plus que l'égalisation d'une
+piste (mesure aberrante), plus le réglage : avant, un réglage bas pouvait être rogné par lui (`mix_levels`, worker/music.py
+et lib/audio-mix.ts).
+
 Essai du 28/09 (hors appli, dans le dossier de travail de Claude) : « Miroir secret » remonté avec le nouveau code →
 ambiance « mysterious » → music_7 ; final à −14,9 LUFS, musique seule entre les phrases à ≈ 10 dB sous les passages
 parlés.

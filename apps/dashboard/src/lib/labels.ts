@@ -105,6 +105,8 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   analyze: "Analyse des vidéos",
   tiktok_publish: "Publication TikTok",
   sync_tiktok: "Synchro stats TikTok",
+  instagram_publish: "Publication Instagram",
+  paf_publish: "Paf, j’achète (vendredi)",
 };
 
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {

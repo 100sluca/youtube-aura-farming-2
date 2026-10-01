@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .models import ScriptV1
-from .recipes import edit_instruction, edit_source
+from .recipes import edit_instruction, edit_source, indoor
 from .speaker import requirement as speaker_requirement
 
 QC_SYSTEM = """Tu es le contrôleur qualité d'une chaîne YouTube de vidéos réalistes générées par IA. On te montre
@@ -70,6 +70,8 @@ def requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
         else:
             reqs = [f"Vue extérieure qui correspond à : {what}"]
         return [PHOTO, *reqs, NOBODY]
+    if recipe == "timelapse" and indoor(script):
+        return _room_requirements(script, pos, what)
     if recipe == "timelapse":
         n = len(script.scenes)
         if pos == n - 2:  # le résultat fini : il fixe le cadre et l'échelle de tout le chantier
@@ -107,6 +109,43 @@ def requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     return [PHOTO]
 
 
+def _room_requirements(script: ScriptV1, pos: int, what: str) -> list[str]:
+    """Rénovation d'une pièce vue de l'intérieur (docs/15 §11) : la pièce entière, crédible, « ça pourrait être chez
+    moi » ; les étapes gardent les murs, les fenêtres et le cadre."""
+    n = len(script.scenes)
+    if pos == n - 2:  # le résultat fini : il fixe le cadre et l'échelle de toute la rénovation
+        return [
+            PHOTO,
+            f"L'image montre : {what}",
+            "C'est une pièce TERMINÉE, propre et habitable : aucune bâche, aucun outil, pot de peinture ni matériau.",
+            "On voit la pièce en grand (sol, murs, plafond, fenêtres), depuis l'intérieur, à hauteur d'œil.",
+            "Proportions crédibles d'une vraie maison : porte, fenêtres et meubles de taille normale.",
+            NOBODY,
+        ]
+    if pos == n - 1:
+        return [
+            PHOTO,
+            "C'est la même pièce que l'image 2, le soir, lampes allumées ; mêmes meubles, même cadrage.",
+            NOBODY,
+        ]
+    if pos == 0:  # l'état d'origine : saleté, dégâts, vieux meubles EN PLUS vont dans le bon sens
+        return [
+            PHOTO,
+            f"L'image montre la pièce AVANT tout travaux : {what}",
+            "Même pièce, mêmes fenêtres, même point de vue et même cadrage que l'image 2 ; saleté, dégâts, gravats "
+            "ou vieux meubles en plus sont normaux, c'est l'état d'origine.",
+            "Aucun ouvrier ni outil de chantier.",
+        ]
+    return [
+        PHOTO,
+        f"L'image montre cette étape de la rénovation : {what}",
+        "Elle est MOINS avancée que l'image 2 (étape suivante) : ce qui n'est pas encore fait a été enlevé ; les "
+        "fenêtres, les murs, le point de vue et le cadrage sont les mêmes que dans l'image 2.",
+        "Les ouvriers éventuels sont à taille humaine normale pour la pièce ; aucun n'est près de l'objectif, en gros "
+        "plan ou coupé par le bord de l'image.",
+    ]
+
+
 CLIP_SYSTEM = """Tu es le contrôleur qualité d'une chaîne YouTube de vidéos réalistes générées par IA. On te montre
 l'image de départ d'un clip vidéo (image 1) puis trois images tirées du clip généré, dans l'ordre (images 2 à 4). Le
 modèle vidéo invente parfois des choses : des personnes, un appareil de tournage (caméra, trépied, stabilisateur,
@@ -132,6 +171,13 @@ def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
         return [NO_NEW_TEXT, *([req] if (req := speaker_requirement(script, sc)) else [])]
     if sc.passage:  # un passage d'une pièce à l'autre transforme l'image : seuls personnes et appareils comptent
         return ["Aucune personne n'apparaît, même au loin ou en reflet.", NO_RIG]
+    if recipe == "timelapse" and sc.clip_mode == "flf" and pos < len(script.scenes) - 2 and indoor(script):
+        return [
+            "Les ouvriers éventuels restent à taille humaine normale pour la pièce : aucune personne géante, en gros "
+            "plan, près de l'objectif ou coupée par le bord de l'image.",
+            NO_RIG,
+            "Les fenêtres, les murs, le point de vue et le cadrage restent ceux de l'image 1.",
+        ]
     if recipe == "timelapse" and sc.clip_mode == "flf" and pos < len(script.scenes) - 2:
         return [
             "Les ouvriers éventuels restent petits, à l'échelle du bâtiment : aucune personne géante, en gros plan, "
@@ -145,6 +191,8 @@ def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
             "Aucun objet étranger n'apparaît par rapport à l'image 1, et rien ne se déforme ni ne disparaît sur place ; "
             "un meuble peut sortir du cadre quand la caméra avance ou tourne, ce n'est pas un défaut."
         )
+    elif recipe == "timelapse" and indoor(script):
+        reqs.append("La pièce et ses meubles restent les mêmes que dans l'image 1, sans se déformer.")
     else:
         reqs.append("La construction reste la même que dans l'image 1, sans se déformer.")
     return reqs
@@ -173,6 +221,50 @@ def check_clip(
     reqs = clip_requirements(script, pos, recipe)
     user = "Exigences pour les images 2 à 4 :\n" + "\n".join(f"{k + 1}. {r}" for k, r in enumerate(reqs))
     return _ask(llm, system, user, [start, *clip_frames(clip, workdir)])
+
+
+def continuity_requirements(script: ScriptV1, pos: int, previous_pos: int | None) -> list[str]:
+    """Récits et drames en pilote automatique (docs/46) : l'image colle à son plan et, s'il y a un plan illustré avant
+    (`previous_pos`, son image = image 2), en garde le style et les personnages qui reviennent. Un changement de sujet ou
+    de lieu voulu par le plan est normal (30/09 : « Bakélite », une cuisine puis un laboratoire refusés 3 fois pour
+    rupture de continuité) ; les inscriptions d'un objet (cadran, étiquette) ne sont pas du texte ajouté."""
+    sc = script.scenes[pos]
+    reqs = [
+        f"L'image montre ce que décrit le plan : {sc.visual_prompt.strip()[:400]}",
+        "Aucun sous-titre, légende, titre, panneau avec des mots, logo ni filigrane ajouté à l'image (les chiffres d'un "
+        "cadran ou d'une horloge et les petites inscriptions d'un objet sont tolérés).",
+        "Pas de défaut grossier : visage déformé, membres en trop ou manquants, objets fondus les uns dans les autres.",
+    ]
+    if previous_pos is not None:
+        before = script.scenes[previous_pos].visual_prompt.strip()[:300]
+        reqs += [
+            f"L'image 2 illustre le plan précédent : {before}. Changer de sujet, de lieu ou de personnage d'un plan à "
+            "l'autre est NORMAL quand les deux descriptions diffèrent : ne le reproche jamais.",
+            "Même famille de rendu que l'image 2 (photo réaliste contre photo réaliste, illustration contre illustration) ; "
+            "la palette et la lumière peuvent changer avec le lieu.",
+            "Seulement si les deux descriptions parlent de la même personne ou du même objet : il garde la même apparence "
+            "(visage, âge, vêtements, forme, couleurs).",
+        ]
+    return reqs
+
+
+def check_continuity(
+    llm: Any,
+    image: Path,
+    previous: Path | None,
+    script: ScriptV1,
+    pos: int,
+    system: str = QC_SYSTEM,
+    previous_pos: int | None = None,
+) -> KeyframeVerdict:
+    """Verdict du modèle de vision sur l'image d'un plan de récit ou de drame, jugée avec l'image retenue du plan
+    illustré précédent (image 2, plan `previous_pos`) : pilote automatique, docs/46."""
+    ref = previous_pos if previous is not None else None
+    if previous is not None and ref is None:
+        ref = pos - 1
+    reqs = continuity_requirements(script, pos, ref)
+    lines = "\n".join(f"{k + 1}. {r}" for k, r in enumerate(reqs))
+    return _ask(llm, system, f"Exigences pour l'image 1 :\n{lines}", [image, previous] if previous else [image])
 
 
 def check_keyframe(

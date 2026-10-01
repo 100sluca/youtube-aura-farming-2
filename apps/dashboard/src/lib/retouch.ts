@@ -7,14 +7,16 @@
 import { promises as fs } from "node:fs";
 
 import { readDefaults } from "@/lib/font-files";
-import { getGenerationCatalog } from "@/lib/generation-data";
+import { getGenerationCatalog, getGenerationSettings } from "@/lib/generation-data";
 import type { VoiceLang } from "@/lib/generation-types";
 import { completeTemplate } from "@/lib/montage";
 import { MONTAGE_FORMATS, type MontageFormat, type MontageTemplate } from "@/lib/montage-types";
 import { audioConstants, chooseTrack, measureLoudness, syncTracks } from "@/lib/music-library";
 import {
   RETOUCHABLE_STATUSES,
+  type CastVoice,
   type PlanCorrection,
+  type PreviousUpload,
   type RetouchData,
   type RetouchJob,
   type RetouchPageData,
@@ -26,6 +28,26 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { VideoStatus } from "@/lib/types";
 
 type Json = Record<string, unknown>;
+const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+
+/** videos.previous_uploads (migration 0031) : envois remplacés par une retouche, du plus récent au plus ancien. */
+function previousUploads(value: unknown): PreviousUpload[] {
+  return (Array.isArray(value) ? value : [])
+    .filter(isObject)
+    .filter((u) => str(u.youtube_video_id))
+    .map((u) => {
+      const tiktok = isObject(u.tiktok) ? u.tiktok : null;
+      return {
+        youtubeVideoId: String(u.youtube_video_id),
+        publishAt: str(u.youtube_publish_at) ?? str(u.scheduled_at),
+        publishedAt: str(u.published_at),
+        replacedAt: str(u.replaced_at),
+        tiktokStatus: tiktok ? (str(tiktok.status) ?? "inconnu") : null,
+        tiktokUrl: tiktok ? str(tiktok.url) : null,
+      };
+    })
+    .reverse();
+}
 const isObject = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
 const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -86,6 +108,7 @@ function retouchOf(value: unknown): RetouchData {
     out.audio = Object.fromEntries(Object.entries(value.audio).filter((e): e is [string, number] => typeof e[1] === "number"));
   }
   if (typeof value.voice === "string") out.voice = value.voice;
+  if (typeof value.acting === "string") out.acting = value.acting;
   if (isObject(value.plans)) {
     out.plans = Object.fromEntries(
       Object.entries(value.plans).map(([k, list]) => [
@@ -144,10 +167,8 @@ export async function getRetouchState(videoId: string): Promise<RetouchState> {
 
 function blockedReason(v: Json, state: RetouchState): string | null {
   if (v.origin === "imported" || !v.production_id) return "Vidéo importée de YouTube : elle n’a pas été fabriquée ici, il n’y a rien à remonter.";
+  if (v.archived_at) return "Ancienne version sortie, remplacée par une retouche : elle garde ses vues et ses statistiques. C’est la vidéo refaite qui se retouche.";
   if (v.files_deleted_at) return "Fichiers effacés du PC : il n’y a plus rien à remonter.";
-  if (v.youtube_video_id) {
-    return "Déjà envoyée sur YouTube, qui ne permet pas d’en remplacer le fichier : la retouche se fait avant l’envoi (vidéo à valider, ou autorisée mais pas encore partie).";
-  }
   if (!v.final_asset_id) return "Pas encore montée : la retouche s’ouvre à la fin de sa fabrication.";
   if (!state.busy && !RETOUCHABLE_STATUSES.includes(v.status as VideoStatus)) return `Vidéo « ${String(v.status)} » : elle ne peut pas être retouchée pour l’instant.`;
   return null;
@@ -177,7 +198,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
   const pid = (v.production_id as string | null) ?? null;
   const lang: VoiceLang = v.lang === "en" ? "en" : "fr";
 
-  const [prod, saved, lastMontage, defaults, catalog, library, constants, state, clipRows] = await Promise.all([
+  const [prod, saved, lastMontage, defaults, catalog, library, constants, state, clipRows, generation] = await Promise.all([
     pid ? db.from("productions").select("script, series(recipe, music_moods)").eq("id", pid).maybeSingle() : Promise.resolve({ data: null }),
     db.from("montage_templates").select("name, template").eq("is_default", true).maybeSingle(),
     db.from("jobs").select("result").eq("video_id", videoId).eq("type", "assemble").eq("status", "done").order("finished_at", { ascending: false }).limit(1).maybeSingle(),
@@ -189,6 +210,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
     pid
       ? db.from("assets").select("id, scene_index, created_at").eq("production_id", pid).eq("kind", "clip").order("created_at", { ascending: false })
       : Promise.resolve({ data: [] as { id: string; scene_index: number | null; created_at: string }[] }),
+    getGenerationSettings(),
   ]);
 
   const script = (prod.data?.script ?? {}) as ScriptJson;
@@ -248,6 +270,20 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
     };
   });
 
+  // Drame : chaque personnage et sa voix (videos.tts_voice = « kiwi=qwen3:perso_humble, prune=qwen3:mystere »), gardée du
+  // début à la fin ; sa voix Gemini si Gemini joue les voix (docs/41 §8)
+  const cast: CastVoice[] =
+    v.tts_provider === "drama" && typeof v.tts_voice === "string"
+      ? v.tts_voice
+          .split(",")
+          .map((part: string) => part.trim().split("=", 2))
+          .filter((kv: string[]) => kv.length === 2 && kv[0] && kv[1])
+          .map(([key, voice]: string[]) => {
+            const entry = catalog.voices[lang].find((e) => e.id === voice);
+            return { key, name: names.get(key) ?? key, voice, voiceLabel: entry?.label ?? voice, gemini: entry?.gemini ?? null };
+          })
+      : [];
+
   const hookAuto =
     typeof texts.hook === "string" && texts.hook ? texts.hook : cleanHook(langText(script.hook_title, lang) || script.metadata?.[lang]?.title || String(v.title ?? ""));
 
@@ -268,6 +304,9 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
       voiced,
       channelName: one(v.channels as { name: string } | { name: string }[] | null)?.name ?? null,
       youtubeVideoId: (v.youtube_video_id as string | null) ?? null,
+      published: v.status === "published" && Boolean(v.youtube_video_id),
+      tiktok: isObject(v.tiktok) ? { status: str(v.tiktok.status) ?? "inconnu", url: str(v.tiktok.url) } : null,
+      previousUploads: previousUploads(v.previous_uploads),
     },
     blocked: blockedReason(v, state),
     hook: { auto: hookAuto, shown: template.hook.formats.includes(format), templateDurationS: template.hook.duration_s ?? null },
@@ -282,6 +321,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
       entries: catalog.voices[lang],
       narration,
       sample,
+      acting: { current: retouch.acting ?? null, settings: generation.voice_acting, entries: catalog.acting, cast },
     },
     state,
   };

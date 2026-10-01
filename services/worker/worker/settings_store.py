@@ -184,6 +184,25 @@ def load_llm_config(settings: Settings, db: Any | None, use_cache: bool = True) 
     return cfg
 
 
+VOICE_KEY_NAME = re.compile(r"^gemini_voice_api_key(?:_(\d+))?$")  # clés Gemini réservées à la voix (Réglages, docs/41)
+
+
+def voice_keys(settings: Settings, db: Any) -> list[str]:
+    """Clés Gemini réservées à la voix (Réglages → Modèles de génération → Clés de la voix), clé 1 d'abord ; vide sans
+    clé de chiffrement ou sans clé enregistrée (le moteur Gemini prend alors les clés du LLM)."""
+    if not settings.credentials_key:
+        return []
+    slots: list[tuple[int, str]] = []
+    for r in db.fetch_all("select name, value_encrypted from app_secrets where name like 'gemini_voice_api_key%%'"):
+        m = VOICE_KEY_NAME.match(r["name"])
+        if m:
+            try:
+                slots.append((int(m.group(1) or 1), decrypt(settings, r["value_encrypted"])))
+            except Exception:  # noqa: BLE001 — clé de chiffrement changée : on ignore ce secret
+                pass
+    return [k for _, k in sorted(slots) if k]
+
+
 def save_llm_settings(db: Any, **changes: Any) -> dict[str, Any]:
     """Met à jour app_settings.llm (provider, fallbacks, models, custom_models, writer_models, chains) et renvoie la
     valeur. `chains` remplace les chaînes nommées ({"writer": [{"provider", "model"}, …]}), une liste vide la retire."""
@@ -260,6 +279,8 @@ class GenerationConfig:
     video_workflow: str  # nom du workflow d'animation, sans le préfixe comfy_
     storyboard_candidates: int
     voices: dict[str, str]  # langue → voix Kokoro
+    # Jeu des voix des drames (catalog.json → acting, docs/41) : « neutral » = chaque réplique sur le ton de sa voix
+    voice_acting: str = "neutral"
     source: str = "env"  # env | db
 
     @property
@@ -297,6 +318,7 @@ def load_generation_config(settings: Settings, db: Any | None, use_cache: bool =
             video_workflow=str(v.get("video_workflow") or base.video_workflow).removeprefix("comfy_"),
             storyboard_candidates=int(v.get("storyboard_candidates") or base.storyboard_candidates),
             voices={**base.voices, **{k: x for k, x in (v.get("voices") or {}).items() if x}},
+            voice_acting=str(v.get("voice_acting") or base.voice_acting),
             source="db",
         )
     _gen_cache["generation"] = (now, cfg)

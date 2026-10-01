@@ -1,6 +1,9 @@
 # 18 · Voix de la narration : plusieurs moteurs, choix et écoute depuis le dashboard
 
 > Mesures du 28/09/2026 (temps par Short, mots mal compris, débit) et modèles à essayer ensuite : `29-banc-voix.md`.
+> Émotion (29/09/2026) : `41-voix-emotion.md` — le ton de chaque réplique va au moteur, « Jeu des voix » dans Réglages,
+> banc « émotion » (`scripts/bench_emotion.py`). Depuis le 30/09, **Gemini 3.8 Flash TTS** joue les voix de toutes les
+> vidéos (clés réservées à la voix, durée de la bouche de chaque plan, voix refaites depuis Retoucher) : docs/41 §8.
 
 > 2026-09-25, à la demande de Luca : « plus de choix dans les voix françaises », un autre modèle de voix, et le
 > choisir comme on choisit les modèles d'image et de vidéo, pour tester plusieurs voix françaises.
@@ -45,7 +48,10 @@ le worker l'applique après coup avec FFmpeg (`atempo`, hauteur de voix conserv�
 ## 3. Ajouter un moteur
 
 1. Écrire `services/worker/tts_runners/<moteur>.py` avec `_common.run(synthesize, prepare=…)` (le fichier ne doit pas
-   porter le nom de la bibliothèque du moteur : `supertonic_tts.py`, pas `supertonic.py`).
+   porter le nom de la bibliothèque du moteur : `supertonic_tts.py`, pas `supertonic.py`). Un moteur qui sait jouer
+   une émotion écrit `synthesize(req, texte, ton)` : il reçoit le ton de chaque réplique (anglais, docs/41) ;
+   `_common.emotion_of(ton)` le range dans une émotion (tristesse, chuchoté, colère…). Un moteur qui reprend les voix
+   Qwen dessinées déclare `"voices_from": "qwen3"` dans catalog.json au lieu de redéclarer les voix.
 2. Installer son environnement dans `C:\YouTube2\tts\<moteur>\` (`venv\` + `models\`) : `scripts/install_tts.ps1`.
 3. Déclarer le moteur dans `catalog.json` → `tts` (avec `check`, et `runner` si le script a un autre nom) et ses voix
    dans `voices`.

@@ -8,7 +8,9 @@ import { IS_MOCK } from "@/lib/data";
 import {
   DEFAULT_GENERATION,
   normalizeVoiceId,
+  type ActingEntry,
   type CatalogEntry,
+  type VoiceKey,
   type GenerationCatalog,
   type GenerationKind,
   type GenerationSettings,
@@ -28,10 +30,16 @@ const MODEL_INPUTS = ["unet_name", "clip_name", "clip_name1", "clip_name2", "vae
 type RawEntry = { label: string; detail?: string; license?: string; publishable?: boolean };
 /** Moteur de voix (catalog.json → tts) : `check` = chemins relatifs à YT2_HOME qui doivent exister. */
 type RawEngine = RawEntry & { check?: string[] };
-type RawVoice = string | { id: string; label?: string };
+type RawVoice = string | { id: string; label?: string; params?: { gemini?: string } };
+/** Jeu des voix (catalog.json → acting) : `engine` = moteur qui dit les voix Qwen dessinées, `fallback` = son repli,
+ * `narration` = vaut aussi pour les récits. */
+type RawActing = { label: string; detail?: string; engine?: string; fallback?: string; narration?: boolean };
+/** Clés Gemini réservées à la voix (Réglages → Modèles de génération, docs/41 §8). */
+const VOICE_KEY = /^gemini_voice_api_key(?:_(\d+))?$/;
 type RawCatalog = Partial<Record<GenerationKind, Record<string, RawEntry>>> & {
   tts?: Record<string, RawEngine>;
   voices?: Partial<Record<VoiceLang, RawVoice[]>>;
+  acting?: Record<string, RawActing>;
 };
 type WorkflowJson = Record<string, { inputs?: Record<string, unknown> }>;
 
@@ -114,8 +122,33 @@ async function voiceEntries(raw: RawCatalog, lang: VoiceLang): Promise<VoiceEntr
       license: e?.license ?? "",
       publishable: e?.publishable !== false,
       missing: missingByEngine.get(engine) ?? [],
+      gemini: typeof v === "string" ? null : (v.params?.gemini ?? null),
     };
   });
+}
+
+/** Jeux des voix proposés, dans l'ordre du catalogue ; « installé » = les fichiers du moteur du jeu sont là. */
+async function actingEntries(raw: RawCatalog): Promise<ActingEntry[]> {
+  const list = Object.entries(raw.acting ?? {});
+  if (!list.length) return [{ id: "neutral", label: "Voix neutres", detail: "", narration: false, missing: [] }];
+  return Promise.all(
+    list.map(async ([id, a]) => {
+      const checks = a.engine ? (raw.tts?.[a.engine]?.check ?? []) : [];
+      const missing = await Promise.all(checks.map(async (rel) => ((await exists(path.join(YT2_HOME, rel))) ? null : rel)));
+      return { id, label: a.label, detail: a.detail ?? "", narration: a.narration === true, missing: missing.filter((m): m is string => m !== null) };
+    }),
+  );
+}
+
+/** Clés Gemini réservées à la voix : numéro et 4 derniers caractères (jamais la clé). */
+async function voiceKeys(): Promise<VoiceKey[]> {
+  if (IS_MOCK) return [];
+  const { data } = await supabaseAdmin().from("app_secrets").select("name, hint").like("name", "gemini_voice_api_key%");
+  return (data ?? [])
+    .map((r) => ({ m: VOICE_KEY.exec(r.name as string), hint: (r.hint as string | null) ?? "…" }))
+    .filter((r): r is { m: RegExpExecArray; hint: string } => r.m !== null)
+    .map((r) => ({ slot: Number(r.m[1] ?? 1), hint: r.hint }))
+    .sort((a, b) => a.slot - b.slot);
 }
 
 export async function getGenerationCatalog(): Promise<GenerationCatalog> {
@@ -137,8 +170,15 @@ export async function getGenerationCatalog(): Promise<GenerationCatalog> {
         };
       }),
     );
-  const [image, video, fr, en] = await Promise.all([entries("image"), entries("video"), voiceEntries(raw, "fr"), voiceEntries(raw, "en")]);
-  return { image, video, voices: { fr, en }, comfyOnline: available !== null };
+  const [image, video, fr, en, acting, keys] = await Promise.all([
+    entries("image"),
+    entries("video"),
+    voiceEntries(raw, "fr"),
+    voiceEntries(raw, "en"),
+    actingEntries(raw),
+    voiceKeys(),
+  ]);
+  return { image, video, voices: { fr, en }, acting, voiceKeys: keys, comfyOnline: available !== null };
 }
 
 export async function getGenerationSettings(): Promise<GenerationSettings> {
@@ -151,5 +191,6 @@ export async function getGenerationSettings(): Promise<GenerationSettings> {
     video_workflow: (v.video_workflow || DEFAULT_GENERATION.video_workflow).replace(/^comfy_/, ""),
     storyboard_candidates: Number(v.storyboard_candidates) || DEFAULT_GENERATION.storyboard_candidates,
     voices: { fr: normalizeVoiceId(voices.fr) || DEFAULT_GENERATION.voices.fr, en: normalizeVoiceId(voices.en) || DEFAULT_GENERATION.voices.en },
+    voice_acting: v.voice_acting || DEFAULT_GENERATION.voice_acting,
   };
 }

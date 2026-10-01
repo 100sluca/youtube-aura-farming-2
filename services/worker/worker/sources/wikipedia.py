@@ -25,7 +25,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
@@ -369,13 +369,24 @@ def source_dossier(
     other_lang: str | None = "en",
     other_chars: int = 8000,
     max_pages: int = 3,
+    subject: str | None = None,
 ) -> str:
     """Le dossier du scénariste : les pages sources d'un concept, relues en entier. L'agent idée ne garde que quelques
     faits (3 pour le canal Rhin-Main-Danube, le 25/09) ; le récit a besoin du reste : à quoi ça sert, la controverse et sa
     raison, les personnes, les chiffres de comparaison. La version anglaise de chaque page s'ajoute quand elle existe
-    (souvent plus fournie). Numérotation [n] des sources du concept ; une page illisible est sautée ; "" si rien."""
+    (souvent plus fournie). Numérotation [n] des sources du concept ; une page illisible est sautée ; "" si rien.
+    `subject` (le titre de l'idée) : quand les sources ne sont que des pages de liste, la page du sujet lui-même est
+    ajoutée (Zraoua, 01/10 : 3 lignes de « Liste de villes fantômes » ; l'article du village, qui raconte le départ
+    pour la plaine et les tournages de films, n'avait pas été lu, et le récit avait comblé les trous)."""
     blocks: list[str] = []
-    for i, src in enumerate(sources[:max_pages], start=1):
+    pages = list(sources[:max_pages])
+    titles = [str(s.get("title") or "") for s in pages if s.get("kind", "wikipedia") == "wikipedia"]
+    if subject and titles and all(is_list_page(t) for t in titles):
+        lang = str(pages[0].get("lang") or "fr")
+        page = subject_page(WikipediaClient(lang=lang, user_agent=user_agent), subject, titles)
+        if page:  # après les sources du concept : les faits de l'idée gardent leur numéro [n]
+            pages.append({"kind": "wikipedia", "lang": lang, "title": page})
+    for i, src in enumerate(pages, start=1):
         if src.get("kind", "wikipedia") != "wikipedia" or not src.get("title"):
             continue
         lang = str(src.get("lang") or "fr")
@@ -414,3 +425,23 @@ def sources_for(docs: list[SourceDoc], facts: list[Fact]) -> tuple[list[SourceRe
 
 def is_list_page(title: str) -> bool:
     return title.startswith(LIST_PREFIXES)
+
+
+def subject_page(client: WikipediaClient, subject: str, skip: Sequence[str] = ()) -> str | None:
+    """Page Wikipédia du sujet d'une idée (« Zraoua : le village berbère… » → « Zraoua ») : le premier résultat de
+    recherche sur le nom avant « : » qui n'est ni une liste ni une page déjà lue ; None si rien ou si l'API échoue."""
+    name = re.split(r"\s[:\-–—]\s|\s?:\s", subject, maxsplit=1)[0].strip()
+    if not name:
+        return None
+    try:
+        hits = client.search(name, limit=5)
+    except httpx.HTTPError as exc:
+        log.warning("wikipedia.sujet_introuvable", subject=name, error=str(exc)[:200])
+        return None
+    key = name.casefold()
+    for title in hits:
+        if is_list_page(title) or title in skip:
+            continue
+        if key in title.casefold() or title.casefold() in key:
+            return title
+    return None

@@ -71,7 +71,7 @@ def enqueue_render_dag(db: Db, production_id: UUID, continuity: str = "script", 
             depends_on=[prev] if cont and prev else (),
         )
         clip_jobs.append(prev)
-    videos = db.fetch_all("select id, lang from videos where production_id = %s", (production_id,))
+    videos = db.fetch_all("select id, lang from videos where production_id = %s and archived_at is null", (production_id,))
     for v in videos:
         deps = list(clip_jobs)
         if prod["format"] == "A_voiceover":

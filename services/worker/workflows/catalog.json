@@ -131,6 +131,110 @@
         "model": "Qwen3-TTS-12Hz-0.6B-Base",
         "max_chars": 140
       }
+    },
+    "qwen3_instruct": {
+      "label": "Qwen3-TTS · émotion",
+      "detail": "VoiceDesign 1.7B : chaque réplique jouée selon son ton (chuchotée, criée, en larmes), avec les voix Qwen dessinées ; timbre moins constant que le modèle Base (docs/41) ; carte graphique",
+      "license": "Apache 2.0",
+      "publishable": true,
+      "runtime": "venv",
+      "dir": "tts/qwen3",
+      "runner": "qwen3_instruct.py",
+      "voices_from": "qwen3",
+      "gpu": true,
+      "check": [
+        "tts/qwen3/venv/Scripts/python.exe",
+        "tts/qwen3/models/Qwen3-TTS-12Hz-1.7B-VoiceDesign/model.safetensors"
+      ],
+      "options": {
+        "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "max_chars": 140
+      }
+    },
+    "qwen3_emotion": {
+      "label": "Qwen3-TTS · références émues",
+      "detail": "Modèle Base 0.6B : chaque réplique clonée depuis une référence de la même voix dans l'émotion de son ton (banque créée une fois par VoiceDesign, docs/41) ; timbre de la voix gardé ; carte graphique",
+      "license": "Apache 2.0",
+      "publishable": true,
+      "runtime": "venv",
+      "dir": "tts/qwen3",
+      "runner": "qwen3_emotion.py",
+      "voices_from": "qwen3",
+      "gpu": true,
+      "check": [
+        "tts/qwen3/venv/Scripts/python.exe",
+        "tts/qwen3/models/Qwen3-TTS-12Hz-0.6B-Base/model.safetensors",
+        "tts/qwen3/models/Qwen3-TTS-12Hz-1.7B-VoiceDesign/model.safetensors"
+      ],
+      "options": {
+        "model": "Qwen3-TTS-12Hz-0.6B-Base",
+        "max_chars": 140,
+        "xvector": "neutral"
+      }
+    },
+    "qwen3_emotion_pure": {
+      "label": "Qwen3-TTS · références émues (clone tel quel)",
+      "detail": "Comme « références émues », mais la référence émue est clonée telle quelle, empreinte de voix comprise : plus d'émotion, timbre moins sûr (banc d'essai, docs/41)",
+      "license": "Apache 2.0",
+      "publishable": true,
+      "runtime": "venv",
+      "dir": "tts/qwen3",
+      "runner": "qwen3_emotion.py",
+      "voices_from": "qwen3",
+      "gpu": true,
+      "check": [
+        "tts/qwen3/venv/Scripts/python.exe",
+        "tts/qwen3/models/Qwen3-TTS-12Hz-0.6B-Base/model.safetensors",
+        "tts/qwen3/models/Qwen3-TTS-12Hz-1.7B-VoiceDesign/model.safetensors"
+      ],
+      "options": {
+        "model": "Qwen3-TTS-12Hz-0.6B-Base",
+        "max_chars": 140,
+        "xvector": "emotion"
+      }
+    },
+    "gemini": {
+      "label": "Gemini 3.8 Flash TTS (en ligne)",
+      "detail": "Voix du studio Gemini jouées selon le ton de chaque réplique (docs/41), avec les clés de la voix (Réglages → Modèles de génération) puis celles du LLM ; quota gratuit non publié",
+      "license": "Conditions de l'API Gemini (filigrane SynthID)",
+      "publishable": true,
+      "runtime": "venv",
+      "python": "worker",
+      "runner": "gemini_tts.py",
+      "voices_from": "qwen3",
+      "gpu": false,
+      "check": [],
+      "options": {
+        "model": "gemini-3.8-flash-tts"
+      }
+    }
+  },
+  "_doc_acting": "Jeu des voix des drames (Réglages → Modèles de génération, docs/41) : comment les voix Qwen dessinées (from) disent leurs répliques ; engine = moteur qui les dit à la place du modèle Base, fallback = repli s'il échoue, persona = la description du personnage accompagne le ton.",
+  "acting": {
+    "neutral": {
+      "label": "Voix neutres",
+      "detail": "Chaque personnage garde sa voix, toutes ses répliques sur le même ton (comme avant le 29/09)."
+    },
+    "qwen3_emotion": {
+      "label": "Références émues (local)",
+      "detail": "Même timbre, mais chaque réplique clonée depuis une référence de la voix dans l'émotion de son ton (larmes, colère, chuchoté…). La première fois qu'une voix a besoin d'une émotion, ≈ 1 min pour la créer.",
+      "engine": "qwen3_emotion",
+      "from": "qwen3"
+    },
+    "qwen3_instruct": {
+      "label": "Consigne d'émotion VoiceDesign (local)",
+      "detail": "Chaque réplique dite par VoiceDesign 1.7B d'après la description de la voix et son ton : plus expressif, timbre moins constant.",
+      "engine": "qwen3_instruct",
+      "from": "qwen3"
+    },
+    "gemini": {
+      "label": "Gemini 3.8 Flash TTS (en ligne, repli local)",
+      "detail": "Choisi le 30/09 : chaque personnage garde sa voix Gemini du début à la fin, chaque réplique jouée selon son ton et calée sur la bouche de son plan. Les récits narrés gardent leur voix locale (01/10, Luca devant « Bakélite » : la voix « mystère » de Qwen leur va mieux que sa lecture par Gemini). Clés de la voix ci-dessous, sinon celles de Réglages → IA ; quota épuisé : « Références émues » prend le relais.",
+      "engine": "gemini",
+      "from": "qwen3",
+      "fallback": "qwen3_emotion",
+      "persona": true,
+      "narration": false
     }
   },
   "_doc_voices": "Voix proposées par langue : id = « moteur:voix » ; params = réglages propres au moteur (fichier de référence, locuteur…), passés au script du moteur.",
@@ -144,6 +248,7 @@
         "id": "qwen3:narrateur",
         "label": "Narrateur grave · homme",
         "params": {
+          "gemini": "Charon",
           "ref": "voices/narrateur.wav",
           "ref_text": "Au cœur de la forêt, une maison oubliée attendait depuis des décennies. Personne ne savait ce qu'elle cachait derrière ses murs de pierre.",
           "design": {
@@ -157,6 +262,7 @@
         "id": "qwen3:narratrice",
         "label": "Conteuse chaleureuse · femme",
         "params": {
+          "gemini": "Sulafat",
           "ref": "voices/narratrice.wav",
           "ref_text": "Imaginez une cuisine baignée de lumière, où chaque détail a été pensé pour le plaisir. Et maintenant, regardez bien ce qui se cache derrière.",
           "design": {
@@ -170,6 +276,7 @@
         "id": "qwen3:mystere",
         "label": "Récit mystérieux · homme",
         "params": {
+          "gemini": "Algieba",
           "ref": "voices/mystere.wav",
           "ref_text": "Cette nuit-là, le vieux phare s'est rallumé tout seul. Les habitants du village n'ont jamais su qui avait gravi ses trois cents marches.",
           "design": {
@@ -183,6 +290,7 @@
         "id": "qwen3:energique_f",
         "label": "Présentatrice énergique · femme",
         "params": {
+          "gemini": "Zephyr",
           "ref": "voices/energique_f.wav",
           "ref_text": "Vous n'allez pas croire ce qu'on a trouvé dans cette maison ! Une pièce secrète, un escalier caché, et ce n'est que le début.",
           "design": {
@@ -196,6 +304,7 @@
         "id": "qwen3:energique_h",
         "label": "Présentateur dynamique · homme",
         "params": {
+          "gemini": "Puck",
           "ref": "voices/energique_h.wav",
           "ref_text": "Cet animal est capable de survivre sans eau pendant des mois. Et ce n'est même pas son pouvoir le plus incroyable. Regardez la suite !",
           "design": {
@@ -209,6 +318,7 @@
         "id": "qwen3:elegante",
         "label": "Voix élégante (luxe) · femme",
         "params": {
+          "gemini": "Despina",
           "ref": "voices/elegante.wav",
           "ref_text": "Bienvenue dans cette villa d'exception, entre mer et collines. Des volumes généreux, des matériaux nobles, et une vue à couper le souffle.",
           "design": {
@@ -222,6 +332,7 @@
         "id": "qwen3:perso_patron",
         "label": "Personnage · patron autoritaire (homme 55 ans)",
         "params": {
+          "gemini": "Orus",
           "ref": "voices/perso_patron.wav",
           "ref_text": "Le jour de paie est arrivé. Personne ne ment au patron, tu m'entends ? Rends-moi ce que tu me dois, et disparais.",
           "design": {
@@ -235,6 +346,7 @@
         "id": "qwen3:perso_humble",
         "label": "Personnage · jeune homme humble",
         "params": {
+          "gemini": "Achird",
           "ref": "voices/perso_humble.wav",
           "ref_text": "Monsieur, une dame a oublié cette valise dans mon taxi. Je sais que ce n'est pas à moi. Je suis venu la rendre.",
           "design": {
@@ -248,6 +360,7 @@
         "id": "qwen3:perso_mielleuse",
         "label": "Personnage · femme mielleuse, puis cassante",
         "params": {
+          "gemini": "Vindemiatrix",
           "ref": "voices/perso_mielleuse.wav",
           "ref_text": "Mais bien sûr, mon chéri, donne-moi ça, je vais lui remettre. Ne t'inquiète pas, je lui dirai que c'est toi.",
           "design": {
@@ -261,6 +374,7 @@
         "id": "qwen3:perso_mamie",
         "label": "Personnage · vieille dame",
         "params": {
+          "gemini": "Gacrux",
           "ref": "voices/perso_mamie.wav",
           "ref_text": "J'ai vendu mon verger pour payer tes études, mon petit. Je ne regrette rien. Mais tu ne m'appelles plus jamais.",
           "design": {
@@ -274,6 +388,7 @@
         "id": "qwen3:perso_papi",
         "label": "Personnage · vieil homme bienveillant",
         "params": {
+          "gemini": "Schedar",
           "ref": "voices/perso_papi.wav",
           "ref_text": "Non, ma fille. Ce n'est pas à cause de toi. C'est à cause de ce que tu vaux, et ça leur fait peur.",
           "design": {
@@ -287,6 +402,7 @@
         "id": "qwen3:perso_fillette",
         "label": "Personnage · fillette",
         "params": {
+          "gemini": "Leda",
           "ref": "voices/perso_fillette.wav",
           "ref_text": "Papa, regarde ! Je suis première ! Tu vois, je te l'avais dit, j'ai travaillé tous les soirs.",
           "design": {
@@ -300,6 +416,7 @@
         "id": "qwen3:perso_garcon",
         "label": "Personnage · garçon timide",
         "params": {
+          "gemini": "Achernar",
           "ref": "voices/perso_garcon.wav",
           "ref_text": "Personne ne s'est jamais assis avec moi. Tu es sûre ? Moi aussi, on me trouve bizarre, tu sais.",
           "design": {
@@ -313,6 +430,7 @@
         "id": "qwen3:perso_ado",
         "label": "Personnage · ado moqueur",
         "params": {
+          "gemini": "Fenrir",
           "ref": "voices/perso_ado.wav",
           "ref_text": "Attention, l'égout est arrivé ! Elle préfère le puant ? T'inquiète, il va le payer, crois-moi.",
           "design": {
@@ -326,6 +444,7 @@
         "id": "qwen3:perso_jeune_femme",
         "label": "Personnage · jeune femme douce",
         "params": {
+          "gemini": "Aoede",
           "ref": "voices/perso_jeune_femme.wav",
           "ref_text": "Je peux m'asseoir ? Tu n'as pas à avoir honte. Moi, je trouve ça courageux, tout ce que tu supportes.",
           "design": {

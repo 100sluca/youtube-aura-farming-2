@@ -484,12 +484,21 @@ MÉTHODE, dans l'ordre des champs du JSON :
 5. beats : le récit, temps par temps (part), chacun avec son texte (text) et ce qu'on voit (show) :
    - hook : UNE phrase de 14 mots au plus : le sujet concret dès les premiers mots et un contraste (ce qu'on croit
      contre ce qui est, un paradoxe, un prix absurde, une erreur énorme). Relis-la seule : si elle peut se lire de
-     deux façons, réécris-la.
+     deux façons, réécris-la. Elle vise un ado de 13 ans qui fait défiler : elle doit lui faire ressentir quelque
+     chose dès la 1re seconde, avec des mots de tous les jours. Deux ressorts marchent : le GÂCHIS ou la PERTE qu'on
+     sent dans le ventre (« Cette capitale a coûté 4 milliards d'euros, mais personne n'y vit. » : tout le monde
+     comprend qu'une fortune a été jetée), ou l'ÉMERVEILLEMENT d'un lieu, d'un objet, d'une personne qui semble sorti
+     d'un film et qui existe pourtant vraiment, que le spectateur ne connaissait pas (ce qui le rend unique : le
+     plus grand, le seul, un décor de cinéma, un record, une chose qu'on ne voit nulle part ailleurs, tirée du
+     dossier). Une durée seule (« a survécu 2 000 ans ») ou une notion abstraite (« contre le désert ») ne fait rien
+     ressentir : dis ce qu'elle a de concret et d'extraordinaire.
    - promise : UNE phrase qui annonce la fin sans la donner (« Pourtant, personne n'a le droit d'en toucher une seule
      pièce. ») ; un fait de plus (« personne n'y avait touché depuis 2 000 ans ») n'est pas une promesse. La réponse
      la tiendra. Accroche et promesse tiennent en 6 s : 22 mots dits au plus à elles deux.
    - context : le point de départ, pour un spectateur qui ne connaît rien : qui, où (un repère connu : un pays, une
-     ville, une distance), quand (l'année ou le siècle, une fois), ce que le héros veut et pourquoi ça compte. Il
+     ville, une distance), quand (l'année ou le siècle, une fois), ce que le héros veut et pourquoi ça compte. Un nom
+     de peuple, de lieu ou de métier qu'un ado ne connaît pas s'explique en quelques mots la 1re fois (« les
+     Berbères, le peuple qui vivait en Afrique du Nord bien avant les Arabes »), seulement si le dossier le dit. Il
      commence avant la 12e seconde ; sa 1re phrase fait la transition sans casser le rythme, une phrase de récit qui
      relance (« Alors, il fait l'impensable. »), jamais « c'est parti » ni « laissez-moi vous expliquer ». Assez de
      contexte pour tout comprendre, sans cours d'histoire.
@@ -539,7 +548,10 @@ ne connaît rien au sujet et qui décroche dès qu'il s'ennuie ou ne comprend pl
 ce qui ne va pas et quoi faire, en t'appuyant sur le dossier quand il y en a un.
 Vérifie, dans cet ordre :
 1. Accroche : le sujet concret est-il dit dès la 1re phrase, avec un contraste qui intrigue ? Relue seule, se lit-elle
-   d'une seule façon, ferait-elle un bon titre ? La 2e phrase annonce-t-elle la fin, et le récit la tient-il ?
+   d'une seule façon, ferait-elle un bon titre ? Un ado de 13 ans ressent-il quelque chose dès la 1re seconde : un
+   gâchis ou une perte concrète (4 milliards jetés), ou l'émerveillement d'une chose unique qui existe vraiment ? Une
+   durée seule ou une notion abstraite ne suffit pas : propose la meilleure accroche que permet le dossier. La 2e
+   phrase annonce-t-elle la fin, et le récit la tient-il ?
 2. Contexte : vers la 12e seconde, un spectateur qui ne connaît rien sait-il qui, où, quand, ce que le héros veut et
    pourquoi ça compte ? Manque-t-il un repère pour comprendre la suite ? Un récit raccourci, qui juxtapose des faits
    sans les relier, est le défaut n° 1.
@@ -550,7 +562,8 @@ Vérifie, dans cet ordre :
    contient-il un conflit, une ironie ou un renversement plus fort que le récit n'utilise pas ?
 5. Une seule idée : tout sert-il l'idée centrale ? Relève les détails, noms, grades et chiffres secondaires à couper.
 6. Montrer : les émotions passent-elles par des actions et des détails concrets, ou par des adjectifs ?
-7. Langue et rythme : des mots qu'un enfant de 10 ans comprend ? Des phrases de longueurs variées ?
+7. Langue et rythme : des mots qu'un enfant de 10 ans comprend ? Chaque nom de peuple, de lieu ou de métier peu
+   connu est-il expliqué la 1re fois ? Des phrases de longueurs variées ?
 8. Fin : la dernière phrase claque-t-elle, pourrait-elle être partagée seule, renvoie-t-elle à l'accroche ? Le récit
    s'arrête-t-il dès que la promesse est tenue et la chute dite ?
 9. Exactitude : chaque fait, nom, nombre, date ou citation est-il dans les faits ou le dossier ? Relève aussi ce qui

@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LibraryBig,
   Settings,
+  ShoppingBag,
   Sparkles,
   Star,
   type LucideIcon,
@@ -28,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/calendar", label: "Calendrier", icon: CalendarDays },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/montage", label: "Montage", icon: Clapperboard },
+  { href: "/paf-j-achete", label: "Paf, j’achète", icon: ShoppingBag }, // la vidéo du vendredi sur Instagram (docs/50)
   { href: "/settings", label: "Réglages", icon: Settings },
 ];
 

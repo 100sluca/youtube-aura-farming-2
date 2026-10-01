@@ -12,6 +12,8 @@ import { resumeProduction, stopProduction } from "@/app/tasks/actions";
 import { ChannelBadge } from "@/components/channel-badge";
 import { ConfirmButton } from "@/components/confirm-button";
 import { FavoriteStar } from "@/components/favorites/favorite-star";
+import { ProductionTimingPanel } from "@/components/library/production-timing";
+import { InstagramPanel } from "@/components/library/instagram-panel";
 import { TikTokPanel } from "@/components/library/tiktok-panel";
 import { VideoStats } from "@/components/library/video-stats";
 import { VideoDecision, isDecidable } from "@/components/production/video-panel";
@@ -77,14 +79,14 @@ function Player({ item }: { item: LibraryItem }) {
 
 const STOPPABLE = new Set(["draft", "scripting", "generating", "assembling"]);
 
-/** Retouche à la main (docs/34) : vidéo de l'appli montée, fichiers sur le PC, pas encore envoyée sur YouTube. */
+/** Retouche à la main (docs/34) : vidéo de l'appli montée, fichiers sur le PC, pas encore sortie ; une vidéo déjà
+ * programmée ou publiée sur YouTube aussi, refaite elle repart comme une nouvelle vidéo (docs/44, docs/47). */
 function canRetouch(v: LibraryItem): boolean {
   return (
     v.origin !== "imported" &&
     !v.files_deleted_at &&
     Boolean(v.final_asset_id) &&
-    !v.youtube_video_id &&
-    ["review", "qa", "ready", "failed", "rendering"].includes(v.status)
+    (v.youtube_video_id ? ["scheduled", "published"].includes(v.status) : ["review", "qa", "ready", "failed", "rendering"].includes(v.status))
   );
 }
 
@@ -278,6 +280,13 @@ export function LibrarySheet({ item, onClose }: { item: LibraryItem | null; onCl
                   </>
                 ) : null}
 
+                {!making && item.origin !== "imported" && data?.instagram ? (
+                  <>
+                    <Separator />
+                    <InstagramPanel key={item.id} videoId={item.id} initial={data.instagram} canPublish={Boolean(item.final_asset_id) && !item.files_deleted_at} />
+                  </>
+                ) : null}
+
                 {onYouTube ? (
                   <>
                     <Separator />
@@ -349,6 +358,13 @@ export function LibrarySheet({ item, onClose }: { item: LibraryItem | null; onCl
                         </div>
                       ) : null}
                     </section>
+
+                    {item.production_id ? (
+                      <>
+                        <Separator />
+                        <ProductionTimingPanel productionId={item.production_id} videoId={item.id} />
+                      </>
+                    ) : null}
 
                     <Separator />
                     <section className="flex flex-wrap items-center gap-3">

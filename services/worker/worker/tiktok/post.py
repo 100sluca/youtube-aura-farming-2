@@ -40,10 +40,11 @@ def publish_time(scheduled_at: datetime | None, now: datetime, force_now: bool =
     return scheduled_at
 
 
-def idempotency_key(video_id: object, round_: int) -> str:
+def idempotency_key(video_id: object, round_: int, generation: int = 0) -> str:
     """Même clé pour toutes les tentatives d'un même envoi (un job relancé ne publie pas deux fois) ; une nouvelle
-    demande après un échec (`round_` suivant) en prend une autre."""
-    return str(uuid.uuid5(_KEY_NS, f"{video_id}:{round_}"))
+    demande après un échec (`round_` suivant) en prend une autre, de même une vidéo retouchée après son envoi
+    (`generation` = nombre d'envois remplacés, videos.previous_uploads, docs/44)."""
+    return str(uuid.uuid5(_KEY_NS, f"{video_id}:{round_}" if not generation else f"{video_id}:{generation}:{round_}"))
 
 
 def post_body(
@@ -90,16 +91,17 @@ class Outcome:
     draft: bool = False
 
 
-def tiktok_entry(post: dict[str, Any]) -> dict[str, Any]:
+def tiktok_entry(post: dict[str, Any], platform: str = "tiktok") -> dict[str, Any]:
     for p in post.get("platforms") or []:
-        if isinstance(p, dict) and p.get("platform") == "tiktok":
+        if isinstance(p, dict) and p.get("platform") == platform:
             return p
     return {}
 
 
-def read_post(post: dict[str, Any]) -> Outcome:
-    """État d'une publication d'après son entrée TikTok (celle de la publication entière à défaut)."""
-    entry = tiktok_entry(post)
+def read_post(post: dict[str, Any], platform: str = "tiktok") -> Outcome:
+    """État d'une publication d'après son entrée TikTok (celle de la publication entière à défaut) ; `platform` :
+    l'entrée Instagram pour un Reel (docs/48)."""
+    entry = tiktok_entry(post, platform)
     status = str(entry.get("status") or post.get("status") or "pending")
     if post.get("status") == "scheduled" and status == "pending":
         status = "scheduled"
@@ -114,7 +116,7 @@ def read_post(post: dict[str, Any]) -> Outcome:
     )
 
 
-def read_create(code: int, body: dict[str, Any]) -> Outcome:
+def read_create(code: int, body: dict[str, Any], platform: str = "tiktok") -> Outcome:
     """Réponse de `POST /posts` : 201/200 créée (ou déjà créée par un envoi identique), 207 échec chez TikTok, 409
     même contenu déjà publié sur ce compte dans les 24 h (on suit la publication d'origine)."""
     if code == 409:
@@ -124,7 +126,7 @@ def read_create(code: int, body: dict[str, Any]) -> Outcome:
         return Outcome(status="failed", error=str(body.get("error") or "doublon refusé par Zernio"))
     if code == 202 and body.get("postId"):
         return Outcome(status="pending", post_id=str(body["postId"]))
-    out = read_post(body.get("post") or {})
+    out = read_post(body.get("post") or {}, platform)
     if code == 207 and out.status != "failed":
         out.status = "failed"
     if out.status == "failed" and not out.error:

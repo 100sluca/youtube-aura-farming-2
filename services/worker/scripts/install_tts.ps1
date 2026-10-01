@@ -9,7 +9,9 @@ Exige uv ; Python 3.12 est installe par uv dans C:\YouTube2\uv\python. Tailles (
 - pocket     : Kyutai Pocket TTS 3.3.0, CC BY 4.0, modele francais (0,22 Go) + PyTorch CPU (~1 Go).
 - supertonic : Supertonic 3, OpenRAIL-M, ONNX (0,41 Go) + onnxruntime.
 - eval       : pas un moteur, les outils du banc d'essai des voix (scripts/bench_voice.py eval, docs/29) :
-               faster-whisper + Whisper large-v3-turbo (1,6 Go) sur le processeur. A demander : -Engine eval.
+               faster-whisper + Whisper large-v3-turbo (1,6 Go) sur le processeur, et l'empreinte de voix du banc
+               « emotion » (sherpa-onnx + wespeaker ResNet34, 26 Mo, docs/41). A demander : -Engine eval.
+Les moteurs qwen3_emotion et qwen3_instruct (docs/41) reprennent l'installation de qwen3 ; gemini n'installe rien.
 Ensuite, carte graphique libre (~5 min) : creer les voix Qwen d'apres leur description (catalog.json), puis essayer :
     C:\YouTube2\tts\qwen3\venv\Scripts\python.exe services\worker\tts_runners\qwen3_design.py `
         services\worker\workflows\catalog.json --free-comfy http://127.0.0.1:8188
@@ -64,8 +66,13 @@ foreach ($name in $Engine) {
         }
         "eval" {
             $py = New-EngineVenv "eval"
-            Invoke-Step "eval : faster-whisper, num2words" { uv pip install --python $py -q faster-whisper num2words }
+            Invoke-Step "eval : faster-whisper, num2words, sherpa-onnx" { uv pip install --python $py -q faster-whisper num2words sherpa-onnx }
             Invoke-Step "eval : modele Whisper large-v3-turbo (1,6 Go)" { & $py -c "from faster_whisper.utils import download_model; print(download_model('large-v3-turbo'))" }
+            $speaker = "$Root\tts\eval\models\speaker.onnx"
+            if (-not (Test-Path $speaker)) {
+                Write-Host "-> eval : empreinte de voix (wespeaker ResNet34, 26 Mo)"
+                Invoke-WebRequest -Uri "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx" -OutFile $speaker
+            }
         }
         default { throw "Moteur inconnu : $name (qwen3, pocket, supertonic, eval)" }
     }

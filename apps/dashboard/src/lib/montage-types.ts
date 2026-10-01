@@ -91,6 +91,11 @@ export interface TitleLayer {
   y: number;
 }
 
+/** Musique : le curseur descend à MUSIC_SLIDER_MIN_DB ; une valeur tapée dans la case, jusqu'à MUSIC_MIN_DB (≈ muette).
+ * Demande de Luca (30/09) : « parfois c'est vraiment trop fort pour mes oreilles », réglage libre. */
+export const MUSIC_SLIDER_MIN_DB = -40;
+export const MUSIC_MIN_DB = -120;
+
 /** Son (worker/montage.py : AudioLayer, docs/26-musique.md) : niveaux en dB, après égalisation automatique de la voix et
  * de chaque musique ; le mixage final est ramené à −14 LUFS. */
 export interface AudioLayer {

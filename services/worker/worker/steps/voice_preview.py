@@ -1,6 +1,13 @@
 """Essai de voix (Réglages → Modèles de génération, bouton « Écouter ») : une phrase dite par la voix choisie, hors de
 toute production. Le fichier va dans DATA_DIR/previews/voices/<job>.wav, son chemin dans jobs.result.path, que la route
-/api/voice-preview/<job> du dashboard sert au lecteur audio (docs/18-voix.md)."""
+/api/voice-preview/<job> du dashboard sert au lecteur audio (docs/18-voix.md).
+
+Banc d'essai (scripts/bench_emotion.py, docs/41) : payload « texts » (et « tones ») = plusieurs répliques dites par la
+même voix, le modèle chargé une fois comme à l'étape voix d'un drame ; un fichier par réplique (<job>_<n>.wav, chemins
+dans result.paths) et les temps du moteur (chargement, calcul de chaque réplique).
+
+Jeu des voix Gemini (Réglages, docs/41 §8) : « Écouter » fait entendre une voix Qwen telle que les récits la diront, lue
+par Gemini avec sa description ; payload « raw » : la voix brute."""
 
 from __future__ import annotations
 
@@ -8,9 +15,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..providers.tts import get_engine, split_voice
+from ..providers.tts import acting_engines, get_engine, split_voice, tts_catalog
+from ..settings_store import load_generation_config
 from ..timeline import trim_silence
 from .base import Context, Step
+from .tts import _say, narration_acting, voice_description
 
 # Phrase par défaut : ton des séries narrées (accroche, chiffres, liaisons)
 SAMPLES = {
@@ -38,20 +47,21 @@ class VoicePreviewStep(Step):
 
         tts = get_engine(ctx.settings, engine_name)
         started = time.monotonic()
-        ctx.progress(5, f"{tts.name} · chargement du modèle")
+        if isinstance(p.get("texts"), list) and p["texts"]:
+            return self._lines(ctx, tts, engine_name, voice, lang, speed, out_dir, started)
+        engines, play, persona = ([], {}, "") if p.get("raw") else _acting(ctx, engine_name, voice)
+        ctx.progress(5, f"{engines[0] if engines else tts.name} · chargement du modèle")
         if ctx.settings.dry_run:
             out.write_bytes(b"")
             duration = 0.0
         else:
             import soundfile as sf
 
-            [speech] = tts.speak_many(
-                [text],
-                voice=voice,
-                lang=lang,
-                speed=speed,
-                on_progress=lambda pct, label: ctx.progress(5 + int(0.9 * pct), label),
-            )
+            progress = lambda pct, label: ctx.progress(5 + int(0.9 * pct), label)  # noqa: E731
+            if engines:
+                [speech] = _say(ctx, engines, play, voice, lang, speed, [text], [""], [persona], on_progress=progress)
+            else:
+                [speech] = tts.speak_many([text], voice=voice, lang=lang, speed=speed, on_progress=progress)
             samples = trim_silence(speech.samples, speech.rate)
             sf.write(str(out), samples, speech.rate)
             duration = len(samples) / speech.rate
@@ -59,13 +69,69 @@ class VoicePreviewStep(Step):
         return {
             "path": str(out),
             "voice": f"{engine_name}:{voice}",
-            "engine": tts.name,
+            "engine": engines[0] if engines else tts.name,
             "lang": lang,
             "text": text,
             "speed": speed,
             "duration_s": round(duration, 2),
             "elapsed_s": round(time.monotonic() - started, 1),
         }
+
+    def _lines(
+        self, ctx: Context, tts: Any, engine_name: str, voice: str, lang: str, speed: float, out_dir: Path, started: float
+    ) -> dict[str, Any]:
+        """Répliques du banc d'essai : un seul appel au moteur, un fichier par réplique."""
+        p = ctx.job.payload or {}
+        texts = [" ".join(str(t or "").split())[:MAX_CHARS] for t in p["texts"]]
+        tones = [str(t or "") for t in (p.get("tones") or [])]
+        ctx.progress(5, f"{tts.name} · chargement du modèle")
+        paths: list[str] = []
+        durations: list[float] = []
+        if not ctx.settings.dry_run:
+            import soundfile as sf
+
+            speeches = tts.speak_many(
+                texts,
+                voice=voice,
+                lang=lang,
+                speed=speed,
+                on_progress=lambda pct, label: ctx.progress(5 + int(0.9 * pct), label),
+                tones=tones or None,
+            )
+            for i, speech in enumerate(speeches):
+                path = out_dir / f"{ctx.job.id}_{i:02d}.wav"
+                samples = trim_silence(speech.samples, speech.rate)
+                sf.write(str(path), samples, speech.rate)
+                paths.append(str(path))
+                durations.append(round(len(samples) / speech.rate, 2))
+        _prune(out_dir)
+        timings = getattr(tts, "last_result", None) or {}
+        return {
+            "paths": paths,
+            "durations": durations,
+            "voice": f"{engine_name}:{voice}",
+            "engine": tts.name,
+            "lang": lang,
+            "speed": speed,
+            "load_s": timings.get("load_s"),
+            "times": timings.get("times"),
+            "elapsed_s": round(time.monotonic() - started, 1),
+        }
+
+
+def _acting(ctx: Context, engine_name: str, voice: str) -> tuple[list[str], dict[str, Any], str]:
+    """Moteurs qui liraient cette voix dans un récit selon le jeu des voix des Réglages (Gemini), avec sa description en
+    consigne ; ([], {}, "") si la voix est dite telle quelle."""
+    try:
+        acting = load_generation_config(ctx.settings, ctx.db).voice_acting
+        catalog = tts_catalog(ctx.settings)
+    except Exception:  # noqa: BLE001 — réglages illisibles : la voix brute
+        return [], {}, ""
+    play = narration_acting(catalog, acting)
+    engines = acting_engines(catalog, engine_name, acting) if play else []
+    if not engines or engines == [engine_name]:
+        return [], {}, ""
+    return engines, play, voice_description(catalog, f"{engine_name}:{voice}") if play.get("persona") else ""
 
 
 def _prune(folder: Path) -> None:

@@ -370,8 +370,9 @@ def mix_levels(
     """Gains du mixage d'une vidéo : `audio` est la couche AudioLayer du modèle de montage (worker/montage.py). Une
     voix non mesurée garde son niveau ; une piste non mesurée est supposée à UNKNOWN_LUFS."""
     voice = (_leveling(VOICE_REF_LUFS, narration_lufs, VOICE_REF_LUFS) if narration_lufs is not None else 0.0) + audio.voice_db
-    target = VOICE_REF_LUFS + audio.music_db if with_voice else SOLO_REF_LUFS + audio.solo_db
-    music = _leveling(target, track_lufs, UNKNOWN_LUFS) + track_gain_db
+    # le garde-fou ne borne que l'égalisation de la piste, jamais le réglage de Luca (−120 dB reste −120 dB)
+    ref, offset = (VOICE_REF_LUFS, audio.music_db) if with_voice else (SOLO_REF_LUFS, audio.solo_db)
+    music = _leveling(ref, track_lufs, UNKNOWN_LUFS) + offset + track_gain_db
     return MixLevels(round(voice, 2), round(music, 2), float(audio.duck_db) if with_voice else 0.0, float(audio.sfx_db))
 
 

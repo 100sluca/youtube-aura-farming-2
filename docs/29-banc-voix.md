@@ -1,5 +1,7 @@
 # 29 · Banc d'essai des voix : combien de temps pour dire un Short, et avec quelle qualité
 
+> Suite le 29/09 : l'émotion dans les voix, avec un banc sur les répliques d'un drame (`41-voix-emotion.md`).
+
 > 2026-09-28, demande de Luca : « le même tableau que pour les vidéos et les images » (`21-modeles-hugging-face-8go.md`
 > §7-8), pour les voix : combien de caractères en combien de temps, le temps total, la qualité ; ensuite, installer
 > d'autres modèles pour les écouter. Phase de test : **les licences ne comptent pas** (un mot au plus). Machine :

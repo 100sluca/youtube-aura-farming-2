@@ -11,7 +11,8 @@
 **Bibliothèque → fiche d'une vidéo → « Retoucher : titre, sous-titres, musique, voix »** (sous le lecteur), qui ouvre
 `/library/<vidéo>/retouche`. Le bouton n'apparaît que pour une vidéo de l'appli, montée, dont les fichiers sont sur le
 PC et **pas encore envoyée sur YouTube** (YouTube ne permet pas de remplacer le fichier d'une vidéo) : à valider,
-autorisée mais pas encore partie, refusée ou en échec après son montage.
+autorisée mais pas encore partie, refusée ou en échec après son montage. **Depuis le 30/09, aussi une vidéo déjà
+programmée** : refaite, elle repart comme une nouvelle vidéo YouTube et TikTok (docs/44).
 
 - **À gauche, la vidéo** telle qu'elle est, et sous elle **Son actuel / Nouveau mixage** : « Nouveau mixage » la joue
   avec sa voix et la musique choisie, aux niveaux réglés (même écoute que l'onglet Montage → Son, docs/26) ; bouger
@@ -30,6 +31,11 @@ autorisée mais pas encore partie, refusée ou en échec après son montage.
   bibliothèque ; celle que le montage choisirait pour l'histoire est signalée), la fiche de la piste choisie et son
   **début dans le fichier** ; puis le **mixage de cette vidéo** : voix IA, musique sous la voix, baisse pendant que la voix
   parle (récits) ; musique et bruitages (chantiers, visites). Départ : les niveaux du modèle de montage.
+- **Onglet Voix, drames** (30/09, docs/41 §8) : « Voix des personnages », chaque personnage avec sa voix gardée du début
+  à la fin (et sa voix Gemini), et le menu **« Refaire les voix des personnages avec »** (Gemini 3.8 Flash TTS, ou un jeu
+  local) : toutes les répliques redites selon leur ton, ajustées à la durée de la bouche de leur plan, puis calées sur
+  les lèvres au montage ; le jeu reste noté dans `videos.retouch.acting` (une nouvelle prise le garde). Le job voix reçoit
+  `{"voice": "acting:gemini", "retouch": true}` (même SQL `retouch_video`, sans migration).
 - **Onglet Voix** (récits) : la voix actuelle, un **menu « Voix de cette vidéo »** et « Écouter » sur une phrase de la
   vidéo (job `voice_preview`, docs/18). Une autre voix = la narration est refaite avant le montage.
 

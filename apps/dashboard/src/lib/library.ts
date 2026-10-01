@@ -12,6 +12,7 @@ import { getVideoInsight } from "@/lib/insights";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allTasks } from "@/lib/task-types";
 import { getTaskBoard } from "@/lib/tasks";
+import { getLibraryInstagram } from "@/lib/instagram";
 import { getLibraryTikTok, getTikTokBriefs } from "@/lib/tiktok";
 import type { ProductionStatus, VideoOverview } from "@/lib/types";
 
@@ -109,9 +110,11 @@ export async function getLibraryDetail(videoId: string, productionId: string | n
     withClips && productionId ? productionClips(productionId) : Promise.resolve(undefined),
   ]);
   const video = detail?.video;
-  const [insight, tiktok] = await Promise.all([
+  const ours = video && video.origin !== "imported" && video.final_asset_id;
+  const [insight, tiktok, instagram] = await Promise.all([
     video?.youtube_video_id ? getVideoInsight(videoId, video.channel_id) : Promise.resolve(null),
-    video && video.origin !== "imported" && video.final_asset_id ? getLibraryTikTok(videoId, video.channel_id) : Promise.resolve(null),
+    ours ? getLibraryTikTok(videoId, video.channel_id) : Promise.resolve(null),
+    ours ? getLibraryInstagram(videoId, video.channel_id) : Promise.resolve(null),
   ]);
-  return { detail, production, favorite: favorites.length > 0, insight, clips, tiktok };
+  return { detail, production, favorite: favorites.length > 0, insight, clips, tiktok, instagram };
 }

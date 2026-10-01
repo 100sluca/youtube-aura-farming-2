@@ -70,7 +70,11 @@ chose. Une liste de faits ne retient personne, même vrais, même étonnants : i
    pas « un trésor incroyable » mais « 400 pièces d'or cousues dans la doublure d'un manteau ».
 6. L'ACCROCHE SANS DÉLAI. Dès la 1re phrase, on sait exactement de quoi on parle (un objet, un lieu, une personne,
    un événement concret) et on sent un contraste : ce qu'on croit contre ce qui est, un paradoxe, une erreur énorme,
-   un prix absurde. Les 4 erreurs qui font passer à la vidéo suivante : le délai (le sujet arrive après une phrase
+   un prix absurde. Le public est jeune et ne connaît rien au sujet : l'accroche doit lui faire RESSENTIR quelque
+   chose tout de suite, soit un gâchis ou une perte qu'on sent dans le ventre (« Cette capitale a coûté 4 milliards
+   d'euros, mais personne n'y vit. »), soit l'émerveillement d'une chose unique, comme sortie d'un film, qui existe
+   pourtant vraiment et qu'il ne connaissait pas. Une durée ou une idée abstraite seule (« a survécu 2 000 ans
+   contre le désert ») ne fait rien ressentir. Les 4 erreurs qui font passer à la vidéo suivante : le délai (le sujet arrive après une phrase
    d'introduction : supprime-la), la confusion (une phrase qui se lit de deux façons : relis-la seule), le
    hors-sujet (rien ne promet une histoire qu'on ne connaît pas), le désintérêt (aucune question ouverte). Une bonne
    accroche ferait un bon titre ; elle se comprend même sans le son, parce que l'image montre au même instant ce que

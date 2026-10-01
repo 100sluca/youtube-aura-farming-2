@@ -3,7 +3,9 @@
 - `views_at` : vues d'une vidéo à un instant donné (24 h, 7 jours après sa mise en ligne), d'après les relevés horaires
   des compteurs publics ;
 - `retention_summary` : ce qu'on retient de la courbe de rétention d'un Short, la part de l'audience encore là à 3 s
-  (l'accroche a-t-elle retenu ?) et à la dernière seconde.
+  (l'accroche a-t-elle retenu ?) et à la dernière seconde ;
+- `retention_by_scene` : la courbe posée sur les phrases dites (timeline de la voix) : combien partent pendant chaque
+  phrase, pour que l'analyste dise POURQUOI on décroche à tel moment (docs/49).
 """
 
 from __future__ import annotations
@@ -64,3 +66,41 @@ def retention_summary(curve: Sequence[Mapping[str, Any]], duration_s: float | No
         return None, None
     hook_ratio = min(1.0, HOOK_S / duration_s) if duration_s and duration_s > 0 else HOOK_RATIO_FALLBACK
     return retention_at(curve, hook_ratio), retention_at(curve, 1.0)
+
+
+def retention_by_scene(
+    curve: Sequence[Mapping[str, Any]], duration_s: float | None, scenes: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Audience à l'entrée et à la sortie de chaque scène de la timeline de la voix (`scenes` : start, duration, words),
+    en % : [{"start", "end", "text", "before", "after", "lost"}]. Vide sans courbe, sans durée ou sans timeline."""
+    if not curve or not duration_s or duration_s <= 0 or not scenes:
+        return []
+    out = []
+    for sc in scenes:
+        start = float(sc.get("start") or 0)
+        end = min(duration_s, start + float(sc.get("duration") or 0))
+        if end <= start or start >= duration_s:
+            continue
+        before, after = retention_at(curve, start / duration_s), retention_at(curve, end / duration_s)
+        if before is None or after is None:
+            continue
+        text = " ".join(str(w.get("text") or "") for w in sc.get("words") or []).strip()
+        out.append(
+            {
+                "start": round(start, 1),
+                "end": round(end, 1),
+                "text": text,
+                "before": before,
+                "after": after,
+                "lost": round(before - after, 1),
+            }
+        )
+    return out
+
+
+def retention_drops(by_scene: Sequence[Mapping[str, Any]], n: int = 3) -> list[Mapping[str, Any]]:
+    """Les `n` scènes où l'audience baisse le plus vite (points perdus par seconde), hors scènes sans perte, dans
+    l'ordre de la vidéo."""
+    lossy = [s for s in by_scene if s["lost"] > 0]
+    worst = sorted(lossy, key=lambda s: s["lost"] / max(0.5, s["end"] - s["start"]), reverse=True)[:n]
+    return sorted(worst, key=lambda s: s["start"])

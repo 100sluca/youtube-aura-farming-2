@@ -26,8 +26,10 @@ class QAStep(Step):
     def run(self, ctx: Context) -> dict[str, Any]:
         vid = ctx.job.video_id
         v = ctx.db.fetch_one(
-            """select v.format, v.title, v.lang, a.local_path, c.auto_publish from videos v
-               join assets a on a.id = v.final_asset_id join channels c on c.id = v.channel_id where v.id = %s""",
+            # pilote automatique (docs/46) : personne ne valide, la vidéo part dans le prochain créneau YouTube (et TikTok)
+            """select v.format, v.title, v.lang, a.local_path, (c.auto_publish or coalesce(p.autopilot, false)) as auto_publish
+               from videos v join assets a on a.id = v.final_asset_id join channels c on c.id = v.channel_id
+               left join productions p on p.id = v.production_id where v.id = %s""",
             (vid,),
         )
         assert v, "final manquant"
@@ -86,7 +88,7 @@ class QAStep(Step):
     def _maybe_mark_production_ready(self, ctx: Context) -> None:
         pid = ctx.job.production_id
         row = ctx.db.fetch_one(
-            "select bool_and(status in ('review', 'ready', 'scheduled', 'published')) as done from videos where production_id = %s",
+            "select bool_and(status in ('review', 'ready', 'scheduled', 'published')) as done from videos where production_id = %s and archived_at is null",
             (pid,),
         )
         if row and row["done"]:

@@ -1,5 +1,9 @@
-"""Boucle principale : deux voies (gpu = 1 job à la fois, io = N jobs), heartbeat, planificateur ; plus un fil pour les
-aperçus demandés depuis le dashboard (voie preview : rendu exact de l'onglet Montage), pris même pendant un job GPU.
+"""Boucle principale : deux voies (gpu = 1 job à la fois, dans son propre fil ; io = N jobs), heartbeat, planificateur ;
+plus un fil pour les aperçus demandés depuis le dashboard (voie preview : rendu exact de l'onglet Montage), pris même
+pendant un job GPU.
+
+La voie gpu a son fil (docs/43) : avant le 30/09 elle bloquait la boucle, et les scripts, idées ou SEO (voie io, clés
+Gemini libres) attendaient la fin de chaque job GPU (images du storyboard, clip de 10 min) pour partir.
 
 Relance automatique : `worker` lance un superviseur qui fait tourner le vrai worker dans un processus enfant. Quand un
 fichier .py du worker change (plusieurs sessions le modifient en parallèle), l'enfant finit ses jobs en cours, n'en
@@ -94,9 +98,10 @@ def _stopped_by_user(db: Db, job: Job, exc: Exception, flag: threading.Event) ->
 def preview_lane(
     db: Db, settings: Settings, types: list[str], busy: threading.Event, stop: threading.Event, label: str = "preview"
 ) -> None:
-    """Voie des aperçus (rendu exact de l'onglet Montage) : quelques secondes de CPU, à prendre tout de suite. La boucle
-    principale ne reprend la main qu'entre deux jobs GPU (un clip dure jusqu'à 10 min) : ces jobs ont donc leur fil.
-    Même fil, `label` « stats », pour les synchros YouTube et l'agent analyste (STATS_TYPES)."""
+    """Voie des aperçus (rendu exact de l'onglet Montage) : quelques secondes de CPU, à prendre tout de suite. La voie io
+    peut être pleine (trois scripts de plusieurs minutes) : ces jobs ont donc leur fil.
+    Même fil, `label` « stats », pour les synchros YouTube et l'agent analyste (STATS_TYPES), et `label` « gpu » pour la
+    voie GPU (un job à la fois, pendant que la voie io continue de se remplir)."""
     while not stop.wait(1.0):
         busy.set()  # avant de réclamer : une relance attend la fin d'un job à peine pris
         try:
@@ -109,8 +114,7 @@ def preview_lane(
 
 
 # « Actualiser » et « Analyser maintenant » du Dashboard (docs/25), « Actualiser » de l'onglet TikTok (docs/39) : pris dans
-# la seconde, même pendant un clip GPU de 10 min, par leur propre fil (la voie io les prend aussi entre deux jobs GPU ;
-# claim_jobs ne donne un job qu'une fois)
+# la seconde par leur propre fil (la voie io les prend aussi ; claim_jobs ne donne un job qu'une fois)
 STATS_TYPES = ("sync_metrics", "analyze", "sync_tiktok")
 
 RESTART_CODE = 3  # sortie de l'enfant quand son code a changé : le superviseur le relance
@@ -226,6 +230,11 @@ def main() -> None:
         threading.Thread(
             target=preview_lane, args=(db, settings, stats_types, stats_busy, stats_stop, "stats"), name="stats", daemon=True
         ).start()
+    gpu_busy, gpu_stop = threading.Event(), threading.Event()
+    if gpu_types and not args.once:
+        threading.Thread(
+            target=preview_lane, args=(db, settings, gpu_types, gpu_busy, gpu_stop, "gpu"), name="gpu", daemon=True
+        ).start()
     log.info(
         "worker.start",
         id=settings.worker_id,
@@ -257,11 +266,12 @@ def main() -> None:
                     log.warning("worker.relance_illisible")
                 if reason:
                     draining = beat.draining = True
+                    gpu_stop.set()
                     preview_stop.set()
                     stats_stop.set()
                     log.info("worker.relance_prevue", raison=reason, action="fin des jobs en cours puis relance")
             if draining:
-                if not io_inflight and not preview_busy.is_set() and not stats_busy.is_set():
+                if not io_inflight and not gpu_busy.is_set() and not preview_busy.is_set() and not stats_busy.is_set():
                     restart = True
                     break
                 time.sleep(1)
@@ -272,8 +282,8 @@ def main() -> None:
                 for job in db.claim_jobs(f"{settings.worker_id}/io", io_types, free):
                     io_inflight.add(pool.submit(run_job, job, db, settings))
                     did_work = True
-            # voie gpu : un seul job, bloquant
-            if gpu_types:
+            # voie gpu : son fil (plus haut) ; en --once, un job ici, bloquant
+            if gpu_types and args.once:
                 for job in db.claim_jobs(f"{settings.worker_id}/gpu", gpu_types, 1):
                     run_job(job, db, settings)
                     did_work = True
@@ -285,6 +295,7 @@ def main() -> None:
         pass
     finally:
         beat.stop()
+        gpu_stop.set()
         preview_stop.set()
         stats_stop.set()
         scheduler.shutdown(wait=False)

@@ -449,6 +449,31 @@ essais manuels pendant une fabrication.
 | Séries mises à jour | migration `0009_recipes_coherence.sql` (brief, 24 s pour les chantiers) |
 | Réglages | `KEYFRAME_QC` (oui), `KEYFRAME_QC_RETRIES` (2), `STORYBOARD_AUTOPASS` (non), `CLIP_QC` (oui), `CLIP_QC_RETRIES` (1) |
 
+## 11. 30/09 : des pièces rénovées plutôt que des bâtiments
+
+Retour de Luca : plutôt qu'une maison vue du dehors, **une pièce d'une maison de luxe** qu'on voit évoluer de
+l'intérieur, d'un état désolant (délabrée, sale, abîmée) à un intérieur **sobre, épuré, propre**, qui plaît à presque
+tout le monde. Le plaisir est la satisfaction du sale qui devient impeccable ; le résultat doit être assez **réaliste**
+pour qu'on se dise « ça pourrait être chez moi » (pas pour tromper : pour se projeter).
+
+Même mécanique (à rebours depuis la pièce finie, retouches Qwen-Image-Edit, clips première + dernière image,
+accéléré, compteur de jours, révélation le soir). Ce qui change :
+
+| | Avant (bâtiment) | Maintenant (pièce) |
+|---|---|---|
+| Idées (`guide_timelapse`) | maisons, granges, falaises, piscines | salon, cuisine, salle de bain, suite, dressing, cave… de maisons variées ; lieu insolite une fois sur cinq au plus |
+| Scénariste (`script_timelapse`) | paysage et bâtiment entier | toutes les scènes `interior: true` ; résultat réaliste (chêne clair, pierre, chaux, lin, teintes douces, lumière naturelle, proportions d'une vraie maison) ; étapes débarras → démolition → réseaux → murs → sol → peinture → agencement → luminaires → meubles |
+| Image de la pièce finie | « construction entière dans le cadre » | vue large depuis un angle à hauteur d'œil, sol, murs, plafond et fenêtres, porte et meubles à l'échelle, « photo de décoration réaliste, pas un rendu 3D » |
+| Ouvriers | petits, à l'échelle du bâtiment | taille humaine, au milieu de la pièce, jamais au premier plan |
+| Mouvement | nuages qui filent | taches de soleil qui balaient le sol et les murs ; le soir, lampes qui s'allument une à une |
+| Contrôle des images | bâtiment entier, pas d'engin | pièce terminée et propre, vue en grand, proportions crédibles ; étapes : mêmes murs, fenêtres et cadre |
+| Bible (`design_bible`) | paysage et point de vue | la pièce, ses fenêtres, la vue dehors, le point de vue ; **jamais l'état de départ** (premier essai : « floor damage » dans la bible → fissure dans le parquet de la pièce finie, attrapée par le contrôle) |
+
+Le choix bâtiment / pièce se fait par script (`recipes.indoor` : une scène marquée `interior`) : les anciennes
+productions de chantiers restent des bâtiments. Série renommée « Rénovations de pièces en accéléré » (migration
+**0030**, brief réécrit). Premier essai : « Suite parentale sous les décombres » (production 05e6f608), storyboard à
+valider dans Création.
+
 ## Sources
 
 - Méthode décrite dans `examples/visite_appart_ai.mp4` (Google Flow + Seedance 2.0) : transcription ci-dessus.

@@ -138,9 +138,10 @@ class AudioLayer(BaseModel):
 
     formats: list[Format] = Field(default_factory=lambda: list(FORMATS))  # musique de fond sur ces formats
     voice_db: float = Field(0.0, ge=-12, le=12)  # voix IA, après égalisation
-    music_db: float = Field(-10.0, ge=-40, le=0)  # musique sous la voix, par rapport à la voix
+    # musique sous la voix, par rapport à la voix ; jusqu'à −120 dB (≈ muette) : réglage libre de Luca (30/09)
+    music_db: float = Field(-10.0, ge=-120, le=0)
     duck_db: float = Field(4.0, ge=0, le=20)  # baisse de la musique pendant que la voix parle (remontée entre les phrases)
-    solo_db: float = Field(0.0, ge=-20, le=12)  # musique des vidéos sans voix (chantiers, visites), sous les bruitages
+    solo_db: float = Field(0.0, ge=-120, le=12)  # musique des vidéos sans voix (chantiers, visites), sous les bruitages
     sfx_db: float = Field(0.0, ge=-20, le=12)  # bruitages
 
 

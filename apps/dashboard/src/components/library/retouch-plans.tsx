@@ -35,6 +35,7 @@ export function PlansPanel({
   plans,
   now,
   locked,
+  confirm,
   onSeek,
   onResult,
 }: {
@@ -42,6 +43,7 @@ export function PlansPanel({
   plans: RetouchPlan[];
   now: number;
   locked: boolean;
+  confirm?: string | null; // vidéo déjà programmée sur YouTube : question posée avant de la refaire (docs/44)
   onSeek: (t: number) => void;
   onResult: (res: Result) => void;
 }) {
@@ -68,12 +70,14 @@ export function PlansPanel({
     if (!note.trim()) setChosen(plan.index);
     setNote(value);
   };
-  const send = (clip: boolean, voice: boolean) =>
+  const send = (clip: boolean, voice: boolean) => {
+    if (confirm && !window.confirm(confirm)) return;
     startTransition(async () => {
       const res = await redoPlan(videoId, { scene: plan.index, clip, voice, note });
       onResult(res);
       if (res.ok) setNote("");
     });
+  };
   const busy = locked || pending;
 
   return (

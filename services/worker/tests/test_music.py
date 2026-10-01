@@ -138,7 +138,17 @@ def test_mix_levels_bring_every_track_to_the_same_loudness():
     solo = mix_levels(AudioLayer(solo_db=2, sfx_db=-3), with_voice=False, track_lufs=-10)
     assert solo.music_gain_db == pytest.approx(-20 + 2 + 10) and solo.duck_db == 0 and solo.sfx_gain_db == -3
     assert mix_levels(audio, with_voice=False).music_gain_db == pytest.approx(-20 + 14)  # piste pas encore mesurée
-    assert mix_levels(audio, with_voice=True, track_lufs=-90).music_gain_db == 30  # garde-fou
+    # garde-fou : il borne l'égalisation d'une piste presque muette (+30 dB au plus), le réglage s'y ajoute
+    assert mix_levels(audio, with_voice=True, track_lufs=-90).music_gain_db == 30 - 10
+
+
+def test_music_can_be_turned_down_far_below_the_slider():
+    """Luca (30/09) : musique trop forte même tout en bas ; une valeur tapée descend jusqu'à −120 dB, sans garde-fou."""
+    quiet = mix_levels(AudioLayer(music_db=-100), with_voice=True, track_lufs=-6, narration_lufs=-18)
+    assert quiet.music_gain_db == pytest.approx(VOICE_REF_LUFS + 6 - 100)
+    assert mix_levels(AudioLayer(solo_db=-120), with_voice=False, track_lufs=-20).music_gain_db == pytest.approx(-120)
+    with pytest.raises(ValueError):
+        AudioLayer(music_db=-121)
 
 
 def test_speech_segments_and_the_ducking_curve():

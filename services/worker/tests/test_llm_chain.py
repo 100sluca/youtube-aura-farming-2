@@ -40,6 +40,7 @@ class Scripted:
 @pytest.fixture(autouse=True)
 def _fresh_memory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(llm_mod, "_COOLING", {})
+    monkeypatch.setattr(llm_mod, "_BUSY", {})
     monkeypatch.setattr(llm_mod, "SECOND_ROUND_WAIT_S", 0.0)
 
 
@@ -64,6 +65,31 @@ def test_quota_or_refused_key_moves_to_the_next_key_then_remembers():
     busy = llm_mod.KeyedLLM("gemini", "m", [("a", Scripted("gemini", "m", _http(503))), ("b", Scripted("gemini", "m"))])
     with pytest.raises(httpx.HTTPStatusError):  # surcharge du modèle : une autre clé n'y change rien, la chaîne décide
         busy.complete_json("s", "u", Out)
+
+
+def test_parallel_calls_take_a_key_nobody_is_using():
+    """Deux scripts en même temps (voie io, docs/43) : le second prend la clé 2 pendant que la clé 1 répond au premier."""
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    class Slow(Scripted):
+        def complete_json(self, system: str, user: str, schema: type, images: Any = ()) -> Any:
+            started.set()
+            release.wait(5)
+            return super().complete_json(system, user, schema, images)
+
+    k1, k2 = Slow("gemini", "m"), Scripted("gemini", "m")
+    keyed = llm_mod.KeyedLLM("gemini", "m", [("fp1", k1), ("fp2", k2)])
+    first = threading.Thread(target=keyed.complete_json, args=("s", "u", Out))
+    first.start()
+    assert started.wait(5)
+    assert keyed.complete_json("s", "u", Out).ok and (k1.calls, k2.calls) == (0, 1)
+    release.set()
+    first.join(5)
+    assert (k1.calls, k2.calls) == (1, 1) and llm_mod._BUSY == {("gemini", "fp1"): 0, ("gemini", "fp2"): 0}
+    keyed.complete_json("s", "u", Out)  # plus personne : la clé 1 redevient la première, dans l'ordre des Réglages
+    assert (k1.calls, k2.calls) == (2, 1)
 
 
 def test_the_chain_goes_down_the_choices_and_retries_once_after_an_overload():

@@ -2,7 +2,9 @@
 
 - story (défaut) : récit narré par Kokoro, règles du storytelling addictif (worker/storytelling.py), une image
   par scène puis image → vidéo, sous-titres.
-- timelapse : chantier en accéléré (docs/15). Point de vue fixe, 8 à 12 étapes rapides. Le chantier se construit
+- timelapse : chantier en accéléré (docs/15). Depuis le 30/09 (docs/15 §11), une PIÈCE d'une maison de luxe rénovée
+  (délabrée → sobre, épurée, réaliste) ; les anciens scripts de bâtiments vus du dehors marchent toujours (scènes sans
+  `interior`). Point de vue fixe, 8 à 12 étapes rapides. Le chantier se construit
   À REBOURS (docs/15 §10) : l'image du bâtiment FINI est générée (Z-Image), chaque étape antérieure est une
   RETOUCHE de l'étape suivante (Qwen-Image-Edit-2511 : on enlève ce qui n'est pas encore construit) ; le
   bâtiment, son échelle et le cadre restent donc identiques d'un bout à l'autre. Chaque clip va de l'image clé
@@ -203,6 +205,18 @@ DUSK = (
     "Change the time of day to dusk: deep blue evening sky with a warm glow on the horizon, warm lights glow inside "
     "and outside the building, no worker, no machine, no tool left on site."
 )
+# Rénovation d'une pièce (docs/15 §11) : la même mécanique, vue de l'intérieur
+EARLIER_ROOM = "Show the same room at an EARLIER stage of the renovation: "
+DUSK_ROOM = (
+    "Change the time of day to evening: deep blue sky through the windows, the lamps, ceiling lights and hidden light "
+    "strips are on with a warm soft glow; the room stays finished, clean and tidy, no worker, no tool, no material."
+)
+
+
+def indoor(script: ScriptV1) -> bool:
+    """Chantier d'une pièce vue de l'intérieur (le scénariste marque ses scènes interior) ; sinon un bâtiment vu du
+    dehors (scripts d'avant le 30/09)."""
+    return any(sc.interior for sc in script.scenes)
 
 
 def _clamp(value: float, bounds: tuple[float, float]) -> float:
@@ -271,7 +285,7 @@ def _normalize_timelapse(s: ScriptV1) -> None:
             sc.duration_s = _clamp(sc.duration_s, DONE_S)
         else:
             sc.edit_from = s.scenes[done].index
-            sc.edit_prompt = (sc.edit_prompt or "").strip() or DUSK
+            sc.edit_prompt = (sc.edit_prompt or "").strip() or (DUSK_ROOM if indoor(s) else DUSK)
             sc.clip_mode = "i2v"
             sc.duration_s = _clamp(sc.duration_s, REVEAL_S)
 
@@ -378,7 +392,9 @@ _REMOVAL = re.compile(r"\b(remove|removed|take away|without|strip|clear|bare|emp
 # L'état initial d'un chantier : ce qu'on s'attend à lire dans la scène 1 (Gemini y a mis deux fois le résultat fini)
 _INITIAL = re.compile(
     r"\b(abandon\w*|ruin\w*|overgrown|derelict|bare|empty|untouched|wild|vacant|collaps\w*|dilapidated|old|rusty|"
-    r"weeds?|rubble|raw|virgin|neglected|decay\w*|crumbl\w*|disused|flooded|muddy|barren|unbuilt|plot|wasteland)\b",
+    r"weeds?|rubble|raw|virgin|neglected|decay\w*|crumbl\w*|disused|flooded|muddy|barren|unbuilt|plot|wasteland|"
+    r"gutted|stripped|dirty|filthy|dusty|damaged|damp|mou?ldy|mou?ld|peeling|stained|cracked|dated|trashed|squatted|"
+    r"graffiti|debris|burnt|burned|rotten|shabby|run-down|worn)\b",
     re.I,
 )
 
@@ -400,13 +416,13 @@ def _lint_timelapse(script: ScriptV1, langs: Sequence[str]) -> list[str]:
     if len(words(done.visual_prompt)) < 25:
         issues.append(
             f"scène {n - 1} (le résultat fini, seule image générée) : visual_prompt trop court, décrire le "
-            "bâtiment terminé en détail (matériaux, portes, fenêtres, garde-corps) et le paysage"
+            "résultat terminé en détail (matériaux, mobilier, portes, fenêtres, lumière) et ce qu'on voit dehors"
         )
     first = script.scenes[0].visual_prompt
     if not _INITIAL.search(first) or _overlap(first, done.visual_prompt, script.design_bible or "") > 0.8:
         issues.append(
-            "scène 1 : c'est l'ÉTAT INITIAL, avant tout travaux (ruine, terrain nu, lieu abandonné ou "
-            "vierge), jamais le résultat ; l'ordre des scènes est chronologique"
+            "scène 1 : c'est l'ÉTAT INITIAL, avant tout travaux (pièce délabrée, sale, abîmée, ruine, lieu "
+            "abandonné), jamais le résultat ; l'ordre des scènes est chronologique"
         )
     forward = [i + 1 for i, sc in enumerate(script.scenes[: n - 2]) if not _REMOVAL.search(sc.edit_prompt or "")]
     if len(forward) > (n - 2) // 2:
@@ -491,15 +507,23 @@ Format JSON : "hook_title": {"fr": "…", "en": "…"} (une entrée par langue d
 La bible du lieu (design_bible) est ajoutée automatiquement à chaque image : ne la recopie pas dans les visual_prompt."""
 
 IDEA_GUIDES = {
-    "timelapse": """FORMAT : chantier en accéléré (time-lapse), sans voix off : un lieu vu d'un point fixe passe
-d'un état saisissant (abandonné, envahi par la végétation, en ruine, terrain vague, falaise nue) à un résultat
-spectaculaire, en 8 à 12 étapes rapides. Chaque concept : le lieu et son état initial (premise), le résultat
-final précis (ce qui est construit, ses matériaux), les étapes visibles du chantier dans l'ordre (visual_beats :
-nettoyage, démolition, terrassement, structure, toiture et façades, finitions, révélation au crépuscule), et
-l'accroche (hook) = un titre d'accroche de 3 à 8 mots, parlé, qui donne envie de voir la fin. Lieux variés et
-universels : maison abandonnée, grange, piscine, stade, cabane dans une falaise, bunker, container, jardin,
-rooftop, château en ruine, tiny house, sous-sol, garage, ponton… Un bâtiment à l'échelle humaine lisible
-(portes, fenêtres, escaliers), entièrement visible depuis le point de vue.""",
+    "timelapse": """FORMAT : rénovation d'UNE PIÈCE en accéléré (time-lapse), sans voix off : une pièce d'une belle
+maison, vue d'un point fixe à l'intérieur, passe d'un état désolant (délabrée, sale, abîmée, vidée, taguée, dégât
+des eaux, papier peint arraché, gravats) à un intérieur de luxe sobre et épuré, en 8 à 12 étapes rapides. Le
+plaisir du spectateur : la satisfaction de voir le sale devenir impeccable, et l'envie de se dire « ça pourrait être
+chez moi ». Donc un résultat RÉALISTE et désirable, qui plaît à presque tout le monde : lignes simples, matières
+nobles et naturelles (chêne clair, pierre, travertin, enduit à la chaux, lin, laiton brossé), teintes douces
+(blanc cassé, beige, sable, gris chaud), lumière naturelle, peu d'objets, rien de tape-à-l'œil ; une pièce grande
+mais crédible, aux proportions d'une vraie maison. Chaque concept : la maison et la pièce, son état initial
+(premise), le résultat final précis (aménagement, matériaux, meubles, lumière), les étapes visibles dans l'ordre
+(visual_beats : débarras et nettoyage, démolition, réseaux dans les murs, murs et plafond, sol, peinture ou enduit,
+agencement sur mesure, luminaires, meubles et décoration, révélation le soir, lampes allumées), et l'accroche
+(hook) = un titre d'accroche de 3 à 8 mots, parlé, qui donne envie de voir la fin (« Ce salon était un squat »,
+« Tu vivrais dans cette cuisine ? »). Pièces variées : salon haussmannien, cuisine ouverte, salle de bain à
+l'italienne, suite parentale, dressing, bureau, chambre sous les toits, cave voûtée, grenier, garage devenu studio,
+sous-sol devenu salle de cinéma, véranda, spa intérieur… Maisons variées : appartement parisien, mas provençal,
+villa sur la côte, chalet, loft industriel, longère, maison d'architecte… Surtout des pièces qu'on a chez soi : un
+lieu insolite (conteneur, tour, bunker) une idée sur cinq au plus. Jamais deux fois la même pièce de suite.""",
     "tour": """FORMAT : visite de maison ou d'appartement de luxe imaginaire (générée par IA), sans voix off : la
 caméra suit un PARCOURS logique dans une seule maison, comme dans la vidéo d'un agent immobilier haut de gamme :
 arrivée devant la maison, entrée, pièces du rez-de-chaussée, escalier, étage, jusqu'au clou. Chaque concept : une
@@ -511,52 +535,69 @@ villa méditerranéenne, chalet, penthouse parisien, maison de falaise, désert,
 }
 
 SCRIPT_PROMPTS = {
-    "timelapse": """Tu écris le script d'UN YouTube Short « chantier en accéléré » (time-lapse de construction ou de
-rénovation), 9:16, 20 à 30 s, SANS voix off : bruitages, musique, un titre d'accroche et un compteur de jours. Un
-seul lieu, vu d'un point FIXE (même position, même objectif, même cadrage du début à la fin), passe d'un état
-saisissant à un résultat spectaculaire en 8 à 12 étapes rapides (1,5 s chacune à l'écran).
+    "timelapse": """Tu écris le script d'UN YouTube Short « rénovation en accéléré » (time-lapse de la rénovation
+d'UNE PIÈCE d'une belle maison), 9:16, 20 à 30 s, SANS voix off : bruitages, musique, un titre d'accroche et un
+compteur de jours. Une seule pièce, vue de l'INTÉRIEUR depuis un point FIXE (un angle de la pièce ou le seuil de la
+porte, à hauteur d'œil, vue large ; même position et même cadrage du début à la fin), passe d'un état désolant
+(délabrée, sale, abîmée, vidée) à un intérieur de luxe sobre et épuré, en 8 à 12 étapes rapides (1,5 s chacune).
+
+LE RÉSULTAT : réaliste et désirable, pour que le spectateur se dise « ça pourrait être chez moi » (jamais un rendu
+3D, jamais un palais irréel). Lignes simples, matières nobles et naturelles (chêne clair, pierre, travertin, enduit à
+la chaux, lin, laiton brossé), teintes douces (blanc cassé, beige, sable, gris chaud), lumière naturelle par les
+fenêtres, peu d'objets bien choisis (une plante, un livre, un vase), rien de tape-à-l'œil, rien de kitsch. La pièce
+est grande mais crédible : proportions, hauteur sous plafond et meubles d'une vraie maison.
 
 ORDRE DES SCÈNES : CHRONOLOGIQUE, comme le spectateur les voit (N scènes en tout, 10 à 14) :
-- scène 1 : l'ÉTAT INITIAL, avant tout travaux (ruine envahie, terrain nu, falaise vierge, bâtiment abandonné) ;
-- scènes 2 à N-2 : les étapes du chantier, de la plus ancienne à la plus récente ;
+- scène 1 : l'ÉTAT INITIAL, avant tout travaux (pièce sale et encombrée, papier peint arraché, moisissures,
+  gravats, vieux meubles cassés, tags, dégât des eaux, sol pourri…) ;
+- scènes 2 à N-2 : les étapes de la rénovation, de la plus ancienne à la plus récente ;
 - scène N-1 : le RÉSULTAT FINI, en plein jour ;
-- scène N : la révélation, le même résultat au crépuscule, lumières allumées.
+- scène N : la révélation, la même pièce le soir, lampes allumées.
 FABRICATION (pour écrire edit_prompt) : le code génère d'abord l'image de la scène N-1 (le résultat fini), puis
 obtient chaque étape antérieure en RETOUCHANT l'image de l'étape qui la SUIT : N-2 depuis N-1, N-3 depuis N-2…
-jusqu'à la scène 1. On remonte le temps en enlevant ce qui n'est pas encore construit : c'est ce qui garde le même
-bâtiment, la même échelle et le même cadre du début à la fin.
+jusqu'à la scène 1. On remonte le temps en enlevant ce qui n'est pas encore fait : c'est ce qui garde la même
+pièce, les mêmes fenêtres, la même échelle et le même cadre du début à la fin.
 Chaque scène :
-- visual_prompt, en anglais : ce que montre l'image de CETTE étape (scène 1 : le lieu avant travaux, jamais le
-  résultat). Scène N-1 : c'est l'image générée, décris le résultat terminé EN DÉTAIL (forme, matériaux, portes,
-  fenêtres, garde-corps, escaliers : ce qui donne l'échelle humaine), ENTIER et au centre de l'image avec de
-  l'espace autour, et le paysage ; personne. Jamais les mots « camera », « tripod » ni « time-lapse » ;
+- interior : true (toutes les scènes : on est dans la pièce) ;
+- visual_prompt, en anglais : ce que montre l'image de CETTE étape (scène 1 : la pièce avant travaux, jamais le
+  résultat). Scène N-1 : c'est l'image générée, décris la pièce terminée EN DÉTAIL : type de pièce, sol, murs,
+  plafond, fenêtres (et ce qu'on voit dehors), agencement, meubles, luminaires, matières, couleurs, lumière du jour ;
+  une porte et des meubles de taille normale donnent l'échelle ; personne. Jamais les mots « camera », « tripod »
+  ni « time-lapse » ;
 - edit_prompt, en anglais, scènes 1 à N-2 : la RETOUCHE qui transforme l'image de l'étape SUIVANTE (plus avancée)
-  en celle de cette scène : ce qu'il faut ENLEVER (pas encore construit) et ce qu'il faut ajouter à ce moment
-  (échafaudages, bâches, matériaux empilés, engins, ouvriers en gilet orange et casque blanc) ; scène 1 : enlever
-  tout le chantier pour retrouver le lieu intact ; scène N-1 : aucun edit_prompt ; scène N : « Change the time of
-  day to dusk, warm lights on inside… ». Exemple pour une grange (extrait) :
-  scène 1 : visual_prompt « An overgrown ruined stone barn with a collapsed roof in a wheat field »,
-            edit_prompt « Remove the excavator and the workers; cover the ground again with tall weeds, brambles
-            and fallen roof timbers: the untouched ruined barn »
-  scène 2 : visual_prompt « The barn cleared of vegetation, an excavator levelling the ground »,
-            edit_prompt « Remove the new concrete slab and the formwork: bare levelled soil, one excavator and two
-            workers »
-  scène N-1 : visual_prompt « A contemporary glass and dark-timber house on the old stone base of the barn… »,
-            pas d'edit_prompt ;
-- motion_prompt, en anglais : ce qui se construit pendant le passage à l'étape suivante (« steel beams are lifted
-  and bolted into the rock ») ; le style time-lapse (ouvriers minuscules et rapides, nuages qui filent) est
-  ajouté par le code ; scène N : un mouvement de caméra lent (« slow push-in toward the glowing cabin ») ;
-- sfx : 1 à 2 étiquettes de la liste (engins et outils de l'étape ; ambiance pour la fin) ;
-- on_screen_text FR et EN : le compteur « Jour 1 », « Jour 14 »… croissant, du premier au dernier jour du
-  chantier (il défile à l'écran) ; la révélation garde le dernier jour ;
+  en celle de cette scène : ce qu'il faut ENLEVER (pas encore fait) et ce qu'il faut ajouter à ce moment (bâches,
+  escabeaux, sacs de plâtre, seaux, outils, gaines, un ou deux ouvriers en tenue de travail) ; scène 1 : enlever
+  tout le chantier et remettre la pièce dans son état d'origine (saleté, dégâts, vieux meubles) ; scène N-1 : aucun
+  edit_prompt ; scène N : « Change the time of day to evening, the lamps are on… ». Exemple pour un salon (extrait) :
+  scène 1 : visual_prompt « A trashed abandoned living room with torn wallpaper, black mould, a broken sofa and
+            rubble on a rotten parquet floor »,
+            edit_prompt « Remove the stepladders and the worker; put back the torn floral wallpaper, the mould stains,
+            the broken sofa and the rubble: the room as it was found »
+  scène 2 : visual_prompt « The same room emptied and gutted: bare brick walls, the old ceiling torn down »,
+            edit_prompt « Remove the new plasterboard and the electrical boxes: bare brick walls, dangling old wires,
+            a stepladder and one worker »
+  scène N-1 : visual_prompt « A bright minimalist living room with lime-washed walls, a pale oak herringbone floor,
+            a low linen sofa, a travertine coffee table, tall windows onto a garden… », pas d'edit_prompt ;
+- motion_prompt, en anglais : ce qui se fait pendant le passage à l'étape suivante (« plasterboard sheets are
+  screwed onto the walls », « the oak floor is laid board by board ») ; le style time-lapse (ouvriers rapides et
+  flous, soleil qui tourne sur le sol) est ajouté par le code ; scène N : un mouvement de caméra lent (« slow
+  push-in toward the sofa and the glowing lamp ») ;
+- sfx : 1 à 2 étiquettes de la liste (outils de l'étape : debris, hammer, drill, saw, sanding, paint_roller,
+  tiles… ; room_tone ou fireplace pour la fin) ;
+- on_screen_text FR et EN : le compteur « Jour 1 », « Jour 9 »… croissant, du premier au dernier jour des travaux
+  (il défile à l'écran) ; la révélation garde le dernier jour ;
 - duration_s : 1.5 par étape (1.2 à 2.5), 2 pour la scène N-1, 4 pour la révélation.
-Progression type : lieu intact → préparation (débroussaillage, démolition, piquetage) → terrassement et
-fondations → structure (béton, acier ou bois) → charpente et toiture → murs, bardage, vitrages → finitions
-extérieures (terrasse, garde-corps, allée, jardin, piscine) → fini → crépuscule. Chaque étape change UNE chose bien
-visible par rapport à la suivante (un étage entier d'écart, et la retouche échoue) ; le paysage, le ciel et le point
-de vue ne changent pas. Les ouvriers sont petits, à l'échelle du bâtiment ; personne ne pose ni ne regarde l'objectif.
-design_bible, en anglais : ce qui NE CHANGE PAS, en une phrase : le paysage et le point de vue (« a sheer granite
-sea cliff seen from the opposite side of a narrow cove, the open sea behind ») ; jamais le résultat.
+Progression type : pièce d'origine → débarras et nettoyage → démolition (vieux revêtements, cloisons, faux plafond)
+→ réseaux (gaines, tuyaux, saignées) → murs et plafond (placo, enduit) → sol (chape puis parquet, pierre ou
+carrelage) → peinture ou enduit à la chaux → agencement sur mesure (cuisine, bibliothèque, dressing, vasques,
+cheminée) → luminaires → meubles et décoration → fini → le soir. Chaque étape change UNE chose bien visible par
+rapport à la suivante (trop d'écart et la retouche échoue) ; les murs porteurs, les fenêtres, la vue dehors et le
+point de vue ne changent pas. Les ouvriers sont à taille humaine normale, au milieu de la pièce, jamais au premier
+plan ; personne ne pose ni ne regarde l'objectif.
+design_bible, en anglais : ce qui NE CHANGE PAS, en une phrase : la pièce, ses fenêtres, ce qu'on voit dehors et
+le point de vue (« a large living room with three tall French windows onto a leafy courtyard, seen from the corner
+by the entrance door ») ; ni le résultat, ni l'état de départ (dégâts, saleté, trous) : elle est ajoutée à
+l'image de la pièce finie.
 music_mood : prise dans la liste MUSIQUE DE FOND. loop_note : comment la fin renvoie au début. metadata : par langue,
 titre YouTube ≤ 60 caractères (différent du hook_title, un émoji permis), description, 10 tags ; affiné par
 l'agent SEO. Réponds uniquement en JSON conforme à ScriptV1.""",
@@ -637,6 +678,16 @@ FINISHED_FRAMING = (
     "scale with doors, windows and railings, nobody"
 )
 WORKER_SCALE = "Workers are small, at the true scale of the building, never close to the viewer."
+# Pièce : vue large depuis un angle, à hauteur d'œil, proportions crédibles (« ça pourrait être chez moi », Luca 30/09)
+FINISHED_ROOM = (
+    "the whole room is visible in one wide view from a corner at eye level: floor, walls, ceiling and windows, a door "
+    "and furniture at realistic human scale, believable proportions, nobody, realistic interior design photograph in "
+    "soft natural daylight, not a 3D render"
+)
+WORKER_SCALE_ROOM = (
+    "Workers are at normal human size for the room, in the middle of the room, never close to the viewer, never in "
+    "the foreground."
+)
 _WORKERS = re.compile(r"\b(workers?|crew|builders?|people|men|climbers?|labou?rers?|masons?|carpenters?)\b", re.I)
 
 
@@ -654,7 +705,7 @@ def image_prompt(script: ScriptV1, index: int, recipe: str) -> str:
         return _tour_prompt(script, sc, prompt, bible)
     extra = ""
     if recipe == "timelapse":  # jamais « tripod » ni « camera » dans une image : le modèle les dessine
-        extra = f", {FINISHED_FRAMING}, static wide shot, vertical framing"
+        extra = f", {FINISHED_ROOM if indoor(script) else FINISHED_FRAMING}, static wide shot, vertical framing"
     return f"{prompt}{extra}" + (f". {bible}" if bible else "")
 
 
@@ -689,13 +740,14 @@ def edit_instruction(script: ScriptV1, index: int, recipe: str) -> str:
     if recipe == "timelapse":
         src = edit_source(script, index)
         backwards = src is not None and src > index  # on remonte le temps
+        room = indoor(script)
         if backwards and not text.lower().startswith("show"):
-            text = EARLIER + text
+            text = (EARLIER_ROOM if room else EARLIER) + text
         target = _no_camera(sc.visual_prompt.strip()).rstrip(".")
         if backwards and len(words(target)) >= 5 and target[:30].lower() not in text.lower():
             text = f"{text.rstrip('.')}. The result shows: {target}."  # la cible, en plus de ce qu'il faut enlever
         if _WORKERS.search(text):
-            text = f"{text.rstrip('.')}. {WORKER_SCALE}"
+            text = f"{text.rstrip('.')}. {WORKER_SCALE_ROOM if room else WORKER_SCALE}"
         return f"{text} {KEEP_FRAME}"
     return f"{text} Same house and same style: {bible}" if bible else text
 
@@ -714,6 +766,15 @@ TIMELAPSE_MOTION = (
 DUSK_MOTION = (
     "time-lapse, fixed camera, the sun sets quickly, the sky turns deep blue, warm lights turn on inside the building, "
     "clouds race across the sky"
+)
+# Pièce : pas de ciel à l'image, c'est la lumière du jour qui tourne sur le sol et les murs
+ROOM_MOTION = (
+    "fast renovation time-lapse, fixed camera, workers bustle quickly around the room as motion blur, patches of "
+    "sunlight sweep quickly across the floor and the walls"
+)
+ROOM_DUSK_MOTION = (
+    "time-lapse, fixed camera, the daylight through the windows fades quickly to a deep blue evening, the lamps turn "
+    "on one after another and a warm glow fills the room"
 )
 
 
@@ -741,10 +802,10 @@ def motion_prompt(script: ScriptV1, index: int, recipe: str) -> str:
         text = _no_rig(_PEOPLE.sub("", text).strip(" ,;"))
         return f"{text}, {WALK_THROUGH if sc.passage else EMPTY_HOUSE}"
     if recipe == "timelapse":
-        n = len(script.scenes)
+        n, room = len(script.scenes), indoor(script)
         if index == n - 2 and sc.clip_mode == "flf":  # le fini → le crépuscule
-            return DUSK_MOTION
+            return ROOM_DUSK_MOTION if room else DUSK_MOTION
         if sc.clip_mode == "flf":  # une grue de chantier est ici voulue : pas de _no_rig
-            return f"{TIMELAPSE_MOTION}, {text}"
+            return f"{ROOM_MOTION if room else TIMELAPSE_MOTION}, {text}"
         return f"{_no_rig(_PEOPLE.sub('', text).strip(' ,;'))}, {EMPTY_HOUSE}"  # révélation : seule la caméra bouge
     return text

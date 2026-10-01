@@ -82,9 +82,9 @@ export const titlesSchema = z.object({
 export const audioSchema = z.object({
   formats,
   voice_db: num(-12, 12),
-  music_db: num(-40, 0),
+  music_db: num(-120, 0),
   duck_db: num(0, 20),
-  solo_db: num(-20, 12),
+  solo_db: num(-120, 12),
   sfx_db: num(-20, 12),
 });
 

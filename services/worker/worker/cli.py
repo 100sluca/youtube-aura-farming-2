@@ -881,11 +881,15 @@ def main(argv: list[str] | None = None) -> None:
 
     from .cli_formats import register  # hook, sfx, music : formats visuels (docs/15)
     from .cli_gemini import register as register_gemini  # gemini open|status|check|clip|send (docs/17)
+    from .cli_instagram import register as register_instagram  # instagram accounts|link|status|post (docs/48)
     from .cli_tiktok import register as register_tiktok  # tiktok key|link|post… (docs/36), stats|backlog (docs/39)
+    from .cli_variant import register as register_variant  # variant make : variante d'accroche (docs/49)
 
     register(sub)
     register_gemini(sub)
     register_tiktok(sub)
+    register_instagram(sub)
+    register_variant(sub)
 
     args = p.parse_args(argv)
     if getattr(args, "title", None) == "":

@@ -244,3 +244,24 @@ def test_pauses_come_from_the_voice_energy_too():
     """Un blanc de 0,15 s que le détecteur (0,2 s au moins) ne voit pas, mais pas la fermeture d'un « k » (0,05 s)."""
     e = [0.2] * 30 + [0.001] * 15 + [0.2] * 20 + [0.001] * 5 + [0.2] * 30  # 10 ms par tranche
     assert pauses([(0.0, 1.0)], e) == [(0.3, 0.45)]
+
+
+def test_mouth_seconds_is_how_long_the_clip_says_the_line():
+    """Durée visée d'une réplique pour un moteur qui règle son débit (Gemini, docs/41 §8) : de la première à la dernière
+    phrase de la bouche qui dit la réplique ; rien si le clip ne l'a pas dite de façon reconnaissable."""
+    from worker.lipsync import mouth_seconds
+
+    text = "Je vais le rendre."
+    dialogue = {
+        "heard": "Je vais le rendre.",
+        "words": [
+            {"w": "Je", "start": 0.6, "end": 0.8},
+            {"w": "vais", "start": 0.8, "end": 1.0},
+            {"w": "le", "start": 1.0, "end": 1.1},
+            {"w": "rendre.", "start": 1.1, "end": 1.7},
+        ],
+        "speech": [[0.55, 1.75], [3.0, 3.4]],  # une toux plus loin n'est pas la réplique
+    }
+    assert mouth_seconds(text, "fr", dialogue) == pytest.approx(1.2, abs=0.01)
+    assert mouth_seconds(text, "fr", None) is None
+    assert mouth_seconds(text, "fr", {"heard": "tout autre chose", "words": [], "speech": [[0.0, 2.0]]}) is None

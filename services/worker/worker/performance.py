@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
+from .metrics import retention_by_scene, retention_drops
 from .models import Recipe
 from .strategy import confidence, duration_bucket, time_slot, title_features
 
@@ -103,6 +104,9 @@ class VideoFacts:
     average_view_duration_s: float | None = None
     hook_retention_pct: float | None = None
     end_retention_pct: float | None = None
+    # courbe de rétention posée sur les phrases dites (metrics.retention_by_scene, docs/49)
+    retention_scenes: list[dict[str, Any]] = field(default_factory=list)
+    variant_of: str | None = None  # vidéo d'origine d'une variante d'accroche (docs/49)
     views_24h: int | None = None
     views_7d: int | None = None
     # la même vidéo sur TikTok (docs/39, table tiktok_posts), si elle y est sortie
@@ -223,6 +227,10 @@ def facts_from_row(r: dict[str, Any], now: datetime, comments: Sequence[str] = (
         average_view_duration_s=_num(r.get("average_view_duration_s")),
         hook_retention_pct=_num(r.get("hook_retention_pct")),
         end_retention_pct=_num(r.get("end_retention_pct")),
+        retention_scenes=retention_by_scene(
+            r.get("retention_curve") or [], _num(r.get("duration_s")), (r.get("timeline") or {}).get("scenes") or []
+        ),
+        variant_of=str(r["variant_of"]) if r.get("variant_of") else None,
         views_24h=_int(r.get("views_24h")),
         views_7d=_int(r.get("views_7d")),
         tiktok_views=_int(r.get("tt_views")),
@@ -251,10 +259,14 @@ def load_facts(db: Any, channel_id: Any, window_days: int, now: datetime | None 
     """Les vidéos publiées de la chaîne sur la fenêtre, avec leur fiche."""
     now = now or datetime.now(UTC)
     rows = db.fetch_all(
-        """select o.*, p.script, tt.views as tt_views, tt.likes as tt_likes, tt.comments as tt_comments,
+        """select o.*, p.script, vv.timeline, vv.variant_of, rc.curve as retention_curve, tt.views as tt_views, tt.likes as tt_likes, tt.comments as tt_comments,
                   tt.shares as tt_shares, tt.completion_pct as tt_completion_pct,
                   round((tt.impression_sources->>'forYou')::numeric * 100, 1) as tt_for_you_pct
            from v_video_overview o left join productions p on p.id = o.production_id
+           join videos vv on vv.id = o.id
+           -- dernière courbe de rétention relevée (sync_retention), posée sur la timeline de la voix (docs/49)
+           left join lateral (select r.curve from video_retention r where r.video_id = o.id
+                              order by r.fetched_at desc limit 1) rc on true
            -- la même vidéo sur TikTok (docs/39), vues relevées par Zernio (pas une vidéo tout juste lue en direct)
            left join lateral (select * from tiktok_posts t where t.video_id = o.id and coalesce(t.sync_status, '') <> 'live'
                               order by t.views desc limit 1) tt on true
@@ -406,6 +418,24 @@ def video_block(v: VideoFacts) -> str:
             f"{_fmt(v.tiktok_comments)} · partages {_fmt(v.tiktok_shares)} · vue jusqu'au bout "
             f"{_fmt(v.tiktok_completion_pct, ' %', 1)} · vues venues de « Pour toi » {_fmt(v.tiktok_for_you_pct, ' %')}"
         )
+    if v.variant_of:
+        lines.append(
+            f"  Variante d'accroche de {v.variant_of} : mêmes images et même récit, seules les 2 premières phrases changent"
+        )
+    if v.retention_scenes:
+        drops = retention_drops(v.retention_scenes)
+        lines.append(
+            "  Rétention phrase par phrase : "
+            + " · ".join(f"{_fmt(s['start'], ' s', 0)} {_fmt(s['before'], ' %', 0)}" for s in v.retention_scenes)
+        )
+        if drops:
+            lines.append(
+                "  Plus fortes pertes : "
+                + " ; ".join(
+                    f"{_fmt(s['start'], ' s', 0)}-{_fmt(s['end'], ' s', 0)} −{_fmt(s['lost'], ' pts', 1)} pendant « {s['text'][:90]} »"
+                    for s in drops
+                )
+            )
     if v.hook_title:
         lines.append(f"  Titre d'accroche affiché : « {v.hook_title} »")
     if v.shots:

@@ -237,6 +237,54 @@ def test_preview_lane_runs_jobs_while_the_main_loop_is_busy(monkeypatch):
     assert MontagePreviewStep.lane == "preview"
 
 
+def test_gpu_lane_has_its_own_thread_so_scripts_start_during_a_clip(monkeypatch):
+    """Voie GPU dans son fil (docs/43) : pendant qu'un job GPU tourne, la boucle principale réclame encore des jobs io
+    (scripts, idées) ; avant, elle attendait la fin du clip ou des images du storyboard."""
+    import sys
+    import threading
+
+    from worker import main
+
+    gpu_running, io_claimed = threading.Event(), threading.Event()
+
+    class Db:
+        def __init__(self, url):
+            pass
+
+        def claim_jobs(self, worker, types, n):
+            if worker.endswith("/gpu"):
+                return [] if gpu_running.is_set() else [SimpleNamespace(id="clip", type="generate_clip")]
+            if gpu_running.is_set():
+                io_claimed.set()
+                raise KeyboardInterrupt  # fin du test : la boucle sort proprement
+            return []
+
+    def fake_run(job, db, settings):
+        gpu_running.set()
+        assert io_claimed.wait(5)  # la voie io est servie pendant ce job GPU
+
+    settings = SimpleNamespace(
+        data_dir=Path("."),
+        database_url="x",
+        worker_id="w",
+        job_types=["generate_clip", "script"],
+        io_concurrency=3,
+        poll_interval_s=0.01,
+        comfy_base_url="http://x",
+        dry_run=False,
+    )
+    monkeypatch.setattr(sys, "argv", ["worker", "--child"])
+    monkeypatch.setattr(main, "Settings", lambda: settings)
+    monkeypatch.setattr(main, "Db", Db)
+    monkeypatch.setattr(main, "sync_code_prompts", lambda db: {})
+    monkeypatch.setattr(main, "recover_after_crash", lambda db, s: [])
+    monkeypatch.setattr(main, "start_scheduler", lambda db, s: SimpleNamespace(shutdown=lambda wait: None))
+    monkeypatch.setattr(main, "StatusBeat", lambda *a: SimpleNamespace(start=lambda: None, stop=lambda: None, draining=False))
+    monkeypatch.setattr(main, "run_job", fake_run)
+    main.main()
+    assert gpu_running.is_set() and io_claimed.is_set()
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg absent")
 def test_montage_preview_real_render(tmp_path):
     pytest.importorskip("PIL")

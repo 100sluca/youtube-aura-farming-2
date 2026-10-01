@@ -183,6 +183,16 @@ class ZernioClient:
     def get_post(self, post_id: str) -> dict[str, Any]:
         return self._get(f"/posts/{post_id}", "publication").get("post") or {}
 
+    def delete_post(self, post_id: str) -> bool:
+        """Supprime une publication pas encore sortie (programmée, en attente, en échec) ; False si Zernio ne la connaît
+        plus. Une publication déjà sortie est refusée par Zernio (ZernioError) : elle reste sur TikTok."""
+        resp = self.http.delete(f"{self.base_url}/posts/{post_id}")
+        if resp.status_code == 404:
+            return False
+        if resp.status_code >= 400:
+            raise _error(resp, "suppression de la publication")
+        return True
+
     # ---- Statistiques (docs/39-tiktok-partout.md) ------------------------------------------------------------------
     def post_analytics(
         self, account_id: str, *, days: int = 365, max_pages: int = 20

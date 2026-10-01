@@ -152,7 +152,7 @@ class ScriptStep(Step):
         facts_txt = "\n".join(f"- [{int(f.get('source', 0)) + 1}] {f.get('claim', '')}" for f in facts)
         sources_txt = "\n".join(f"[{i + 1}] {s.get('title')} — {s.get('url')}" for i, s in enumerate(sources))
         ctx.progress(10, "Dossier des sources")
-        dossier = self._dossier(ctx, sources) if sources else ""
+        dossier = self._dossier(ctx, sources, prod.get("title")) if sources else ""
         lo, aim, hi = word_budget(target)
         examples = ctx.db.fetch_all(
             """select p.script from v_video_overview v join productions p on p.id = v.production_id
@@ -278,11 +278,15 @@ class ScriptStep(Step):
         return ask
 
     @staticmethod
-    def _dossier(ctx: Context, sources: list[dict[str, Any]]) -> str:
-        """Pages sources entières (sources/wikipedia.source_dossier) ; sans elles, le script s'écrit sur les faits de l'idée."""
+    def _dossier(ctx: Context, sources: list[dict[str, Any]], subject: str | None = None) -> str:
+        """Pages sources entières (sources/wikipedia.source_dossier), plus la page du sujet quand l'idée ne cite qu'une
+        liste ; sans elles, le script s'écrit sur les faits de l'idée."""
         try:
             return source_dossier(
-                sources, ctx.settings.data_dir / "sources" / "wikipedia", ctx.settings.effective_wikipedia_user_agent
+                sources,
+                ctx.settings.data_dir / "sources" / "wikipedia",
+                ctx.settings.effective_wikipedia_user_agent,
+                subject=subject,
             )
         except Exception as exc:  # noqa: BLE001
             ctx.log("script.dossier_indisponible", level="warn", erreur=str(exc)[:300])
@@ -466,7 +470,7 @@ class ScriptStep(Step):
             row = ctx.db.fetch_one(
                 """insert into videos (production_id, channel_id, lang, format, title, description, tags, narration_text)
                    values (%s, %s, %s, %s, %s, %s, %s, %s)
-                   on conflict (production_id, channel_id) do update set narration_text = excluded.narration_text
+                   on conflict (production_id, channel_id) where archived_at is null do update set narration_text = excluded.narration_text
                    returning id""",
                 (
                     pid,

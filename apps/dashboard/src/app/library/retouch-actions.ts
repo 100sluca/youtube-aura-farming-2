@@ -28,6 +28,7 @@ const inputSchema = z.object({
   music: z.object({ track: z.string().min(1).max(120).nullable(), startS: z.number().min(0).max(3600).nullable() }).nullable(),
   audio: z.object({ voice_db: level("voice_db"), music_db: level("music_db"), duck_db: level("duck_db"), solo_db: level("solo_db"), sfx_db: level("sfx_db") }),
   voice: z.string().max(120).nullable(),
+  acting: z.string().max(40).nullable(),
 });
 
 /** Espaces normales regroupées ; l'espace insécable d'un nombre (« 1 350 ») reste. */
@@ -66,19 +67,35 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
   const previousVoice = (v.retouch as { voice?: unknown } | null)?.voice;
   const voice = redo ?? (typeof previousVoice === "string" ? previousVoice : null);
   if (voice) retouch.voice = voice;
+  // Voix des personnages rejouées (docs/41 §8) : chaque personnage garde sa voix, un autre moteur la joue (Gemini) ;
+  // le jeu reste noté pour la vidéo, une nouvelle prise d'une réplique le reprend
+  let actingRedo: string | null = null;
+  if (r.acting) {
+    const entry = (await getGenerationCatalog()).acting.find((a) => a.id === r.acting);
+    if (!entry) return { ok: false, message: "Jeu des voix inconnu du catalogue" };
+    if (entry.missing.length) return { ok: false, message: `${entry.label} n’est pas installé (${entry.missing.join(", ")})` };
+    actingRedo = entry.id;
+  }
+  const previousActing = (v.retouch as { acting?: unknown } | null)?.acting;
+  const acting = actingRedo ?? (typeof previousActing === "string" ? previousActing : null);
+  if (acting) retouch.acting = acting;
   // consignes données plan par plan (onglet Plans, SQL redo_plan) : l'historique reste
   const plans = (v.retouch as { plans?: unknown } | null)?.plans;
   if (plans && typeof plans === "object" && !Array.isArray(plans)) retouch.plans = plans as RetouchData["plans"];
 
-  const { error: rpcError } = await db.rpc("retouch_video", { p_video: videoId, p_retouch: retouch, p_voice: redo });
+  // « acting:gemini » : l'étape voix refait les voix des personnages avec ce jeu (même voix par personnage)
+  const voiceJob = actingRedo ? `acting:${actingRedo}` : redo;
+  const { error: rpcError } = await db.rpc("retouch_video", { p_video: videoId, p_retouch: retouch, p_voice: voiceJob });
   if (rpcError) return { ok: false, message: rpcError.message };
   revalidatePath("/library");
   revalidatePath(`/library/${videoId}/retouche`);
   return {
     ok: true,
-    message: redo
-      ? "Nouvelle voix, puis montage et contrôle : quelques minutes (la voix passe sur la carte graphique après la tâche en cours)"
-      : "Montage relancé : la vidéo refaite arrive dans une minute environ",
+    message: actingRedo
+      ? "Voix refaites (chaque personnage garde la sienne), puis montage calé sur les lèvres et contrôle : quelques minutes"
+      : redo
+        ? "Nouvelle voix, puis montage et contrôle : quelques minutes (la voix passe sur la carte graphique après la tâche en cours)"
+        : "Montage relancé : la vidéo refaite arrive dans une minute environ",
   };
 }
 

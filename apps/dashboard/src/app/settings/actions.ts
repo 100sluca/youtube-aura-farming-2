@@ -190,12 +190,14 @@ export async function saveGenerationSettings(input: GenerationSettings): Promise
   const fr = voice("fr");
   const en = voice("en");
   if (!fr || !en) return { ok: false, message: "Aucune voix dans le catalogue (services/worker/workflows/catalog.json)" };
+  const acting = catalog.acting.find((a) => a.id === input.voice_acting) ?? catalog.acting[0];
   const value: GenerationSettings = {
     image_workflow: image.name,
     video_workflow: video.name,
     storyboard_candidates: Math.min(4, Math.max(1, Math.round(Number(input.storyboard_candidates) || 2))),
     // Voix Kokoro sous leur nom seul (« ff_siwis ») : format que comprend aussi un worker pas encore relancé
     voices: { fr: fr.id.replace(/^kokoro:/, ""), en: en.id.replace(/^kokoro:/, "") },
+    voice_acting: acting?.id ?? "neutral",
   };
   const { error } = await supabaseAdmin().from("app_settings").upsert({ key: "generation", value, updated_at: new Date().toISOString() });
   if (error) return fail(error);
@@ -205,9 +207,10 @@ export async function saveGenerationSettings(input: GenerationSettings): Promise
   return {
     ok: true,
     message:
-      `Enregistré : images ${image.label}, vidéo ${video.label}, voix ${fr.label} (${fr.engineLabel}). S'applique aux prochaines productions` +
+      `Enregistré : images ${image.label}, vidéo ${video.label}, voix ${fr.label} (${fr.engineLabel}), jeu des voix « ${acting?.label ?? "Voix neutres"} ». S'applique aux prochaines productions` +
       (missing.length ? ` · attention, fichiers absents de ComfyUI pour ${missing.join(" et ")}` : "") +
-      (notInstalled.length ? ` · moteur de voix non installé : ${[...new Set(notInstalled)].join(", ")}` : ""),
+      (notInstalled.length ? ` · moteur de voix non installé : ${[...new Set(notInstalled)].join(", ")}` : "") +
+      (acting?.missing.length ? ` · jeu des voix non installé (${acting.missing.join(", ")})` : ""),
   };
 }
 

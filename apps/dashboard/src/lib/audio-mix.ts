@@ -27,8 +27,9 @@ export function mixLevels(
 ): MixLevels {
   const voice =
     (o.narrationLufs !== null ? leveling(c.voice_ref_lufs, o.narrationLufs, c.voice_ref_lufs, c.max_leveling_db) : 0) + audio.voice_db;
-  const target = o.withVoice ? c.voice_ref_lufs + audio.music_db : c.solo_ref_lufs + audio.solo_db;
-  const music = leveling(target, o.trackLufs, c.unknown_lufs, c.max_leveling_db) + o.trackGainDb;
+  // le garde-fou ne borne que l'égalisation de la piste, jamais le réglage (−120 dB reste −120 dB)
+  const [ref, offset] = o.withVoice ? [c.voice_ref_lufs, audio.music_db] : [c.solo_ref_lufs, audio.solo_db];
+  const music = leveling(ref, o.trackLufs, c.unknown_lufs, c.max_leveling_db) + offset + o.trackGainDb;
   return { voiceGainDb: voice, musicGainDb: music, duckDb: o.withVoice ? audio.duck_db : 0, sfxGainDb: audio.sfx_db };
 }
 

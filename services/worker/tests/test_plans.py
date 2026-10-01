@@ -178,11 +178,16 @@ def test_a_retake_says_one_line_again_and_keeps_the_others(tmp_path, monkeypatch
     calls: list[dict[str, Any]] = []
 
     class Engine:
-        def speak_many(self, texts: list[str], *, voice: str, lang: str, speed: float, seed: int | None = None) -> list[Speech]:
-            calls.append({"texts": texts, "voice": voice, "speed": speed, "seed": seed})
+        def speak_many(
+            self, texts: list[str], *, voice: str, lang: str, speed: float, seed: int | None = None, tones: Any = None
+        ) -> list[Speech]:
+            calls.append({"texts": texts, "voice": voice, "speed": speed, "seed": seed, "tones": tones})
             return [Speech(samples=np.full(int(rate * 1.5), 0.2, dtype="float32"), rate=rate, voice=voice)]
 
     monkeypatch.setattr(tts_step, "get_engine", lambda settings, engine: Engine())
+    monkeypatch.setattr(
+        tts_step, "load_generation_config", lambda settings, db: SimpleNamespace(voices={}, voice_acting="neutral")
+    )
     saved: list[Any] = []
 
     class Db:
@@ -214,7 +219,15 @@ def test_a_retake_says_one_line_again_and_keeps_the_others(tmp_path, monkeypatch
         log=lambda *a, **k: None,
     )
     result = tts_step.TTSStep().run(ctx)
-    assert calls == [{"texts": ["C'est vous… la cou-tu-rière ?"], "voice": "perso_papi", "speed": 1.1, "seed": 1234 + 2000}]
+    assert calls == [
+        {
+            "texts": ["C'est vous… la cou-tu-rière ?"],
+            "voice": "perso_papi",
+            "speed": 1.1,
+            "seed": 1234 + 2000,
+            "tones": ["whispering"],
+        }
+    ]
     assert result["scene"] == 0 and result["take"] == 2 and result["voice"] == "qwen3:perso_papi"
     audio, r = sf.read(str(tmp_path / "narration.wav"))
     tl = NarrationTimeline.model_validate(saved[-1][2].obj)  # videos.timeline : celle de l'étape voix, refaite

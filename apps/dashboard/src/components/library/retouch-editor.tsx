@@ -26,8 +26,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDuration, mixLevels, musicStart, speechSegments } from "@/lib/audio-mix";
 import { formatDateTime } from "@/lib/format";
-import { FORMAT_LABELS, FORMAT_SHORT, type AudioLayer, type MusicTrack } from "@/lib/montage-types";
-import { HOOK_MIN_S, LEVEL_KEYS, type Levels, type RetouchInput, type RetouchJob, type RetouchPageData, type RetouchScene, type RetouchState } from "@/lib/retouch-types";
+import { FORMAT_LABELS, FORMAT_SHORT, MUSIC_MIN_DB, MUSIC_SLIDER_MIN_DB, type AudioLayer, type MusicTrack } from "@/lib/montage-types";
+import { HOOK_MIN_S, LEVEL_KEYS, type Levels, type PreviousUpload, type RetouchInput, type RetouchJob, type RetouchPageData, type RetouchScene, type RetouchState } from "@/lib/retouch-types";
 import { cn } from "@/lib/utils";
 
 const KEEP = "__keep";
@@ -46,6 +46,7 @@ interface Draft {
   startS: number | null; // départ de la musique choisie ; null = celui de la piste
   levels: Levels;
   voice: string; // « moteur:voix »
+  acting: string; // KEEP ou le jeu avec lequel refaire les voix (« gemini », docs/41 §8)
 }
 
 /** Deux textes affichés identiques, espaces (insécables comprises) mises à part. */
@@ -65,6 +66,7 @@ function savedDraft(d: RetouchPageData): Draft {
     startS: r.music?.start_s ?? null,
     levels: { ...levelsOf(d.template.audio), ...r.audio },
     voice: d.voice.current ?? "",
+    acting: KEEP,
   };
 }
 
@@ -77,6 +79,7 @@ function automaticDraft(d: RetouchPageData): Draft {
     startS: null,
     levels: levelsOf(d.template.audio),
     voice: d.voice.current ?? "",
+    acting: KEEP,
   };
 }
 
@@ -96,6 +99,7 @@ function toInput(d: RetouchPageData, draft: Draft): RetouchInput {
     music: draft.music === KEEP ? null : { track: draft.music === NONE ? null : draft.music, startS: draft.music === NONE ? null : draft.startS },
     audio: Object.fromEntries(LEVEL_KEYS.filter((k) => draft.levels[k] !== base[k]).map((k) => [k, draft.levels[k]])),
     voice: draft.voice && draft.voice !== d.voice.current ? draft.voice : null,
+    acting: draft.acting === KEEP ? null : draft.acting,
   };
 }
 
@@ -113,6 +117,7 @@ function changes(d: RetouchPageData, draft: Draft, before: Draft, trackTitle: (i
   }
   if (LEVEL_KEYS.some((k) => draft.levels[k] !== before.levels[k])) out.push("Mixage");
   if (draft.voice && draft.voice !== before.voice) out.push("Voix");
+  if (draft.acting !== KEEP) out.push(`Voix rejouées · ${d.voice.acting.entries.find((a) => a.id === draft.acting)?.label ?? draft.acting}`);
   return out;
 }
 
@@ -282,6 +287,7 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
   const totalS = state.durationS ?? d.scenes[d.scenes.length - 1]?.end ?? 30;
   const narration = d.voice.narration;
   const voiceChanged = Boolean(draft.voice) && draft.voice !== d.voice.current;
+  const replay = draft.acting !== KEEP; // voix rejouées par un autre moteur, chaque personnage garde la sienne
 
   const input = toInput(d, draft);
   // Titre d'accroche éphémère : de 5 s à toute la vidéo ; « Rétablir » revient au texte et à la durée automatiques
@@ -354,12 +360,16 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
     video.currentTime = Math.max(0, t - 0.15);
     void video.play().catch(() => undefined);
   };
-  const submit = () =>
+  const uploaded = d.video.youtubeVideoId;
+  const submit = () => {
+    // Programmée ou sortie sur YouTube : la version envoyée y reste, la vidéo refaite repartira comme une nouvelle vidéo (docs/44, docs/47)
+    if (uploaded && !window.confirm(uploadedConfirm(d.video.published))) return;
     startTransition(async () => {
       const res = await retouchVideo(d.video.id, input);
       setNotice(res);
       if (res.ok) router.refresh();
     });
+  };
   const digits = () =>
     startTransition(async () => {
       const keys = d.scenes.map((s) => String(s.index));
@@ -484,9 +494,11 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
               Refaire la vidéo
             </Button>
             <p className="text-muted-foreground text-[11px] leading-snug">
-              {voiceChanged
-                ? "Quelques minutes : nouvelle voix sur la carte graphique, puis montage et contrôle."
-                : "≈ 1 min de montage et de contrôle, avec les mêmes clips et la même voix."}{" "}
+              {replay
+                ? "Quelques minutes : voix rejouées réplique par réplique, puis montage calé sur les lèvres et contrôle."
+                : voiceChanged
+                  ? "Quelques minutes : nouvelle voix sur la carte graphique, puis montage et contrôle."
+                  : "≈ 1 min de montage et de contrôle, avec les mêmes clips et la même voix."}{" "}
               Plus l’attente si le worker finit un clip. La vidéo actuelle est remplacée et revient à valider.
             </p>
             {!automatic ? (
@@ -497,6 +509,8 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
             ) : null}
           </section>
 
+          {uploaded && !d.blocked ? <UploadedNotice youtubeVideoId={uploaded} published={d.video.published} tiktok={d.video.tiktok} /> : null}
+          {d.video.previousUploads.length ? <PreviousUploads uploads={d.video.previousUploads} /> : null}
           {d.blocked ? (
             <p className="flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-xs leading-relaxed">
               <Info className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
@@ -551,6 +565,7 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                 plans={d.plans}
                 now={now}
                 locked={locked}
+                confirm={uploaded ? uploadedConfirm(d.video.published) : null}
                 onSeek={seek}
                 onResult={(res) => {
                   setNotice(res);
@@ -733,7 +748,8 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                     <SliderField
                       label="Musique sous la voix"
                       value={draft.levels.music_db}
-                      min={-30}
+                      min={MUSIC_SLIDER_MIN_DB}
+                      inputMin={MUSIC_MIN_DB}
                       max={0}
                       step={0.5}
                       unit="dB"
@@ -756,7 +772,8 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                     <SliderField
                       label="Musique"
                       value={draft.levels.solo_db}
-                      min={-20}
+                      min={MUSIC_SLIDER_MIN_DB}
+                      inputMin={MUSIC_MIN_DB}
                       max={12}
                       step={0.5}
                       unit="dB"
@@ -778,13 +795,16 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
               </fieldset>
               <p className="text-muted-foreground text-[11px] leading-snug">
                 Pour cette vidéo seulement ; le modèle de montage garde ses niveaux. « Nouveau mixage », sous la vidéo, fait entendre ces réglages pendant la
-                lecture. Le son final est toujours ramené au niveau des Shorts (−14 LUFS) : ces curseurs règlent l’équilibre, pas le volume.
+                lecture. Le son final est toujours ramené au niveau des Shorts (−14 LUFS) : ces curseurs règlent l’équilibre, pas le volume. Musique trop forte même tout en bas : tape
+                une valeur plus basse dans sa case (jusqu’à −120 dB, muette).
               </p>
             </section>
           </TabsContent>
 
           <TabsContent value="voix" className="flex flex-col gap-4">
-            {d.video.voiced ? (
+            {drama ? (
+              <ActingPanel acting={d.voice.acting} value={draft.acting} locked={locked} characters onChange={(acting) => edit({ acting })} />
+            ) : d.video.voiced ? (
               <>
                 <p className="text-sm">
                   Voix actuelle : <span className="font-medium">{voiceLabel(d.voice.current)}</span>
@@ -792,6 +812,15 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                 <fieldset disabled={locked}>
                   <VoicePicker lang={d.video.lang} label="Voix de cette vidéo" entries={d.voice.entries} value={draft.voice} onChange={(voice) => edit({ voice })} sample={d.voice.sample} />
                 </fieldset>
+                {d.voice.acting.entries.some((a) => a.narration) ? (
+                  <ActingPanel
+                    acting={{ ...d.voice.acting, entries: d.voice.acting.entries.filter((a) => a.narration) }}
+                    value={draft.acting}
+                    locked={locked}
+                    characters={false}
+                    onChange={(acting) => edit({ acting })}
+                  />
+                ) : null}
                 {voiceChanged ? (
                   <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs leading-relaxed">
                     « Refaire la vidéo » fera dire la narration par {voiceLabel(draft.voice)}, puis remontera la vidéo : la durée des scènes suit la nouvelle voix et tes
@@ -810,5 +839,166 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
         </Tabs>
       </div>
     </div>
+  );
+}
+
+/** Voix rejouées (docs/41 §8) : chaque personnage d'un drame garde sa voix du début à la fin, un autre moteur la joue
+ * (Gemini : sa voix du studio Gemini, le ton de chaque réplique, la durée de la bouche de chaque plan) ; pour un récit,
+ * Gemini lit la narration avec la voix choisie au-dessus. */
+function ActingPanel({
+  acting,
+  value,
+  locked,
+  characters,
+  onChange,
+}: {
+  acting: RetouchPageData["voice"]["acting"];
+  value: string;
+  locked: boolean;
+  characters: boolean;
+  onChange: (acting: string) => void;
+}) {
+  const nowId = acting.current ?? acting.settings;
+  const label = (id: string) => acting.entries.find((a) => a.id === id)?.label ?? id;
+  const chosen = acting.entries.find((a) => a.id === value);
+  const shown = value === KEEP ? nowId : value; // le jeu dont on montre les voix
+  const gemini = acting.entries.find((a) => a.id === shown)?.id === "gemini";
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border p-3">
+      <h3 className="text-sm font-semibold">{characters ? "Voix des personnages" : "Faire lire la voix par Gemini"}</h3>
+      {characters ? (
+        <p className="text-sm">
+          Jeu actuel : <span className="font-medium">{label(nowId)}</span>
+          {acting.current ? "" : " (réglage au moment de la fabrication)"}
+        </p>
+      ) : null}
+      <div className="flex max-w-xl flex-col gap-2">
+        <label htmlFor={characters ? "retouch-acting" : "retouch-reading"} className="text-sm font-medium">
+          {characters ? "Refaire les voix des personnages avec" : "Lecture de la narration"}
+        </label>
+        <Select value={value} onValueChange={onChange} disabled={locked}>
+          <SelectTrigger id={characters ? "retouch-acting" : "retouch-reading"} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={KEEP}>{characters ? "Garder les voix actuelles" : "Garder la lecture actuelle"}</SelectItem>
+            {acting.entries.map((a) => (
+              <SelectItem key={a.id} value={a.id} disabled={a.missing.length > 0}>
+                {a.label}
+                {a.missing.length ? " · non installé" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {chosen ? <p className="text-muted-foreground text-xs leading-relaxed">{chosen.detail}</p> : null}
+      </div>
+      {characters && acting.cast.length ? (
+        <table className="w-full max-w-xl text-sm">
+          <thead>
+            <tr className="text-muted-foreground text-left text-xs">
+              <th className="py-1 font-medium">Personnage</th>
+              <th className="py-1 font-medium">Sa voix</th>
+              {gemini ? <th className="py-1 font-medium">Voix Gemini</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {acting.cast.map((c) => (
+              <tr key={c.key} className="border-t">
+                <td className="py-1.5 font-medium">{c.name}</td>
+                <td className="py-1.5">{c.voiceLabel}</td>
+                {gemini ? <td className="py-1.5">{c.gemini ?? "—"}</td> : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : characters ? (
+        <p className="text-muted-foreground text-xs">Voix des personnages inconnues (vidéo retouchée avec une seule voix) : elles seront reprises du script.</p>
+      ) : null}
+      {value !== KEEP ? (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs leading-relaxed">
+          {characters
+            ? "« Refaire la vidéo » redira toutes les répliques : chaque personnage garde sa voix du début à la fin, chaque réplique est jouée selon le ton écrit par le scénariste et ajustée à la durée de la bouche de son plan, puis le montage recale chaque réplique sur les lèvres."
+            : "« Refaire la vidéo » fera lire toute la narration par Gemini, avec la voix choisie au-dessus (sa voix Gemini) et sa description comme consigne, puis remontera la vidéo."}{" "}
+          Une nouvelle prise d’une réplique (onglet Plans) gardera ce jeu.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+const uploadedConfirm = (published: boolean) =>
+  published
+    ? "Cette vidéo est déjà sortie sur YouTube.\n\n" +
+      "La version sortie reste sur ta chaîne et sur TikTok (à supprimer toi-même si tu veux) ; elle garde ses vues et ses statistiques, dans une fiche à part de la Bibliothèque. " +
+      "La vidéo refaite revient à valider, puis sera envoyée comme une nouvelle vidéo sur YouTube et TikTok.\n\nLa refaire ?"
+    : "Cette vidéo est déjà programmée sur YouTube.\n\n" +
+      "La version envoyée reste sur ta chaîne (à supprimer toi-même dans YouTube Studio si tu veux) ; sa publication TikTok encore programmée est annulée. " +
+      "La vidéo refaite revient à valider, puis sera envoyée comme une nouvelle vidéo sur YouTube et TikTok.\n\nLa refaire ?";
+
+const studioUrl = (id: string) => `https://studio.youtube.com/video/${id}/edit`;
+
+/** Vidéo programmée ou publiée sur YouTube (docs/44, docs/47) : ce que « Refaire la vidéo » fera de l'envoi actuel. */
+function UploadedNotice({
+  youtubeVideoId,
+  published,
+  tiktok,
+}: {
+  youtubeVideoId: string;
+  published: boolean;
+  tiktok: RetouchPageData["video"]["tiktok"];
+}) {
+  const tiktokLine = !tiktok
+    ? null
+    : tiktok.status === "published"
+      ? "Déjà sortie sur TikTok : elle y reste, à retirer à la main dans l’appli TikTok."
+      : ["scheduled", "pending", "sending"].includes(tiktok.status)
+        ? "Sa publication TikTok programmée sera annulée."
+        : null;
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/5 p-3 text-xs leading-relaxed">
+      <p className="flex items-start gap-2">
+        <Info className="mt-0.5 size-3.5 shrink-0 text-sky-600" />
+        <span>
+          {published
+            ? "Déjà sortie sur YouTube. La refaire ne touche pas à la version sortie : elle reste sur ta chaîne et garde ses vues, dans une fiche à part de la Bibliothèque. La vidéo refaite revient à valider, puis part comme "
+            : "Déjà programmée sur YouTube. La refaire ne touche pas à la version envoyée, qui reste sur ta chaîne : la vidéo refaite revient à valider, puis part comme "}
+          une <strong>nouvelle vidéo</strong> sur YouTube et TikTok au créneau que tu choisis. {tiktokLine}
+        </span>
+      </p>
+      <a className="w-fit underline underline-offset-2" href={studioUrl(youtubeVideoId)} target="_blank" rel="noreferrer noopener">
+        {published ? "Version sortie" : "Version programmée"} dans YouTube Studio
+      </a>
+    </div>
+  );
+}
+
+/** Envois remplacés par une retouche : ils restent sur YouTube (et sur TikTok s'ils y sont sortis) jusqu'à ce que Luca les retire. */
+function PreviousUploads({ uploads }: { uploads: PreviousUpload[] }) {
+  return (
+    <section className="flex flex-col gap-1.5 rounded-lg border p-3 text-xs">
+      <h3 className="font-semibold">Anciennes versions envoyées</h3>
+      <p className="text-muted-foreground leading-snug">Toujours sur YouTube tant que tu ne les supprimes pas dans YouTube Studio.</p>
+      <ul className="flex flex-col gap-1">
+        {uploads.map((u) => (
+          <li key={u.youtubeVideoId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <a className="underline underline-offset-2" href={studioUrl(u.youtubeVideoId)} target="_blank" rel="noreferrer noopener">
+              {u.publishedAt ? `Sortie le ${formatDateTime(u.publishedAt)}` : u.publishAt ? `Programmée le ${formatDateTime(u.publishAt)}` : u.youtubeVideoId}
+            </a>
+            {u.replacedAt ? <span className="text-muted-foreground">remplacée le {formatDateTime(u.replacedAt)}</span> : null}
+            {u.tiktokStatus === "published" ? (
+              u.tiktokUrl ? (
+                <a className="text-amber-700 underline underline-offset-2 dark:text-amber-400" href={u.tiktokUrl} target="_blank" rel="noreferrer noopener">
+                  sortie sur TikTok
+                </a>
+              ) : (
+                <span className="text-amber-700 dark:text-amber-400">sortie sur TikTok</span>
+              )
+            ) : u.tiktokStatus ? (
+              <span className="text-muted-foreground">TikTok annulé</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

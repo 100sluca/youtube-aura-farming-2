@@ -12,9 +12,16 @@ import { removeDemo } from "@/lib/demos";
 import { formatBytes } from "@/lib/format";
 import { getLibraryDetail } from "@/lib/library";
 import type { LibraryDetail } from "@/lib/library-types";
+import { getProductionTiming } from "@/lib/timing";
+import type { ProductionTiming } from "@/lib/timing-types";
 
 export async function fetchLibraryDetail(videoId: string, productionId: string | null, withClips = false): Promise<LibraryDetail> {
   return getLibraryDetail(videoId, productionId, withClips);
+}
+
+/** Temps de fabrication de la vidéo : script, images, clips, voix, montage (docs/45). */
+export async function fetchProductionTiming(productionId: string, videoId: string): Promise<ProductionTiming | null> {
+  return getProductionTiming(productionId, videoId);
 }
 
 /** Supprime une ou plusieurs vidéos : fichiers seuls pour celles déjà sur YouTube, tout le reste sinon. */

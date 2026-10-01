@@ -271,3 +271,74 @@ def test_step_fails_loudly_when_tiktok_refuses(monkeypatch):
             },
         )
     assert video["tiktok"]["status"] == "failed"
+
+
+# ---- Vidéo retouchée après son envoi (docs/44) -----------------------------------------------------------------------
+
+
+def test_new_upload_after_a_retouch_gets_a_new_idempotency_key():
+    vid = uuid4()
+    assert tp.idempotency_key(vid, 1) == tp.idempotency_key(vid, 1, 0)  # clés déjà données : inchangées
+    assert tp.idempotency_key(vid, 1, 1) not in (tp.idempotency_key(vid, 1), tp.idempotency_key(vid, 1, 2))
+
+
+def test_client_deletes_a_scheduled_post():
+    seen: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path.endswith("/posts/gone"):
+            return httpx.Response(404, json={"error": "Not found"})
+        if request.url.path.endswith("/posts/live"):
+            return httpx.Response(400, json={"error": "Published posts cannot be deleted"})
+        return httpx.Response(200, json={"message": "deleted"})
+
+    with ZernioClient("sk_test", transport=httpx.MockTransport(handler)) as zc:
+        assert zc.delete_post("p1") is True
+        assert zc.delete_post("gone") is False
+        with pytest.raises(ZernioError) as err:
+            zc.delete_post("live")
+    assert seen[0] == ("DELETE", "/api/v1/posts/p1") and err.value.status == 400
+
+
+class _DeletingClient(_FakeClient):
+    def __init__(self, error: ZernioError | None = None):
+        super().__init__({})
+        self.error = error
+        self.deleted: list[str] = []
+
+    def delete_post(self, post_id):
+        if self.error:
+            raise self.error
+        self.deleted.append(post_id)
+        return True
+
+
+def _run_delete(monkeypatch, client: _DeletingClient):
+    monkeypatch.setattr(step_mod, "zernio_key", lambda s, d: "sk_test")
+    monkeypatch.setattr(step_mod, "ZernioClient", lambda key: client)
+    db = _FakeDb(_video({}))
+    job = Job(
+        id=uuid4(),
+        type="tiktok_publish",
+        status="running",
+        priority=25,
+        video_id=uuid4(),
+        created_at=NOW,
+        payload={"delete_post": "p_old", "source": "retouche"},
+    )
+    ctx = step_mod.Context(job=job, db=db, settings=SimpleNamespace())
+    return REGISTRY["tiktok_publish"].run(ctx), db
+
+
+def test_step_deletes_the_old_post_of_a_retouched_video_without_touching_its_state(monkeypatch):
+    client = _DeletingClient()
+    result, db = _run_delete(monkeypatch, client)
+    assert client.deleted == ["p_old"] and result["deleted"] is True
+    assert db.saved == []  # videos.tiktok appartient déjà à la nouvelle version
+
+
+def test_step_leaves_an_already_published_old_post(monkeypatch):
+    client = _DeletingClient(ZernioError("Zernio : 400 Published posts cannot be deleted", status=400))
+    result, _ = _run_delete(monkeypatch, client)
+    assert result["deleted"] is False and "Published" in result["reason"]

@@ -47,6 +47,7 @@ export function SliderField({
   step = 1,
   unit,
   percent,
+  inputMin,
   onChange,
   hint,
   className,
@@ -55,6 +56,7 @@ export function SliderField({
   value: number;
   min: number;
   max: number;
+  inputMin?: number; // une valeur tapée dans la case peut descendre jusque-là, sous le bas du curseur
   step?: number;
   unit?: string;
   percent?: boolean; // valeur 0-1 affichée en %
@@ -67,7 +69,7 @@ export function SliderField({
   const [draft, setDraft] = React.useState<string | null>(null);
   const commit = (raw: string) => {
     const n = Number(raw.replace(",", "."));
-    if (Number.isFinite(n)) onChange(clamp(Math.round((n / factor) / step) * step, min, max));
+    if (Number.isFinite(n)) onChange(clamp(Math.round((n / factor) / step) * step, Math.min(min, inputMin ?? min), max));
     setDraft(null);
   };
   return (

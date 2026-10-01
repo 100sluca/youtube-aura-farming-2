@@ -262,3 +262,36 @@ def test_llm_schema_echo_is_unwrapped():
     v = _parse('{"properties": {"ok": false, "problems": ["un passant"]}, "type": "object"}', KeyframeVerdict)
     assert v.ok is False and v.problems == ["un passant"]
     assert _parse('{"ok": true, "problems": []}', KeyframeVerdict).ok
+
+
+def test_room_renovation_uses_interior_framing_scale_and_evening():
+    # Luca, 30/09 : des pièces de luxe rénovées, vues de l'intérieur, plutôt que des bâtiments vus du dehors
+    from worker.keyframe_qc import clip_requirements, requirements
+    from worker.recipes import (
+        DUSK_ROOM,
+        EARLIER_ROOM,
+        FINISHED_ROOM,
+        ROOM_DUSK_MOTION,
+        ROOM_MOTION,
+        WORKER_SCALE_ROOM,
+        indoor,
+    )
+
+    raw = _timelapse()
+    raw.design_bible = "a large living room with three tall French windows onto a courtyard, seen from the door"
+    raw.scenes[0].visual_prompt = "A trashed living room with torn wallpaper, black mould and rubble"
+    raw.scenes[-1].edit_prompt = None
+    for sc in raw.scenes:
+        sc.interior = True
+    s = normalize_script(raw, "timelapse")
+    n = len(s.scenes)
+    assert indoor(s) and not indoor(_timelapse())  # les anciens chantiers restent des bâtiments vus du dehors
+    assert s.scenes[-1].edit_prompt == DUSK_ROOM
+    assert FINISHED_ROOM in image_prompt(s, n - 2, "timelapse")
+    back = edit_instruction(s, 3, "timelapse")
+    assert back.startswith(EARLIER_ROOM) and WORKER_SCALE_ROOM in back and back.endswith(KEEP_FRAME)
+    assert motion_prompt(s, 0, "timelapse") == f"{ROOM_MOTION}, move 0"
+    assert motion_prompt(s, n - 2, "timelapse") == ROOM_DUSK_MOTION
+    assert lint_recipe_script(s, "timelapse", ["fr"], 18) == []
+    assert any("TERMINÉE" in r for r in requirements(s, n - 2, "timelapse"))
+    assert any("taille humaine" in r for r in clip_requirements(s, 1, "timelapse"))

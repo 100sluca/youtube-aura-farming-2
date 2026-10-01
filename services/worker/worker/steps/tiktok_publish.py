@@ -14,6 +14,9 @@ Déroulé :
 videos.tiktok garde l'état : status (sending, scheduled, publishing…, published, failed, cancelled), post_id, url,
 scheduled_for, account_id, username, error, round. Un job relancé après une panne reprend le même envoi (même clé
 d'idempotence : jamais deux publications) ; une nouvelle demande après un échec en commence un autre (round suivant).
+
+Une vidéo programmée puis retouchée (docs/44, SQL release_upload) : son ancienne publication encore seulement programmée
+est supprimée chez Zernio par un job `{"delete_post": id}` ; la vidéo refaite repart comme une nouvelle publication.
 """
 
 from __future__ import annotations
@@ -57,8 +60,11 @@ class TikTokPublishStep(Step):
     lane = "io"
 
     def run(self, ctx: Context) -> dict[str, Any]:
+        if (ctx.job.payload or {}).get("delete_post"):
+            return self._delete(ctx, str(ctx.job.payload["delete_post"]))
         v = ctx.db.fetch_one(
             """select v.id, v.channel_id, v.title, v.description, v.scheduled_at, v.tiktok, a.local_path,
+                      jsonb_array_length(coalesce(v.previous_uploads, '[]'::jsonb)) as generation,
                       coalesce(c.timezone, 'Europe/Paris') as timezone
                from videos v left join assets a on a.id = v.final_asset_id left join channels c on c.id = v.channel_id
                where v.id = %s""",
@@ -123,7 +129,7 @@ class TikTokPublishStep(Step):
             draft=draft,
         )
         try:
-            code, resp = client.create_post(body, idempotency_key(v["id"], round_))
+            code, resp = client.create_post(body, idempotency_key(v["id"], round_, int(v.get("generation") or 0)))
         except ZernioError as exc:
             if exc.status == 429 or exc.code == "idempotency_conflict":
                 raise Postpone(
@@ -140,6 +146,27 @@ class TikTokPublishStep(Step):
             scheduled_for=state["scheduled_for"],
         )
         return self._record(ctx, v, state, read_create(code, resp))
+
+    # ---- Ancienne publication d'une vidéo retouchée après son envoi (docs/44) ---------------------------------------
+    def _delete(self, ctx: Context, post_id: str) -> dict[str, Any]:
+        key = zernio_key(ctx.settings, ctx.db)
+        if not key:
+            raise RuntimeError("Clé Zernio absente : Réglages → TikTok")
+        ctx.progress(30, "Annulation de l'ancienne publication TikTok")
+        with ZernioClient(key) as client:
+            try:
+                deleted = client.delete_post(post_id)
+            except ZernioError as exc:
+                if exc.status == 429:
+                    raise Postpone(
+                        f"Zernio demande d'attendre : {exc}", exc.retry_after or 120, label="TikTok : limite de Zernio"
+                    ) from exc
+                if exc.status in (400, 409):  # déjà sortie : Zernio ne la retire pas de TikTok
+                    ctx.log("Ancienne publication TikTok déjà sortie : à retirer à la main dans TikTok", post_id=post_id)
+                    return {"deleted": False, "post_id": post_id, "reason": str(exc)[:300]}
+                raise
+        ctx.log("Ancienne publication TikTok annulée" if deleted else "Ancienne publication TikTok déjà absente", post_id=post_id)
+        return {"deleted": deleted, "post_id": post_id}
 
     # ---- Suivi d'une publication existante ---------------------------------------------------------------------------
     def _follow(self, ctx: Context, client: ZernioClient, v: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:

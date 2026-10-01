@@ -20,11 +20,16 @@ l'image retenue d'une autre scène (recipes.edit_source ; chantier : le bâtimen
 (worker/keyframe_qc.py) et refaite si elle est refusée (KEYFRAME_QC_RETRIES fois au plus). Si toutes les images
 passent le contrôle, le rendu part sans attendre la revue humaine (STORYBOARD_AUTOPASS) ; sinon la production
 attend la revue avec la liste des problèmes. Refaire une image refait aussi les retouches qui en dérivent.
+
+Pilote automatique (productions.autopilot, worker/autopilot.py, docs/46) : personne ne valide. Une image par plan, jugée
+par le modèle de vision (récits et drames : avec l'image du plan précédent, pour la continuité) et refaite tant qu'elle
+est refusée, AUTOPILOT_TRIES essais au plus ; après le dernier, tant pis : le rendu part avec le dernier essai.
 """
 
 from __future__ import annotations
 
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +39,7 @@ from .. import cancel
 from ..dag import continuity_plan, enqueue_render_dag
 from ..drama import CHARACTERS_MAX, is_drama, sheet_prompt, slug
 from ..drama import scene_prompt as drama_scene_prompt
-from ..keyframe_qc import QC_SYSTEM, KeyframeVerdict, check_keyframe
+from ..keyframe_qc import QC_SYSTEM, KeyframeVerdict, check_continuity, check_keyframe
 from ..media import contact_sheet
 from ..models import ScriptV1
 from ..prompts import prompt_text
@@ -54,6 +59,8 @@ from ..settings_store import load_generation_config
 from ..sources.wikipedia import source_dossier
 from .base import Context, Step
 
+AUTOPILOT_TRIES = 4  # essais par image en pilote automatique (demande de Luca, 30/09 : 4 au plus, pas de boucle sans fin)
+
 
 class StoryboardStep(Step):
     type = "storyboard"
@@ -63,7 +70,7 @@ class StoryboardStep(Step):
         pid = ctx.job.production_id
         assert pid, "storyboard : production_id requis"
         prod = ctx.db.fetch_one(
-            """select p.script, p.style_preset, p.image_workflow, c.title from productions p
+            """select p.script, p.style_preset, p.image_workflow, p.autopilot, c.title from productions p
                left join concepts c on c.id = p.concept_id where p.id = %s""",
             (pid,),
         )
@@ -79,6 +86,7 @@ class StoryboardStep(Step):
         image = ComfyImage(ctx.settings, workflow)
         recipe = recipe_for_production(ctx.db, pid)
         visual = is_visual(recipe)
+        autopilot = bool(prod.get("autopilot"))
         # « Réinventer » : le scénariste réécrit d'abord les scènes demandées ; relancé après une panne des images, le job
         # ne les réécrit pas une seconde fois (payload « reinvented » au lieu de « reinvent »)
         reinvented: list[dict[str, Any]] = list(ctx.job.payload.get("reinvented") or [])
@@ -97,9 +105,15 @@ class StoryboardStep(Step):
         if only and editor:  # une image clé refaite invalide les retouches qui en dépendent : on les refait aussi
             only = edit_dependents(script, only)
         # Formats visuels : une image par scène, contrôlée et refaite au besoin (au lieu de plusieurs candidates)
-        n = 1 if visual else max(1, int(ctx.job.payload.get("candidates", gen.storyboard_candidates)))
-        qc = get_vision_llm(ctx.settings, ctx.db) if (visual and ctx.settings.keyframe_qc and not ctx.settings.dry_run) else None
-        tries = 1 + max(0, ctx.settings.keyframe_qc_retries) if qc else 1
+        # Pilote automatique : pareil pour les récits et les drames, jugés sur leur continuité d'un plan à l'autre
+        checked_kind = visual or autopilot
+        n = 1 if checked_kind else max(1, int(ctx.job.payload.get("candidates", gen.storyboard_candidates)))
+        qc = (
+            get_vision_llm(ctx.settings, ctx.db)
+            if (checked_kind and ctx.settings.keyframe_qc and not ctx.settings.dry_run)
+            else None
+        )
+        tries = (AUTOPILOT_TRIES if autopilot else 1 + max(0, ctx.settings.keyframe_qc_retries)) if qc else 1
         # Une scène qui prolonge la précédente part de la dernière image de son clip : pas d'image à valider
         # (formats visuels : seuls les passages d'une visite prolongent le clip précédent, recipes._normalize_tour)
         mode = "script" if visual else ctx.settings.clip_continuity
@@ -148,6 +162,7 @@ class StoryboardStep(Step):
                     label = f"Scène {shot} · image {k + 1}/{n}" + (f" · essai {attempt + 1}" if attempt else "")
                     ctx.progress(5 + int(85 * step_no / len(order)), label)
                     seed = random.randint(0, 2**31)
+                    t0 = time.monotonic()  # temps de l'image, contrôle compris (fiche de la vidéo, docs/45)
                     out = sdir / f"scene_{scene.index:02d}_{seed}.png"
                     if source and editor:  # retouche de l'image clé source, même cadre
                         instruction = edit_instruction(script, pos, recipe)
@@ -200,9 +215,15 @@ class StoryboardStep(Step):
                         )
                         meta = {"candidate": k, "seed": seed, "prompt": prompt, "provider": image.name}
                         size = (image.width, image.height)
-                    verdict = self._check(ctx, qc, out, script, pos, recipe, source) if qc else None
+                    if not qc:
+                        verdict = None
+                    elif visual:
+                        verdict = self._check(ctx, qc, out, script, pos, recipe, source)
+                    else:
+                        verdict = self._check_continuity(ctx, qc, out, script, pos, pid)
                     if verdict is not None:
                         meta["qc"] = verdict.model_dump()
+                    meta["gen_s"] = round(time.monotonic() - t0, 1)
                     asset = ctx.db.add_asset(
                         production_id=pid,
                         kind="storyboard",
@@ -231,7 +252,7 @@ class StoryboardStep(Step):
         failed = {i: v.problems for i, v in verdicts.items() if v is not None and not v.ok}
         checked = bool(qc) and bool(verdicts) and all(v is not None for v in verdicts.values())
         # une scène refaite ou réinventée pendant la revue revient toujours à Luca, même si son image passe le contrôle
-        autopass = visual and ctx.settings.storyboard_autopass and checked and not failed and not only
+        autopass = not only and (autopilot or (visual and ctx.settings.storyboard_autopass and checked and not failed))
         qc_info = {"checked": checked, "refused": failed} if qc else {"checked": False}
         redone = {"reinvented": [{"scene": e["scene"], "idea": e.get("idea", "")} for e in reinvented]} if reinvented else {}
         if ctx.settings.storyboard_review and not autopass:
@@ -259,7 +280,9 @@ class StoryboardStep(Step):
                 "qc": qc_info,
                 **redone,
             }
-        if autopass:
+        if autopilot and not only:
+            ctx.log("storyboard.pilote_automatique", images=made, refusees_gardees=sorted(failed))
+        elif autopass:
             ctx.log("storyboard.controle_ok", images=made, scenes=len(verdicts))
         return {
             "images": made,
@@ -298,7 +321,7 @@ class StoryboardStep(Step):
             ctx.log("storyboard.scene_reinventee", scene=entry["shot"], idee=entry["idea"], problemes=entry["issues"])
         ctx.log("storyboard.reinvention_modeles", modeles=list(getattr(llm, "used", [])))
         ctx.db.execute("update productions set script = %s where id = %s", (Jsonb(script.model_dump()), pid))
-        for v in ctx.db.fetch_all("select id, lang from videos where production_id = %s", (pid,)):
+        for v in ctx.db.fetch_all("select id, lang from videos where production_id = %s and archived_at is null", (pid,)):
             text = " ".join(s.narration.get(v["lang"], "") for s in script.scenes).strip() or None  # type: ignore[call-overload]
             ctx.db.execute("update videos set narration_text = %s where id = %s", (text, v["id"]))
         ctx.db.execute(
@@ -381,6 +404,29 @@ class StoryboardStep(Step):
         Prompt du contrôleur : version active de la clé keyframe_qc (onglet Agents du dashboard, worker/prompts.py)."""
         try:
             return check_keyframe(qc, out, script, pos, recipe, source, system=prompt_text(ctx.db, "keyframe_qc", QC_SYSTEM))
+        except Exception as exc:  # noqa: BLE001
+            ctx.log("storyboard.controle_indisponible", level="warn", scene=script.scenes[pos].index, erreur=str(exc)[:300])
+            return None
+
+    @staticmethod
+    def _check_continuity(ctx: Context, qc: Any, out: Path, script: ScriptV1, pos: int, pid: Any) -> KeyframeVerdict | None:
+        """Récit ou drame en pilote automatique : l'image jugée avec l'image retenue du dernier plan illustré avant elle."""
+        previous, previous_pos = None, None
+        for before in range(pos - 1, -1, -1):
+            previous = StoryboardStep._selected(ctx, pid, script.scenes[before].index)
+            if previous is not None:
+                previous_pos = before
+                break
+        try:
+            return check_continuity(
+                qc,
+                out,
+                previous,
+                script,
+                pos,
+                system=prompt_text(ctx.db, "keyframe_qc", QC_SYSTEM),
+                previous_pos=previous_pos,
+            )
         except Exception as exc:  # noqa: BLE001
             ctx.log("storyboard.controle_indisponible", level="warn", scene=script.scenes[pos].index, erreur=str(exc)[:300])
             return None

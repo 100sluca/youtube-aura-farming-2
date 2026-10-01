@@ -474,6 +474,21 @@ def _heard(d: dict[str, Any] | None, expected: str) -> Heard:
     )
 
 
+def mouth_seconds(text: str, lang: str, dialogue: dict[str, Any] | None) -> float | None:
+    """Combien de temps la bouche du clip dit la réplique (de sa première à sa dernière phrase), d'après la transcription
+    gardée avec le clip (assets.meta.dialogue) ; None si le clip ne l'a pas dite de façon reconnaissable. Sert de durée
+    visée à un moteur de voix qui sait régler son débit (Gemini, docs/41 §8) : une réplique dans ×0,8-×1,4 de la bouche
+    se cale sans que la voix sonne faux."""
+    heard = _heard(dialogue, text)
+    if not dialogue or heard.ratio < HEARD_MIN:
+        return None
+    units = unit_times(text, heard.words, lang)
+    if not units:
+        return None
+    regions = line_regions(units, heard.speech)
+    return round(regions[-1][1] - regions[0][0], 2) if regions else None
+
+
 def _digest(path: Path) -> str:
     import hashlib
 

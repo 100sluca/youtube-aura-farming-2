@@ -7,8 +7,10 @@ Deux sortes de moteurs :
   scripts/install_tts.ps1) et lancés en sous-processus avec leur script tts_runners/<moteur>.py : le modèle est chargé
   une fois pour toutes les scènes d'une vidéo, puis toute sa mémoire est rendue à la fin du sous-processus. Avant un
   moteur sur GPU, on vide ComfyUI (les deux ne tiennent pas ensemble dans 8 Go).
-Libellés, licences, voix proposées et leurs paramètres : workflows/catalog.json, sections « tts » et « voices ».
-Sortie : échantillons mono float32 et leur fréquence. La vitesse vient de channels.voice_speed : native chez Kokoro,
+Libellés, licences, voix proposées et leurs paramètres : workflows/catalog.json, sections « tts » et « voices » ; un
+moteur marqué « voices_from » reprend les voix d'un autre (« qwen3 » : références et descriptions des voix dessinées).
+Ton des répliques d'un drame (« whispers, trembling ») : transmis au moteur, qui s'en sert s'il sait jouer une émotion
+(docs/41-voix-emotion.md). Sortie : échantillons mono float32 et leur fréquence. La vitesse vient de channels.voice_speed : native chez Kokoro,
 appliquée après coup (FFmpeg atempo, hauteur conservée) pour un moteur qui ne sait pas la régler.
 Les scripts écrivent les nombres en chiffres (ils s'affichent ainsi) : chaque moteur reçoit le texte avec les nombres en
 toutes lettres (worker/numbers.py : spoken, « 1992 » → « mille neuf cent quatre-vingt-douze »).
@@ -19,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -81,6 +84,8 @@ class TTS(Protocol):
         speed: float,
         on_progress: Progress | None = None,
         seed: int | None = None,
+        tones: Sequence[str] | None = None,
+        targets: Sequence[float | None] | None = None,
     ) -> list[Speech]: ...
 
 
@@ -125,6 +130,8 @@ class KokoroTTS:
         speed: float,
         on_progress: Progress | None = None,
         seed: int | None = None,
+        tones: Sequence[str] | None = None,  # Kokoro ne joue pas d'émotion
+        targets: Sequence[float | None] | None = None,  # ni ne règle son débit sur la bouche d'un clip
     ) -> list[Speech]:
         out = []
         for i, text in enumerate(texts):
@@ -153,10 +160,18 @@ class VenvTTS:
         self.gpu = bool(spec.get("gpu", True))
         self.home = Path(settings.yt2_home)
         self.engine_dir = self.home / spec.get("dir", f"tts/{name}")
-        # « python » : interpréteur installé ailleurs que <dossier du moteur>/venv (chemin absolu)
-        self.python = Path(spec["python"]) if spec.get("python") else self.engine_dir / "venv" / "Scripts" / "python.exe"
+        # « python » : interpréteur installé ailleurs que <dossier du moteur>/venv (chemin absolu), « worker » = celui du
+        # worker (moteur en ligne : rien à installer, clés lues en base)
+        python = spec.get("python")
+        if python == "worker":
+            self.python = Path(sys.executable)
+        elif python:
+            self.python = Path(python)
+        else:
+            self.python = self.engine_dir / "venv" / "Scripts" / "python.exe"
         self.runner = RUNNERS_DIR / spec.get("runner", f"{name}.py")
         self.online = False  # True : le script peut télécharger ses modèles (installation, `yt2 voice say --online`)
+        self.last_result: dict[str, Any] = {}  # result.json du dernier appel (chargement, temps par texte : banc d'essai)
 
     def check(self) -> None:
         if not self.python.exists():
@@ -176,9 +191,12 @@ class VenvTTS:
         speed: float,
         on_progress: Progress | None = None,
         seed: int | None = None,
+        tones: Sequence[str] | None = None,
+        targets: Sequence[float | None] | None = None,
     ) -> list[Speech]:
         """`seed` : une autre prise (Qwen3-TTS tire sa voix au hasard, graine fixe par voix sinon) ; sans effet sur un
-        moteur déterministe."""
+        moteur déterministe. `tones` : comment dire chaque texte (en anglais), ignoré d'un moteur sans émotion.
+        `targets` : durée visée de chaque texte (s, la bouche du clip ; None : libre), pour un moteur qui règle son débit."""
         import soundfile as sf
 
         from .. import cancel
@@ -186,13 +204,15 @@ class VenvTTS:
         self.check()
         if self.gpu:
             _comfy_idle_then_free(self.settings, on_progress, cancel)
-        entry = voice_entry(self.catalog, f"{self.name}:{voice}") or {}
+        entry = voice_entry(self.catalog, f"{self.spec.get('voices_from') or self.name}:{voice}") or {}
         tmp_root = self.settings.data_dir / "tmp"
         tmp_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=f"tts_{self.name}_", dir=tmp_root) as tmp:
             work = Path(tmp)
             request = {
                 "texts": [spoken(t, lang) for t in texts],
+                "tones": [" ".join(str(t or "").split()) for t in tones or []],
+                "targets": [round(float(t), 2) if t else None for t in targets or []],
                 "voice": voice,
                 "voice_params": entry.get("params") or {},
                 "lang": lang,
@@ -205,6 +225,7 @@ class VenvTTS:
             (work / "request.json").write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
             self._run(work, len(texts), on_progress, cancel)
             result = json.loads((work / "result.json").read_text(encoding="utf-8"))
+            self.last_result = result
             rate = int(result["rate"])
             speeches = []
             for name in result["files"]:
@@ -317,6 +338,16 @@ def get_engine(settings: Settings, engine: str) -> TTS:
     if not spec or spec.get("runtime") != "venv":
         raise ValueError(f"Moteur de voix inconnu : « {engine} » (services/worker/workflows/catalog.json, section tts)")
     return VenvTTS(settings, engine, spec, catalog)
+
+
+def acting_engines(catalog: dict[str, Any], engine: str, acting: str) -> list[str]:
+    """Moteurs qui disent une voix de drame selon le jeu des voix choisi dans Réglages (catalog.json → acting, docs/41) :
+    une voix du moteur d'origine du jeu (« from » : les voix Qwen dessinées) passe au moteur du jeu, puis à son repli
+    s'il échoue (quota Gemini épuisé) ; les autres voix, et le jeu « neutral », gardent leur moteur."""
+    spec = (catalog.get("acting") or {}).get(acting) or {}
+    if not spec.get("engine") or engine != spec.get("from", "qwen3"):
+        return [engine]
+    return [spec["engine"], *([spec["fallback"]] if spec.get("fallback") else [])]
 
 
 def resolve_voice(settings: Settings, voices: dict[str, str], lang: str) -> tuple[TTS, str]:

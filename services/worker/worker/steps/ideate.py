@@ -21,7 +21,14 @@ from ..prompts import active_prompt, prompt_text
 from ..providers.llm import get_llm
 from ..recipes import IDEA_GUIDES
 from ..series import Series, active_series, get_series, weighted_counts
-from ..sources.wikipedia import SourceDoc, WikipediaClient, cached_material, material_text, sources_for
+from ..sources.wikipedia import (
+    SourceDoc,
+    WikipediaClient,
+    cached_material,
+    daily_material,
+    material_text,
+    sources_for,
+)
 from ..storytelling import RULES, lint_hook
 from ..strategy import active_strategies, guidance_text
 from .base import Context, Step
@@ -180,14 +187,28 @@ class IdeateStep(Step):
             for ref in (r["sources"] or [])
         }
         client = WikipediaClient(lang=s.lang, user_agent=ctx.settings.effective_wikipedia_user_agent)
-        return cached_material(
+        max_docs = int(s.source_config.get("max_docs", 6))
+        docs = cached_material(
             client,
             s.source_config,
             date.today(),
             ctx.settings.data_dir / "sources" / "wikipedia",
             exclude_urls={u for u in used if u},
-            max_docs=int(s.source_config.get("max_docs", 6)),
+            max_docs=max_docs,
         )
+        if docs or not ctx.job.payload.get("autopilot"):
+            return docs
+        # Pilote automatique (docs/46) : la matière du jour est déjà exploitée (30/09 : idées du matin) ; on en cherche
+        # d'autre, sans cache : toutes les recherches de la série et des pages au hasard, pas les flux du jour
+        cfg = s.source_config
+        fresh = {
+            **cfg,
+            "feeds": [],
+            "queries_per_day": len(cfg.get("queries") or []),
+            "random": max(8, int(cfg.get("random", 0))),
+        }
+        ctx.log("ideate.matiere_fraiche", series=s.slug)
+        return daily_material(client, fresh, date.today(), {u for u in used if u}, max_docs)
 
 
 DEFAULT_PROMPT = """Tu es le stratège éditorial d'un réseau de chaînes YouTube Shorts. Chaque série a sa ligne

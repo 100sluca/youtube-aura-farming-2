@@ -30,7 +30,7 @@ const WEIGHTS: Partial<Record<JobType, number>> = { script: 10, storyboard: 15, 
 const DEFAULT_S: Partial<Record<JobType, number>> = {
   script: 240, storyboard: 360, render: 5, generate_clip: 300, tts: 20, seo: 60, assemble: 60, qa: 15,
   ideate: 90, import_channel: 60, sync_metrics: 60, sync_retention: 20, sync_comments: 20, strategy: 90, improve: 120, upload: 120,
-  tiktok_publish: 90, sync_tiktok: 10,
+  tiktok_publish: 90, sync_tiktok: 10, instagram_publish: 90, paf_publish: 90,
 };
 /** Jobs interrompus par une pause ou un arrêt (SQL pause_productions, cancel_production) : ils repartent à la reprise. */
 const PAUSE_MARK = "Mise en pause";

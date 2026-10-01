@@ -49,7 +49,9 @@ export type JobType =
   | "montage_preview"
   | "analyze"
   | "tiktok_publish"
-  | "sync_tiktok";
+  | "sync_tiktok"
+  | "instagram_publish"
+  | "paf_publish";
 
 /** Série de contenu (table series, migration 0003) : un « thème » dans l'interface. */
 export interface Series {

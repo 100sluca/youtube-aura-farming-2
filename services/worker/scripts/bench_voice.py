@@ -105,6 +105,7 @@ class VramWindow:
     def __init__(self) -> None:
         self.lo: int | None = None
         self.hi: int | None = None
+        self.best = 0  # plus forte hausse vue : le moteur rend sa mémoire en sortant, avant que le banc ne ferme la fenêtre
         self._stop = threading.Event()
 
     def __enter__(self) -> VramWindow:
@@ -119,6 +120,7 @@ class VramWindow:
                     self.lo = self.hi = m
                 else:
                     self.hi = max(self.hi or m, m)
+                self.best = max(self.best, (self.hi or m) - (self.lo or m))
             if self._stop.wait(0.5):
                 return
 
@@ -127,7 +129,7 @@ class VramWindow:
 
     @property
     def delta_mb(self) -> int | None:
-        return None if self.lo is None or self.hi is None else self.hi - self.lo
+        return None if self.lo is None else self.best
 
 
 class ProcessRam:

@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     worker_job_types: str = (
         "script,storyboard,render,generate_clip,tts,seo,assemble,qa,upload,ideate,improve,strategy,"
         "sync_metrics,sync_retention,sync_comments,import_channel,voice_preview,montage_preview,analyze,tiktok_publish,"
-        "sync_tiktok"
+        "sync_tiktok,instagram_publish,paf_publish"
     )
     data_dir: Path = Path("./data")
     dry_run: bool = False

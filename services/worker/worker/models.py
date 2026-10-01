@@ -43,6 +43,8 @@ JobType = Literal[
     "analyze",  # agent analyste des performances (migration 0015, docs/25)
     "tiktok_publish",  # publication sur TikTok par Zernio (migration 0023, docs/36)
     "sync_tiktok",  # statistiques TikTok par Zernio (migration 0025, docs/39)
+    "instagram_publish",  # Reels Instagram par Zernio (migration 0035, docs/48)
+    "paf_publish",  # « Paf, j'achète » : la vidéo du vendredi (migration 0038, docs/50)
 ]
 
 

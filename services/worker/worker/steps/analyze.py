@@ -125,7 +125,13 @@ Ta mission : comprendre pourquoi certaines vidéos marchent et d'autres non, pui
 appliqueront aux prochaines vidéos.
 1. videos : pour chaque vidéo (sa référence V1, V2…), pourquoi elle a ce verdict, en une ou deux phrases ; worked : ce
    qui a marché ; missed : ce qui a manqué. Regarde d'abord les deux premières secondes (premier plan, titre
-   d'accroche, promesse du titre), puis le rythme (durée des plans), le sujet, la durée totale et la fin.
+   d'accroche, promesse du titre), puis le rythme (durée des plans), le sujet, la durée totale et la fin. Pour un
+   récit narré, la « rétention phrase par phrase » donne l'audience au début de chaque phrase dite, et « plus fortes
+   pertes » les phrases pendant lesquelles on part le plus vite : dis pourquoi on décroche À CE MOMENT (une phrase qui
+   n'apporte rien, un mot qu'un ado ne comprend pas, un passage sans enjeu, une promesse déjà tenue, une fin qui
+   traîne) et tires-en une leçon « script » quand plusieurs vidéos décrochent pour la même raison. Une « variante
+   d'accroche » a les mêmes images et le même récit que sa vidéo d'origine, seules les 2 premières phrases changent :
+   compare l'audience à 3 s et la courbe des deux et dis quelle accroche a gagné et pourquoi.
 2. patterns : au plus 5 différences entre les vidéos qui marchent et les autres, chacune avec sa preuve chiffrée tirée
    des données (evidence) et une confiance (faible, moyenne, bonne).
 3. lessons : au plus 6 règles concrètes, à l'impératif, applicables telles quelles :
