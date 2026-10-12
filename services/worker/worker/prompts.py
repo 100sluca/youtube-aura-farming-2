@@ -19,9 +19,23 @@ from uuid import UUID
 
 def code_prompts() -> dict[str, str]:
     """Le texte du code de chaque clé. Imports tardifs : ces modules importent eux-mêmes celui-ci."""
+    from .arcs import ARC_PROMPT
+    from .discovery import CLASSIFY_PROMPT as DISCOVER_CLASSIFY
     from .keyframe_qc import CLIP_SYSTEM, QC_SYSTEM
+    from .longform import prompts as long_prompts
     from .recipes import HOOK_RULES, IDEA_GUIDES, SCRIPT_PROMPTS
     from .reinvent import REWRITE_PROMPT
+    from .research_agents import ADAPT_PROMPT as RESEARCH_ADAPT
+    from .research_agents import ASK_PROMPT as RESEARCH_ASK
+    from .research_agents import BRIEF_PROMPT as RESEARCH_BRIEF
+    from .research_agents import CLASSIFY_PROMPT as RESEARCH_CLASSIFY
+    from .research_agents import WATCH_PROMPT as RESEARCH_WATCH
+    from .rewrite import HOOK_PROMPT as HOOK_REWRITE
+    from .rewrite import REWRITE_PROMPT as STORY_REWRITE
+    from .scenario import ADAPT_PROMPT as SCENARIO_ADAPT
+    from .scenario import REVIEW_PROMPT as SCENARIO_REVIEW
+    from .scenario import SCRIPT_PROMPT as SCENARIO_SCRIPT
+    from .sfx_pick import PICK_PROMPT as SFX_PICK
     from .steps.analyze import ANALYST_PROMPT
     from .steps.ideate import DEFAULT_PROMPT as IDEA
     from .steps.improve import IMPROVE_PROMPT
@@ -35,14 +49,29 @@ def code_prompts() -> dict[str, str]:
         # prompts système des agents
         "idea": IDEA,
         "script": STORY_PROMPT,  # le conteur des récits : l'histoire en entier, avant le découpage (docs/37)
+        "arc_outline": ARC_PROMPT,  # le showrunner des mini-séries : l'histoire en 3 parties (docs/52)
         "script_review": REVIEW_PROMPT,  # relecture du récit, checklist du storytelling (docs/24, docs/37)
         "script_shots": SHOTS_PROMPT,  # le réalisateur des récits : les plans de chaque scène (docs/37)
         **{f"script_{recipe}": text for recipe, text in SCRIPT_PROMPTS.items()},  # formats visuels (docs/15)
+        # l'équipe des scénarios de Luca (docs/59) : metteur en scène, scénariste, relecteur de fidélité
+        "scenario_adapt": SCENARIO_ADAPT,
+        "script_scenario": SCENARIO_SCRIPT,
+        "scenario_review": SCENARIO_REVIEW,
         "scene_rewrite": REWRITE_PROMPT,  # scène réinventée pendant la revue du storyboard (docs/27)
+        "script_rewrite": STORY_REWRITE,  # récit réécrit sur les plans d'une vidéo faite (docs/49 §6)
+        "sfx_pick": SFX_PICK,  # le bruiteur des drames : bruitages plan par plan (docs/49 §10)
+        "hook_rewrite": HOOK_REWRITE,  # accroche et promesse réécrites seules, Retoucher → Récit (docs/53)
         "seo": SEO,
         "strategy": STRATEGY,
         "improve": IMPROVE_PROMPT,
         "analyst": ANALYST_PROMPT,  # analyse des vidéos publiées, leçons à valider (docs/25)
+        # page Recherche (docs/60) : classeur des Shorts trouvés, analyste vidéo (Gemini les regarde), stratège
+        "research_classify": RESEARCH_CLASSIFY,
+        "research_watch": RESEARCH_WATCH,
+        "research_brief": RESEARCH_BRIEF,
+        "research_adapt": RESEARCH_ADAPT,  # version fidèle en français d'un Short qui a marché (docs/64 §3)
+        "research_ask": RESEARCH_ASK,  # le stratège répond aux questions de Luca (docs/64 §4)
+        "research_discover": DISCOVER_CLASSIFY,  # Découverte : chaînes qui percent, niche et effort (docs/63 §9)
         "keyframe_qc": QC_SYSTEM,
         "clip_qc": CLIP_SYSTEM,
         # consignes communes, ajoutées au message de l'agent avec les données de la tâche
@@ -51,6 +80,23 @@ def code_prompts() -> dict[str, str]:
         **{f"guide_{recipe}": text for recipe, text in IDEA_GUIDES.items()},
         "rules_hook_title": HOOK_RULES,
         "hint_continuity": CONTINUITY_HINT,
+        # vidéos longues narrées par Luca (docs/63) : sujets, plan, conteur, relecteur, réalisateur, publication, contrôles
+        "long_idea": long_prompts.IDEA_PROMPT,
+        "long_outline": long_prompts.OUTLINE_PROMPT,
+        "long_writer": long_prompts.WRITER_PROMPT,
+        "long_review": long_prompts.REVIEW_PROMPT,
+        "long_director": long_prompts.DIRECTOR_PROMPT,
+        "long_packaging": long_prompts.PACKAGING_PROMPT,
+        "long_image_check": long_prompts.IMAGE_CHECK_PROMPT,
+        "long_thumb_check": long_prompts.THUMB_CHECK_PROMPT,
+        "long_factcheck": long_prompts.FACTCHECK_PROMPT,
+        "long_thumbs": long_prompts.THUMBS_PROMPT,
+        "long_thumb_style": long_prompts.THUMB_STYLE_PROMPT,
+        "guide_thumb_niche": long_prompts.GUIDE_THUMB_NICHE,
+        "rules_long": long_prompts.RULES_LONG,
+        "rules_long_images": long_prompts.IMAGE_RULES_LONG,
+        "rules_thumbnail": long_prompts.THUMB_RULES,
+        **{f"guide_long_{fmt}": text for fmt, text in long_prompts.GUIDES.items()},
     }
 
 

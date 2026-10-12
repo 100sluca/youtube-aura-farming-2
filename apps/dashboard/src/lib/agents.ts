@@ -93,7 +93,11 @@ export async function getPromptState(key: string): Promise<PromptState> {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Scénariste qui écrit pour un thème, d'après sa recette (series.recipe). */
-function scriptAgent(recipe: string | null | undefined): string {
+function scriptAgent(recipe: string | null | undefined, variant?: string | null, slug?: string | null): string {
+  if (slug === "mes_scenarios") return "script_scenario"; // scénarios de Luca : son équipe (docs/59)
+  if (recipe === "timelapse" && variant === "insolite") return "script_timelapse_insolite"; // lieux insolites (docs/51)
+  if (recipe === "quote" && variant === "auteur") return "script_quote_auteur"; // citations d'auteurs, Wikiquote (docs/70)
+  if (recipe === "quote") return "script_quote"; // citations (docs/58)
   return recipe === "timelapse" ? "script_timelapse" : recipe === "tour" ? "script_tour" : recipe === "drama" ? "script_drama" : "script";
 }
 
@@ -101,13 +105,17 @@ type JobRow = {
   type: JobType;
   status: string;
   finished_at: string | null;
-  production: { series: { recipe: string | null } | null } | null;
+  production: { series: { slug?: string | null; recipe: string | null; variant?: string | null } | null } | null;
   /** Job storyboard d'une scène réinventée (docs/27) : payload.reinvent, puis payload.reinvented une fois réécrite. */
   asked?: unknown;
   rewritten?: unknown;
+  /** Job rewrite (Retoucher → Récit, docs/53) : seule la proposition appelle le conteur ; mode story ou hook. */
+  rewrite_action?: string | null;
+  rewrite_mode?: string | null;
 };
 
-const JOB_COLUMNS = "type, status, finished_at, asked:payload->reinvent, rewritten:payload->reinvented, production:productions(series:series(recipe))";
+const JOB_COLUMNS =
+  "type, status, finished_at, asked:payload->reinvent, rewritten:payload->reinvented, rewrite_action:payload->>action, rewrite_mode:payload->>mode, production:productions(series:series(slug, recipe, variant:source_config->>variant))";
 
 /** Par agent : tâches terminées et en échec sur 7 jours, en cours, en file ; verdicts des contrôleurs. */
 export async function getAgentActivity(): Promise<Record<string, AgentActivity>> {
@@ -129,15 +137,18 @@ export async function getAgentActivity(): Promise<Record<string, AgentActivity>>
   const out: Record<string, AgentActivity> = {};
   const entry = (key: string) => (out[key] ??= { done: 0, failed: 0, running: 0, queued: 0, lastAt: null });
   const agentOf = (j: JobRow) => {
-    if (j.type === "script") return scriptAgent(j.production?.series?.recipe);
+    if (j.type === "script") return scriptAgent(j.production?.series?.recipe, j.production?.series?.variant, j.production?.series?.slug);
     if (j.type === "storyboard") return j.asked || j.rewritten ? "scene_rewrite" : undefined; // les autres ne font que des images
+    if (j.type === "rewrite") return j.rewrite_action === "make" ? undefined : j.rewrite_mode === "hook" ? "hook_rewrite" : "script_rewrite";
     return AGENTS.find((a) => a.job === j.type && !a.vision)?.key;
   };
   for (const j of [...((recent.data ?? []) as unknown as JobRow[]), ...((live.data ?? []) as unknown as JobRow[])]) {
     const key = agentOf(j);
     if (!key) continue;
     // le relecteur et le réalisateur passent dans chaque tâche du conteur des histoires (worker/steps/script.py, docs/37)
-    for (const k of key === "script" ? [key, "script_review", "script_shots"] : [key]) {
+    // l'équipe d'un scénario de Luca (docs/59) : metteur en scène, scénariste et relecteur dans la même tâche
+    const team = key === "script" ? [key, "script_review", "script_shots"] : key === "script_scenario" ? ["scenario_adapt", key, "scenario_review"] : [key];
+    for (const k of team) {
       const e = entry(k);
       if (j.status === "done") e.done += 1;
       else if (j.status === "failed") e.failed += 1;

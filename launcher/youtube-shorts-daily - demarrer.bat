@@ -179,7 +179,8 @@ if defined FRONT_RUNNING (
     echo Dashboard deja lance ^(processus %FRONT_RUNNING%^) : il est reutilise.
 ) else (
     echo Lancement du dashboard sur http://localhost:%PORT%
-    start "Dashboard - YouTube 2.0" /D "%FRONT%" cmd /k npm run dev -- --port %PORT%
+    rem version de production, reconstruite toute seule quand le code change : launcher\dashboard.ps1, docs/56
+    start "Dashboard - YouTube 2.0" /D "%ROOT%" cmd /k powershell.exe -NoProfile -ExecutionPolicy Bypass -File "launcher\dashboard.ps1" -Port %PORT%
     timeout /t 8 /nobreak >nul
 )
 start "" http://localhost:%PORT%

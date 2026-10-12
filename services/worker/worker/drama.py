@@ -15,7 +15,7 @@ Ce qui la distingue d'un récit narré :
   est refait une fois ;
 - pas de voix de synthèse (format B) : au montage, le son des clips devient la piste de voix (la musique baisse
   dessous), et le modèle de montage traite le drame comme un récit (titre d'accroche, sous-titres, musique).
-Les fonctions de ce module sont pures (sauf transcribe et build_dialogue_track) : le script, le storyboard, les clips et
+Les fonctions de ce module sont pures (sauf transcribe, isolate_voices et build_dialogue_track) : le script, le storyboard, les clips et
 le montage les appellent.
 """
 
@@ -28,11 +28,12 @@ import re
 import subprocess
 import tempfile
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Any
 
 from .hooktitle import clean_hook, lint_hook_title
+from .image_text import clean_script
 from .models import CastMember, NarrationTimeline, SceneTiming, ScriptScene, ScriptV1, WordTiming
 from .numbers import script_to_digits, spoken, to_digits, tokens
 from .speaker import legend, listeners, shot_members
@@ -41,19 +42,32 @@ from .subtitles import distribute_words
 
 RECIPE = "drama"
 CLIP_S = 5.1  # longueur utile d'un clip MiniMax H3 (124 images à 24 i/s = 5,17 s) : une scène n'en dure jamais plus
-SCENE_S = (2.0, CLIP_S)
+# Rythme (Luca, 12/10, docs/70) : nos drames gardaient 20 à 46 % de silence et des blancs de 2,5 à 4,4 s, les modèles
+# TikTok enchaînent ≈ 25 répliques de 2 à 3 s (docs/51). Une scène finit dès sa réplique dite, un plan muet est court
+SCENE_S = (1.5, CLIP_S)
+SILENT_S = (1.2, 2.2)  # plan sans réplique d'un drame en dialogues (réaction, geste, objet de la preuve)
+TIGHT_SHARE = 0.5  # part des plans parlés au-delà de laquelle un plan muet est une réaction courte (silent_bounds)
+SCENE_MIN_S = 1.2
 # Débit d'une réplique dite par H3, mesuré le 28/09 (docs/31 §8) : 7 mots en ≈ 3 s, 9 mots en 4,2 s
 DIALOGUE_WPS = 2.5
-LINE_LEAD_S = 0.8  # temps d'une scène avant et après sa réplique (entrée, respiration)
-LINE_WORDS_MAX = 12
+# Voix des clips : H3 parle à ≈ 2,2 mots/s avec des pauses (« La fille du gardien », 12/10), les modèles TikTok à 2,5
+# à 3 : chaque clip est joué un peu plus vite, image et voix ensemble (atempo garde le timbre), docs/70
+PACE = 1.12
+LINE_LEAD_S = 0.4  # temps prévu d'une scène autour de sa réplique (le montage coupe sur la voix entendue)
+LINE_WORDS_MAX = 10
 CHARACTERS_MAX = 3  # fiches données en référence à une image : au-delà, les personnages se mélangent
 CAST_RANGE = (2, 6)
-SCENES_RANGE = (10, 24)
-DIALOGUE_SHARE_MIN = 0.6  # part des plans qui ont une réplique
+SCENES_RANGE = (14, 30)
+DIALOGUE_SHARE_MIN = 0.75  # part des plans qui ont une réplique
 LOOK_WORDS_MIN = 12
 HEARD_MIN = 0.45  # ressemblance minimale entre la réplique écrite et ce que Whisper entend dans le clip
 DIALOGUE_RETRIES = 1  # nouvel essai d'un clip dont la réplique n'est pas dite
-TAIL_S = 0.35  # après le dernier mot, avant la coupe
+TAIL_S = 0.3  # après le dernier mot, avant la coupe
+LINE_IN_S = 0.35  # voix des clips : le plan commence ce temps avant la réplique quand des mots en trop la précèdent
+# voix des clips : H3 ouvre la bouche 0,5 à 1,7 s après le début du clip (docs/38) ; ce silence est coupé, le plan
+# commence ce temps avant le premier mot entendu
+HEAD_LEAD_S = 0.2
+EXTRA_GAIN = 0.04  # gain de ressemblance qui fait écarter des mots entendus en trop autour d'une réplique
 
 LANG_NAMES = {"fr": "French", "en": "English"}
 # Le film, en tête du prompt du clip (le style de l'image est déjà dans l'image de départ)
@@ -61,7 +75,11 @@ FILM = {
     "pixar_fruit": "3D animated Pixar-style film with anthropomorphic fruit characters",
     "pixar_human": "3D animated Pixar-style film",
     "dreamworks_animal": "3D animated DreamWorks-style film with anthropomorphic animal characters",
+    # Scénarios de Luca en prise de vue réelle (docs/59)
+    "cinematic_real": "Photorealistic live-action film shot in a real home, real people and real animals",
 }
+# Style du clip d'un drame : l'image de départ porte le style, le clip dit seulement s'il est animé ou filmé
+CLIP_STYLE = {"cinematic_real": "realistic_motion"}
 SHEET = (
     "Character design reference sheet: one single character, full body, standing, facing the viewer in a relaxed "
     "three-quarter pose, the whole character visible from head to shoes, centered, plain light grey studio background, "
@@ -109,6 +127,14 @@ def unlabel(text: str, cast: Sequence[CastMember]) -> str:
         return text
     rest = m.group(2).strip()
     return q.group(1).strip() if (q := _QUOTED.match(rest)) else rest
+
+
+def silent_bounds(script: ScriptV1) -> tuple[float, float]:
+    """Durée d'un plan sans réplique : courte dans un drame en dialogues (une réaction, un geste), celle d'une action
+    dans un scénario surtout muet (docs/59 : le chien qui pousse la porte du frigo avec sa truffe)."""
+    n = len(script.scenes)
+    talking = sum(1 for sc in script.scenes if sc.lines)
+    return SILENT_S if n and talking / n >= TIGHT_SHARE else SCENE_S
 
 
 def line_duration(text: str) -> float:
@@ -171,10 +197,15 @@ def normalize(script: ScriptV1) -> ScriptV1:
         chars = list(dict.fromkeys([*speakers, *(resolve(k) for k in sc.characters)]))
         sc.characters = [k for k in chars if k][:CHARACTERS_MAX]
         text = " ".join(ln.text for ln in lines)
-        sc.duration_s = line_duration(text) if text else _clamp(sc.duration_s, SCENE_S)
+        if text:
+            sc.duration_s = line_duration(text)
         sc.narration = {lang: text} if text else {}  # type: ignore[dict-item]
+    silent = silent_bounds(s)
+    for sc in s.scenes:
+        if not sc.lines:
+            sc.duration_s = _clamp(sc.duration_s, silent)
     s.hook_title = {k: clean_hook(v) for k, v in s.hook_title.items() if clean_hook(v)}  # type: ignore[misc]
-    return script_to_digits(s)
+    return clean_script(script_to_digits(s), lang)  # texte écrit dans l'image : plans sans réplique, 2 au plus (docs/57)
 
 
 def lint(script: ScriptV1, langs: Sequence[str], target_duration_s: float | None = None) -> list[str]:
@@ -182,7 +213,7 @@ def lint(script: ScriptV1, langs: Sequence[str], target_duration_s: float | None
     issues: list[str] = []
     n = len(script.scenes)
     if not SCENES_RANGE[0] <= n <= SCENES_RANGE[1]:
-        issues.append(f"{n} scènes : {SCENES_RANGE[0]} à {SCENES_RANGE[1]} pour un drame (une réplique par plan de 2 à 5 s)")
+        issues.append(f"{n} scènes : {SCENES_RANGE[0]} à {SCENES_RANGE[1]} pour un drame (une réplique par plan de 2 à 3 s)")
     if not CAST_RANGE[0] <= len(script.cast) <= CAST_RANGE[1]:
         issues.append(
             f"cast : {len(script.cast)} personnages, il en faut {CAST_RANGE[0]} à {CAST_RANGE[1]} "
@@ -220,6 +251,8 @@ def lint(script: ScriptV1, langs: Sequence[str], target_duration_s: float | None
             issues.append(f"{tag} : motion_prompt manquant (ce qui bouge pendant le plan, en anglais, sans la réplique)")
         if not sc.characters and sc.lines:
             issues.append(f"{tag} : réplique sans personnage à l'image")
+        if i and not sc.lines and not script.scenes[i - 1].lines:
+            issues.append(f"{tag} : deux plans muets de suite (temps mort) ; la réaction passe par la réplique suivante")
     if n and talking / n < DIALOGUE_SHARE_MIN:
         issues.append(
             f"répliques sur {talking} plans sur {n} : un drame se raconte en dialogues "
@@ -240,9 +273,23 @@ def lint(script: ScriptV1, langs: Sequence[str], target_duration_s: float | None
 # ---------------------------------------------------------------------------
 
 
-def sheet_prompt(member: CastMember) -> str:
-    """Fiche d'un personnage : lui seul, en pied, sur fond neutre ; elle sert de référence à chaque plan."""
-    return SHEET.format(name=member.name, look=member.look.rstrip("."))
+# Vrai animal à quatre pattes (scénarios de Luca, docs/59) : « standing … to shoes » le dessinait debout sur ses pattes
+# arrière (Biscuit, 02/10), et chaque plan reprend la fiche
+SHEET_FOUR_LEGS = (
+    "Character design reference sheet: one single animal, full body, standing naturally on all four paws in a relaxed "
+    "three-quarter side view, the whole animal visible from nose to tail, centered, plain light grey studio background, "
+    "soft even studio lighting. {name}: {look}"
+)
+FOUR_LEGS = re.compile(r"\b(four[- ]legged|on all fours|on all four paws)\b", re.I)
+
+
+def sheet_prompt(member: CastMember, style_preset: str | None = None) -> str:
+    """Fiche d'un personnage : lui seul, en pied, sur fond neutre ; elle sert de référence à chaque plan. Prise de vue
+    réelle (docs/59) : une photo de référence, « character design » tirait vers le dessin."""
+    sheet = SHEET_FOUR_LEGS if FOUR_LEGS.search(member.look) else SHEET
+    if style_preset in CLIP_STYLE:
+        sheet = sheet.replace("Character design reference sheet", "Reference photograph").replace("to shoes", "to feet")
+    return sheet.format(name=member.name, look=member.look.rstrip("."))
 
 
 # Tout-petit (chiot, chaton, enfant de moins de 10 ans) : sa fiche, seule sur fond gris, ne dit rien de sa taille, et le
@@ -297,7 +344,14 @@ def clip_prompt(
         tone = [t.strip() for t in ln.tone.rstrip(".").split(",") if t.strip() and t.strip().lower() not in voice.lower()]
         how = f", {', '.join(tone)}" if tone else ""
         said = spoken(ln.text, lang)  # « 50 000 » → « cinquante mille » : la voix dit les nombres en lettres
-        parts.append(f'{who} says in {LANG_NAMES.get(lang, "French")}, in {voice}{how}: "{said}"')
+        # « Ma fille… première » : H3 marquait 1 à 1,5 s de silence sur les points de suspension (docs/70) ; le
+        # sous-titre les garde, la voix les dit comme une virgule
+        said = re.sub(r"\s*(…|\.\.\.)\s*(?=\S)", ", ", said).replace("…", ".").replace(", ,", ",")
+        # H3 attendait 0,5 à 1,7 s avant de parler et traînait (docs/38, docs/70) : il parle dès le début du plan
+        parts.append(
+            f"Right at the start of the shot, {who} says in {LANG_NAMES.get(lang, 'French')}, in {voice}{how}, "
+            f'at a brisk, natural pace, without pausing: "{said}"'
+        )
         parts.append(f"Only {who} speaks, lips moving with the words.")
         parts.append(listeners(members))
         # H3 écrivait parfois la réplique à l'image, comme un sous-titre (« Mamie Pomme », 29/09) : elle s'entend, c'est tout
@@ -526,37 +580,92 @@ def align_words(text: str, heard: Sequence[dict[str, Any]], lang: str, offset: f
     ]
 
 
-def dialogue_timeline(script: ScriptV1, lang: str, clips: Sequence[dict[str, Any]]) -> NarrationTimeline:
-    """Timeline de la vidéo d'après les clips (videos.timeline, lue par le montage comme celle d'une narration) : chaque
-    scène dure sa durée prévue, allongée jusqu'au dernier mot entendu, jamais plus que son clip ; mots de la réplique
-    calés sur la voix. `clips[i]` : {"duration": durée du clip, "dialogue": assets.meta.dialogue ou None}."""
+def line_window(text: str, heard: Sequence[dict[str, Any]]) -> tuple[int, int]:
+    """Mots entendus qui forment la réplique : (premier, après le dernier) dans `heard`. Le modèle vidéo ajoute parfois
+    des mots avant ou après la réplique (« Ah, Mellé, t'as porté… », « Les développeurs, au lieu de voir, assez pour une
+    porte », « Personne ne viendra, je l'ai ») : les mots du bord sont écartés quand la ressemblance avec la réplique
+    écrite y gagne au moins EXTRA_GAIN ; à ressemblance égale, la fenêtre la plus large."""
+    n = len(heard)
+    if n < 2 or not text.strip():
+        return 0, n
+    said = [str(h.get("w", "")) for h in heard]
+    full = best = heard_ratio(text, " ".join(said))
+    window = (0, n)
+    for i in range(n):
+        for j in range(n, i, -1):
+            r = heard_ratio(text, " ".join(said[i:j]))
+            if r > best + 1e-9:
+                best, window = r, (i, j)
+    return window if best >= full + EXTRA_GAIN else (0, n)
+
+
+def line_cut(text: str, heard: Sequence[dict[str, Any]], native: float) -> tuple[float, list[dict[str, Any]], float | None]:
+    """Voix des clips : (début du clip coupé, mots de la réplique recalés sur ce début, fin imposée de la scène ou None).
+    Le silence avant la réplique est coupé : le clip commence HEAD_LEAD_S avant elle (LINE_IN_S quand des mots en trop
+    la précèdent) ; des mots en trop après : la scène finit avant eux."""
+    i, j = line_window(text, heard)
+    lead = LINE_IN_S if i > 0 else HEAD_LEAD_S
+    head = round(max(0.0, min(float(heard[i]["start"]) - lead, native - 1.0)), 3)
+    kept = [{**h, "start": float(h["start"]) - head, "end": float(h["end"]) - head} for h in heard[i:j]]
+    end = None
+    if j < len(heard):  # coupe après le dernier mot de la réplique, avant le premier mot en trop
+        last, extra = kept[-1]["end"], float(heard[j]["start"]) - head
+        end = round(max(last + 0.05, min(last + TAIL_S, extra)), 3)
+    return head, kept, end
+
+
+def dialogue_heads(script: ScriptV1, clips: Sequence[dict[str, Any]]) -> list[float]:
+    """Début coupé de chaque clip (voix des clips, montage : RenderPlan.clip_offsets et piste de voix) : le silence
+    avant la réplique ; 0 pour un plan muet ou un clip non transcrit. Mêmes entrées que dialogue_timeline."""
+    heads: list[float] = []
+    for sc, clip in zip(script.scenes, clips, strict=True):
+        heard = list((clip.get("dialogue") or {}).get("words") or [])
+        text = line_text(sc)
+        heads.append(line_cut(text, heard, float(clip.get("duration") or CLIP_S))[0] if text and heard else 0.0)
+    return heads
+
+
+def dialogue_timeline(script: ScriptV1, lang: str, clips: Sequence[dict[str, Any]], pace: float = 1.0) -> NarrationTimeline:
+    """Timeline de la vidéo d'après les clips (videos.timeline, lue par le montage comme celle d'une narration) : une
+    scène parlée commence juste avant sa réplique (le silence de tête du clip est coupé, dialogue_heads) et finit
+    TAIL_S après son dernier mot entendu, jamais plus que son clip ; un plan muet dure SILENT_S ; mots de la réplique
+    calés sur la voix. `clips[i]` : {"duration": durée du clip, "dialogue": assets.meta.dialogue ou None}. Mots en trop
+    après la réplique (line_cut) : la scène finit avant eux. La durée prévue par le script ne sert plus de minimum : elle
+    gardait jusqu'à 4 s de silence par plan (docs/70). `pace` : vitesse de lecture des clips (PACE, image et voix
+    ensemble) ; les temps se calculent sur le clip puis se divisent par elle."""
     out: list[SceneTiming] = []
     t = 0.0
+    silent = silent_bounds(script)  # aussi pour un drame écrit avant le 12/10 (plans muets de 2 à 5 s)
     for sc, clip in zip(script.scenes, clips, strict=True):
         native = float(clip.get("duration") or CLIP_S)
-        d = min(sc.duration_s, native)
         text = line_text(sc)
         heard = list((clip.get("dialogue") or {}).get("words") or [])
-        if not text:
+        if not text:  # durée voulue à l'écran, dans ce que le clip peut donner à cette vitesse
+            d = min(_clamp(sc.duration_s, silent), native / pace)
             out.append(SceneTiming(index=sc.index, start=round(t, 3), duration=round(d, 3)))
             t += d
             continue
+        end = None
         if heard:
+            head, heard, end = line_cut(text, heard, native)
+            native -= head
             a, b = float(heard[0]["start"]), float(heard[-1]["end"])
-            ws = align_words(text, heard, lang, t)
+            ws = align_words(text, heard, lang)
         else:  # clip non transcrit : la réplique après une courte entrée, à son débit
             a = 0.2
             b = min(native, a + len(words(text)) / DIALOGUE_WPS)
-            ws = distribute_words(text, round(t + a, 3), round(t + b, 3), lang)
-        d = min(native, max(d, b + TAIL_S))
+            ws = distribute_words(text, a, b, lang)
+        d = min(native, max(SCENE_MIN_S, end if end is not None else b + TAIL_S)) / pace  # temps du clip → de la vidéo
         out.append(
             SceneTiming(
                 index=sc.index,
                 start=round(t, 3),
                 duration=round(d, 3),
-                speech_start=round(t + a, 3),
-                speech_end=round(t + b, 3),
-                words=ws,
+                speech_start=round(t + a / pace, 3),
+                speech_end=round(t + b / pace, 3),
+                words=[
+                    w.model_copy(update={"start": round(t + w.start / pace, 3), "end": round(t + w.end / pace, 3)}) for w in ws
+                ],
             )
         )
         t += d
@@ -608,19 +717,90 @@ def transcribe(settings: Any, clips: Sequence[Path], lang: str, timeout_s: int =
         return list(json.loads(out.read_text(encoding="utf-8"))["results"])
 
 
-def build_dialogue_track(clips: Sequence[Path], durations: Sequence[float], out: Path) -> Path:
+def voice_file(clip: Path) -> Path:
+    """Voix seule d'un clip, rangée à côté de lui (scene_03.mp4 → scene_03.voix.wav)."""
+    return clip.with_suffix(".voix.wav")
+
+
+def isolate_voices(settings: Any, clips: Sequence[Path], timeout_s: int = 900) -> dict[Path, Path]:
+    """Voix seule de chaque clip, sans l'ambiance ni les bruits (Demucs : tts_runners/isolate_voice.py dans
+    l'environnement de la conversion de voix, C:\\YouTube2\\tts\\vc ; ≈ 10 s par clip sur le processeur) :
+    {clip : fichier}. Gardée à côté du clip, refaite seulement quand le clip est plus récent qu'elle. Un clip absent du
+    résultat n'a pas pu être traité (environnement absent, échec) : RuntimeError si aucun ne l'a été."""
+
+    def fresh(c: Path) -> bool:
+        v = voice_file(c)
+        return v.is_file() and v.stat().st_mtime >= c.stat().st_mtime
+
+    todo = [c for c in clips if c.is_file() and not fresh(c)]
+    if todo:
+        python = Path(settings.yt2_home) / "tts" / "vc" / "venv" / "Scripts" / "python.exe"
+        runner = Path(__file__).resolve().parents[1] / "tts_runners" / "isolate_voice.py"
+        if not python.exists():
+            raise RuntimeError(f"environnement de séparation absent ({python}) : install_tts.ps1 -Engine vc")
+        tmp_root = Path(settings.data_dir) / "tmp"
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="voix_", dir=tmp_root) as tmp:
+            req = Path(tmp) / "request.json"
+            items = [{"clip": str(c), "out": str(voice_file(c))} for c in todo]
+            req.write_text(json.dumps({"items": items, "work": str(Path(tmp) / "work"), "device": "cpu"}), encoding="utf-8")
+            proc = subprocess.run(
+                [str(python), str(runner), str(req)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+                timeout=timeout_s,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if proc.returncode != 0:
+                raise RuntimeError(f"séparation de la voix en échec (code {proc.returncode}) : {(proc.stderr or '')[-1500:]}")
+    return {c: voice_file(c) for c in clips if c.is_file() and fresh(c)}
+
+
+def build_dialogue_track(
+    clips: Sequence[Path],
+    durations: Sequence[float],
+    out: Path,
+    replace: dict[int, tuple[Path, float]] | None = None,
+    heads: Sequence[float] = (),
+    mute: Collection[int] = (),
+    pace: float = 1.0,
+) -> Path:
     """Piste de voix d'un drame : le son de chaque clip, coupé à la durée de sa scène (silence si le clip n'a pas de son),
-    mis bout à bout (48 kHz, mono). Le montage la traite comme une narration : la musique baisse sous les répliques."""
+    mis bout à bout (48 kHz, mono). Le montage la traite comme une narration : la musique baisse sous les répliques.
+    `replace` (position de la scène → (fichier, départ en s)) : une prise de voix de synthèse validée dans Retoucher →
+    Plans prend la place du son du clip, posée là où le clip disait sa réplique (docs/49 §11) ; un départ négatif coupe
+    le début de la prise (voix convertie du clip entier, dont le début est coupé). `heads` : début coupé de chaque clip
+    (dialogue_heads). `mute` (positions) : plans muets, sauf une prise de `replace` (voix seule du clip). `pace` : vitesse
+    de lecture des clips (PACE) ; le son d'un clip (et sa voix convertie ou isolée) la suit, une prise de synthèse garde
+    son débit. `durations` : durées sur la vidéo."""
     from .media import run
 
+    tempo = f",atempo={pace:.4f}" if abs(pace - 1.0) > 1e-3 else ""
     inputs: list[str] = []
     parts: list[str] = []
     for k, (clip, d) in enumerate(zip(clips, durations, strict=True)):
-        inputs += ["-i", str(clip)]
-        if _has_audio(clip):
+        head = heads[k] if k < len(heads) else 0.0
+        take = (replace or {}).get(k)
+        if take is not None:
+            inputs += ["-i", str(take[0])]
+            at = take[1]
+            place = (
+                f"adelay=delays={round(at * 1000)}:all=1,atrim=0:{d:.3f}"
+                if at >= 0
+                else f"atrim={-at:.3f}:{d * pace - at:.3f},asetpts=PTS-STARTPTS{tempo}"
+            )
             parts.append(
-                f"[{k}:a]aresample=48000,aformat=channel_layouts=mono,atrim=0:{d:.3f},asetpts=PTS-STARTPTS,"
-                f"apad=whole_dur={d:.3f}[a{k}]"
+                f"[{k}:a]aresample=48000,aformat=channel_layouts=mono,{place},asetpts=PTS-STARTPTS,apad=whole_dur={d:.3f}[a{k}]"
+            )
+            continue
+        inputs += ["-i", str(clip)]
+        if k not in mute and _has_audio(clip):
+            parts.append(
+                f"[{k}:a]aresample=48000,aformat=channel_layouts=mono,atrim={head:.3f}:{head + d * pace:.3f},"
+                f"asetpts=PTS-STARTPTS{tempo},atrim=0:{d:.3f},apad=whole_dur={d:.3f}[a{k}]"
             )
         else:  # clip muet (Wan, clip refait par un autre modèle) : du silence à sa place
             parts.append(f"anullsrc=r=48000:cl=mono,atrim=0:{d:.3f}[a{k}]")
@@ -676,30 +856,49 @@ CE QUI FAIT RESTER (dans cet ordre) :
 RÈGLES : une injustice qu'un enfant de 10 ans comprend ; langue parlée, phrases courtes ; pas d'appel à s'abonner ;
 l'objet de la preuve se voit plus tôt en arrière-plan si possible ; le contraste doré/froid dit qui est riche et qui
 souffre.
+RYTHME (ce qui manquait à nos drames : des temps morts, des échanges trop lents) : ça va VITE, comme les modèles
+TikTok, ≈ 25 répliques en 70 s. Une réplique de 4 à 9 mots, dite en 2 à 3 s ; on coupe dès qu'elle est dite. On entre
+dans la scène au milieu de l'action : ni « Bonjour », ni présentation, ni arrivée lente, ni plan d'ambiance, ni silence
+dramatique. Champ-contrechamp serré : chaque réplique répond à la précédente (question → réponse sèche, accusation →
+défense, ordre → refus). Une information nouvelle ou un retournement toutes les 3 ou 4 répliques. La réaction se lit
+sur le visage de celui qui répond, pas sur un plan à part ; un plan muet est rare (1,5 à 2 s : un geste, l'objet de la
+preuve, un regard) et jamais deux de suite. Le ton dit l'énergie : jamais « slow », « hesitant » ni « long pause » ;
+pas de points de suspension au milieu d'une réplique (le personnage y marque un long silence).
 DISTRIBUTION (cast, 2 à 6 personnages) : pour chacun key (minuscules, sans accent : « kiwi », « madame_figue »), name
 (le nom dit dans l'histoire), role, look EN ANGLAIS (12 mots au moins : la tête — le fruit, l'animal ou le visage —,
 ses couleurs, l'âge, la silhouette, les vêtements et accessoires précis ; c'est sa fiche, recopiée à l'identique dans
 chaque image) et voice EN ANGLAIS (« a soft trembling young male voice », « a deep authoritative male voice in his
 fifties », « a sweet fake voice of a woman in her forties ») : la même dans tout le Short ; tts_voice : l'identifiant
 d'une voix de la liste VOIX DE SYNTHÈSE qui lui ressemble (une voix différente par personnage).
-SCÈNES : 14 à 20 plans ; UN PLAN = UNE RÉPLIQUE dite par UN seul personnage (un échange = deux plans, champ puis
-contrechamp) ; 60 % des plans au moins ont une réplique ; les autres montrent une action ou un visage (la musique les
-porte). Chaque scène :
+SCÈNES : 22 à 28 plans ; UN PLAN = UNE RÉPLIQUE dite par UN seul personnage (un échange = deux plans, champ puis
+contrechamp) ; 80 % des plans au moins ont une réplique ; les autres montrent un geste, un objet ou un regard, 1,5 à
+2 s. Chaque scène :
 - characters : les clés des personnages visibles (1 à 3 ; celui qui parle en fait partie) ;
-- lines : [] ou une réplique {"who": clé, "text": la réplique dans la langue de la vidéo, 12 mots au plus, "tone": en
-  anglais, comment elle est dite (« whispers, trembling », « shouts furiously », « smug, slow »)} ;
+- lines : [] ou une réplique {"who": clé, "text": la réplique dans la langue de la vidéo, 4 à 9 mots (10 au plus),
+  "tone": en anglais, comment elle est dite (« whispers, trembling », « shouts furiously », « smug, cutting »)} ;
 - visual_prompt, en anglais : la première image, l'ÉMOTION D'ABORD (« Kiwi, desperate, … »), puis le LIEU, même en gros
   plan (sans lieu, l'image reprend le fond gris uni de la fiche du personnage), l'action,
   la valeur de plan (gros plan pour une émotion, plan large pour une humiliation publique) et la lumière ; nomme les
   personnages par leur name (leur fiche est ajoutée par le code) ; un figurant sans fiche est décrit en entier, origine
-  comprise ; les billets sont des euros ; AUCUN TEXTE ÉCRIT dans l'image : ni panneau, ni étiquette, ni enseigne,
-  ni écran, ni lettre, ni journal avec des mots (le générateur les écrit, et ça se lit comme des sous-titres en trop) ;
-  une idée qui passerait par un écrit se montre autrement (une clé tendue, une pancarte vue de dos, un visage) ;
+  comprise ; les billets sont des euros ; par défaut, AUCUN TEXTE ÉCRIT dans l'image : ni panneau, ni étiquette, ni
+  enseigne, ni écran, ni lettre, ni journal avec des mots (le générateur les écrit de travers, et ça se lit comme des
+  sous-titres en trop) ; une idée qui passerait par un écrit se montre autrement (une clé tendue, un visage), SAUF
+  image_text ci-dessous ;
+- image_text (facultatif, 2 plans au plus par vidéo) : seulement quand un mot ou un nombre écrit DANS le décor porte
+  l'enjeu et que l'image ne se comprendrait pas sans lui (le prix « 1 € » sur le panneau d'un manoir à vendre,
+  « 100 MILLIARDS » affiché au-dessus de la tête du milliardaire), de préférence sur la PREMIÈRE image (le hook
+  visuel), et seulement sur un plan SANS réplique (lines vide) : {"text": TOUT ce qui est écrit sur le support, mot
+  pour mot (« À VENDRE PRIX : 1 € » s'il y a deux lignes), dans la langue de la vidéo, 4 mots au plus, nombres en
+  chiffres, "on": le support, en anglais (« a weathered wooden sign hanging on the iron
+  gate », « a glowing golden badge floating above Fraise's head »)} ; visual_prompt décrit alors le support sans les
+  mots (le code les ajoute et vérifie leur orthographe) ; jamais une réplique, un titre ou un sous-titre : le montage
+  les écrit ; sinon image_text absent ;
 - motion_prompt, en anglais : ce qui bouge pendant le plan (geste, expression, caméra lente), et le son d'ambiance
   (« sound of heavy rain ») ; JAMAIS la réplique elle-même : le code l'ajoute avec la voix du personnage ; rien d'écrit
   qui apparaît ;
 - on_screen_text : vide, sauf le dernier plan d'une partie 1 (« Partie 2 bientôt ») ;
-- duration_s : 2,5 à 5 s (le code la recalcule d'après la réplique) ; role : laisse vide.
+- duration_s : 2 à 3 s pour une réplique, 1,5 à 2 s sans réplique (le code la recalcule d'après la réplique, et le
+  montage coupe sur la voix) ; role : laisse vide.
 hook_title : le titre d'accroche (règles ci-dessous), la prémisse plutôt que le titre de l'épisode. metadata : par langue,
 titre YouTube ≤ 60 caractères avec un émoji (« Partie 1 : LA VALISE DE MADAME FIGUE 🧳 » ou la prémisse), description
 qui raconte le début et finit par une question (« Qu'aurais-tu fait à sa place ? »), 10 tags (#histoirefruit
@@ -708,8 +907,10 @@ coupée avant la punition » ou comment la fin rappelle le début. Réponds uniq
 
 REWRITE_HINT = (
     "DRAME : la scène garde ses personnages à l'image (characters : clés du cast, 1 à 3) et une réplique au plus (lines : "
-    "who = clé du personnage qui parle, text dans la langue de la vidéo, 12 mots au plus, tone en anglais), dite par un "
+    "who = clé du personnage qui parle, text dans la langue de la vidéo, 4 à 9 mots, 10 au plus, tone en anglais), dite par un "
     "seul personnage ; visual_prompt nomme les personnages par leur nom, l'émotion d'abord, et toujours le lieu (sans lui, "
-    "l'image reprend le fond gris de la fiche), sans aucun texte écrit (ni panneau, ni étiquette, ni écran avec des mots) ; "
-    "motion_prompt sans la réplique. Pas de narration : elle est recopiée de la réplique par le code."
+    "l'image reprend le fond gris de la fiche), sans aucun texte écrit (ni panneau, ni étiquette, ni écran avec des mots), "
+    "sauf image_text : sur un plan SANS réplique, quand un mot ou un nombre écrit dans le décor porte l'enjeu (« PRIX : "
+    '1 € » sur un panneau), {"text": 4 mots au plus, "on": le support en anglais}, le visual_prompt décrivant le support '
+    "sans les mots ; motion_prompt sans la réplique. Pas de narration : elle est recopiée de la réplique par le code."
 )

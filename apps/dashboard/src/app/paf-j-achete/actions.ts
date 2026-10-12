@@ -2,15 +2,16 @@
 
 /**
  * Onglet « Paf, j'achète » (docs/50-paf-j-achete.md) : clé du second compte Zernio (chiffrée dans app_secrets, le
- * navigateur n'en voit que les 4 derniers caractères), compte Instagram, légende et interrupteur (app_settings
- * « paf_j_achete », lus par le worker).
+ * navigateur n'en voit que les 4 derniers caractères), compte Instagram, légendes, heure du vendredi et interrupteur
+ * (app_settings « paf_j_achete », lus par le worker).
  */
 import { revalidatePath } from "next/cache";
 
 import type { ActionResult } from "@/app/production/actions";
 import { encryptSecret } from "@/lib/crypto";
+import { formatDate, now, parisDayKey } from "@/lib/format";
 import { getPafSettings, listPafAccounts, nextPafSlot, pafFolder, pafVideo } from "@/lib/paf";
-import { PAF_SECRET, PAF_SETTINGS_KEY, type PafAccount, type PafSettings } from "@/lib/paf-types";
+import { normalizePafHour, PAF_DATE_MODES, PAF_SECRET, PAF_SETTINGS_KEY, pafHourLabel, type PafAccount, type PafDateMode, type PafSettings } from "@/lib/paf-types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { zernioKey } from "@/lib/tiktok";
 
@@ -59,14 +60,24 @@ export async function refreshPafAccounts(): Promise<ActionResult & { accounts: P
   return { ok: res.ok, message: res.message, accounts: res.accounts };
 }
 
+/** Message de refus si le compte choisi est l'Instagram du compte Zernio principal (Zernio injoignable : pas de refus). */
+async function mainAccountRefusal(accountId: string): Promise<string | null> {
+  if (!accountId) return null;
+  const twin = (await listPafAccounts()).accounts.find((a) => a.id === accountId && a.sameAsMain);
+  return twin ? `@${twin.username} est l’Instagram du compte principal (YouTube / TikTok) : brancher @paf.jachete sur le second compte Zernio, puis le choisir` : null;
+}
+
 export interface PafSettingsInput {
   account_id: string;
   username: string;
   captions: string[];
   share_to_feed: boolean;
+  date_caption: PafDateMode;
 }
 
 export async function savePafSettings(input: PafSettingsInput): Promise<ActionResult> {
+  const refusal = await mainAccountRefusal(input.account_id);
+  if (refusal) return { ok: false, message: refusal };
   const before = await getPafSettings();
   const captions = input.captions.map((c) => c.trim().slice(0, 2200)).filter(Boolean);
   const error = await write({
@@ -75,6 +86,7 @@ export async function savePafSettings(input: PafSettingsInput): Promise<ActionRe
     username: input.username,
     captions,
     share_to_feed: Boolean(input.share_to_feed),
+    date_caption: PAF_DATE_MODES.some((m) => m.value === input.date_caption) ? input.date_caption : "off",
   });
   if (error) return { ok: false, message: error };
   revalidatePath(PATH);
@@ -91,13 +103,15 @@ export async function setPafEnabled(enabled: boolean): Promise<ActionResult> {
   if (enabled) {
     if (!(await db.from("app_secrets").select("name").eq("name", PAF_SECRET).maybeSingle()).data) return { ok: false, message: "Coller d’abord la clé Zernio de ce compte" };
     if (!before.account_id) return { ok: false, message: "Choisir d’abord le compte Instagram" };
+    const refusal = await mainAccountRefusal(before.account_id);
+    if (refusal) return { ok: false, message: refusal };
     if (!(await pafVideo(await pafFolder()))) return { ok: false, message: "Mettre d’abord la vidéo (.mp4) dans le dossier" };
     const error = await write({ ...before, enabled: true, enabled_at: before.enabled ? before.enabled_at : new Date().toISOString() });
     if (error) return { ok: false, message: error };
     revalidatePath(PATH);
-    const slot = nextPafSlot();
+    const slot = nextPafSlot(now(), before.hour);
     const first = slot.getTime() < Date.now() ? "le vendredi suivant" : `vendredi ${slot.toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })}`;
-    return { ok: true, message: `Activé : premier envoi ${first} à 7 h (programmé chez Zernio 2 jours avant)` };
+    return { ok: true, message: `Activé : premier envoi ${first} à ${pafHourLabel(before.hour)} (programmé chez Zernio 2 jours avant)` };
   }
 
   const error = await write({ ...before, enabled: false, enabled_at: null });
@@ -117,7 +131,42 @@ export async function setPafEnabled(enabled: boolean): Promise<ActionResult> {
   return { ok: true, message: removed ? "Coupé : le Reel déjà programmé est retiré de Zernio" : "Coupé : plus rien ne part le vendredi" };
 }
 
-/** Relance un vendredi en échec (publié tout de suite si 7 h est passé). */
+/**
+ * Heure de publication du vendredi (heure de Paris). Le Reel déjà programmé chez Zernio est reprogrammé : le job qui
+ * le suit est réveillé, il voit la nouvelle heure, retire l’ancien Reel et en programme un nouveau (steps/paf_publish.py).
+ */
+export async function savePafHour(raw: string): Promise<ActionResult> {
+  const hour = normalizePafHour(raw);
+  if (!hour) return { ok: false, message: "Heure illisible : écrire par exemple 09:00" };
+  const db = supabaseAdmin();
+  const before = await getPafSettings();
+  if (hour === before.hour) return { ok: true, message: `Déjà réglé sur ${pafHourLabel(hour)}` };
+  const error = await write({ ...before, hour });
+  if (error) return { ok: false, message: error };
+
+  const slot = nextPafSlot(now(), hour);
+  const friday = parisDayKey(slot);
+  const { data: row } = await db.from("paf_posts").select("status, post_id").eq("friday", friday).maybeSingle();
+  const { data: woken } = await db
+    .from("jobs")
+    .update({ run_after: new Date().toISOString() })
+    .eq("type", "paf_publish")
+    .eq("status", "queued")
+    .is("payload->delete_post", null)
+    .select("id");
+  revalidatePath(PATH);
+
+  const day = `vendredi ${formatDate(slot, "d MMMM")} à ${pafHourLabel(hour)}`;
+  if (row?.status === "published") return { ok: true, message: `Heure enregistrée : ${pafHourLabel(hour)} à partir du vendredi suivant (celui-ci est déjà sorti)` };
+  if (!before.enabled) return { ok: true, message: `Heure enregistrée : ${pafHourLabel(hour)} (l’interrupteur est coupé)` };
+  const late = slot.getTime() <= Date.now();
+  if (row && LIVE.includes(row.status as string) && woken?.length) {
+    return { ok: true, message: late ? `Heure enregistrée : ${pafHourLabel(hour)} est déjà passé, le Reel de ce vendredi part tout de suite` : `Heure enregistrée : le Reel déjà programmé chez Zernio passe au ${day} (dans la minute)` };
+  }
+  return { ok: true, message: late ? `Heure enregistrée : ${pafHourLabel(hour)} est déjà passé, le Reel de ce vendredi part dans les 5 min` : `Heure enregistrée : prochain envoi ${day}` };
+}
+
+/** Relance un vendredi en échec (publié tout de suite si son heure est passée). */
 export async function retryPaf(friday: string): Promise<ActionResult> {
   const db = supabaseAdmin();
   const { data: row } = await db.from("paf_posts").select("status").eq("friday", friday).maybeSingle();

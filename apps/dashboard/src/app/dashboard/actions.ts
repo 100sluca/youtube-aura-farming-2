@@ -52,6 +52,22 @@ export async function refreshTikTokStats(): Promise<ActionResult> {
   return { ok: true, message: "Relevé TikTok lancé (quelques secondes)." };
 }
 
+/** Onglet Instagram (docs/62) : relevé des statistiques Instagram tout de suite (job sync_instagram, fil « stats » du
+ * worker), pour les deux comptes Zernio (@arzakparker et « Paf, j'achète »). */
+export async function refreshInstagramStats(): Promise<ActionResult> {
+  const db = supabaseAdmin();
+  const { data: keys } = await db.from("app_secrets").select("name").in("name", ["zernio_api_key", "zernio_paf_api_key"]);
+  if (!keys?.length) return { ok: false, message: "Pas de clé Zernio : Réglages → TikTok, ou onglet Paf, j’achète." };
+  const pending = await db.from("jobs").select("id").eq("type", "sync_instagram").eq("status", "queued").limit(1);
+  if (pending.error) return { ok: false, message: errorText(pending.error) };
+  const res = pending.data?.length
+    ? await db.from("jobs").update({ priority: 10, run_after: new Date().toISOString() }).eq("id", pending.data[0].id)
+    : await db.from("jobs").insert({ type: "sync_instagram", priority: 10, payload: { source: "dashboard" } });
+  if (res.error) return { ok: false, message: errorText(res.error) };
+  revalidatePath("/dashboard");
+  return { ok: true, message: "Relevé Instagram lancé (quelques secondes)." };
+}
+
 /** L'agent analyste compare maintenant les vidéos qui marchent et les autres. */
 export async function runAnalysis(channelId: string): Promise<ActionResult> {
   const db = supabaseAdmin();

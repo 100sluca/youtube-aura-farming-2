@@ -51,9 +51,17 @@ Les 10 pistes du 28/09, décrites par Luca :
 | music_7 | Intrigante, enquête : histoires à comprendre, mystère ; aussi chantiers et visites. **À privilégier** | récit, chantier, visite | mystère, posé, découverte | souvent (×2) | −10,0 | 3:47 |
 | music_8 | Voyage, nostalgie, un peu de solitude : histoires de voyage, construction, visites | récit, chantier, visite | voyage, sentimental, découverte | normale | −16,1 | 2:17 |
 | music_9 | Tragique, découverte : comme la 0 (amours tragiques), aussi découverte de lieux, visites, récits | récit, visite | tragique, sentimental, découverte | normale | −6,7 | 2:35 |
+| music_10 | Drôle (Afrikaan Beat, Bert Kaempfert) : histoires drôles, karma ridicule, situations absurdes (03/10) | récit | drôle | normale | −16,1 | 2:35 |
 
 11 dB séparent la plus faible (music_5) de la plus forte (music_9) : sans égalisation, la même consigne donnait une
 musique inaudible sur l'une et envahissante sur l'autre.
+
+**music_10 (03/10)** : *Afrikaan Beat* de Bert Kaempfert (1962), apportée par Luca pour les histoires drôles. Ce n'est
+pas une composition de Luca : elle est sous droits d'auteur, donc **hors du dépôt public** (`.gitignore`, le fichier
+reste dans `music/` sur le PC) et une réclamation Content ID est très probable sur YouTube (mise en garde dans sa
+fiche). Elle porte la seule ambiance **drôle** (`drole`, ajoutée le même jour : humour, absurde, karma comique ;
+voisine : joyeux) et le seul format récit (les drames en font partie) : elle ne sort que si le scénariste écrit
+`drole`, ou choisie à la main dans Retoucher → Musique.
 
 Ajouter une musique : déposer le fichier (mp3, wav, ogg, m4a, flac, aac) dans le dossier, ouvrir l'onglet Son, cocher
 ses formats et ses ambiances (ou donner sa description à Claude). Les fichiers audio sont dans le dépôt public (≈ 31 Mo
@@ -63,7 +71,7 @@ pour les dix) : ce sont les compositions de Luca, qu'il choisit de partager (29/
 
 1. Le scénariste reçoit la liste des ambiances qui ont au moins une piste pour son format (consigne « MUSIQUE DE
    FOND », `music.mood_brief`) et écrit l'identifiant de l'ambiance dans `music_mood` : mystere, epique, majestueux,
-   sentimental, tragique, triste, voyage, decouverte, joyeux, pose. Les anciennes ambiances anglaises (scripts déjà
+   sentimental, tragique, triste, voyage, decouverte, joyeux, drole, pose. Les anciennes ambiances anglaises (scripts déjà
    écrits, `series.music_moods`) sont traduites : mysterious et suspense → mystère, epic → épique, inspiring → épique
    ou joyeux, emotional → sentimental, luxury et elegant → découverte, calm → posé…
 2. Au montage (`music.choose_track`), parmi les pistes actives du format de la vidéo : celles qui portent l'ambiance,

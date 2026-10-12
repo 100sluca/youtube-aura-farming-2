@@ -54,6 +54,8 @@ export interface TikTokSettingsInput {
   allow_duet: boolean;
   allow_stitch: boolean;
   ai_label: boolean;
+  /** Citations sans voix : musique de TikTok à la publication (docs/58 §4). */
+  quote_music: boolean;
 }
 
 export async function saveTikTokSettings(input: TikTokSettingsInput): Promise<ActionResult> {
@@ -80,6 +82,10 @@ export async function saveTikTokSettings(input: TikTokSettingsInput): Promise<Ac
     allow_duet: Boolean(input.allow_duet),
     allow_stitch: Boolean(input.allow_stitch),
     ai_label: Boolean(input.ai_label),
+    platform_music: {
+      ...before.platform_music,
+      recipes: [...before.platform_music.recipes.filter((r) => r !== "quote"), ...(input.quote_music ? ["quote"] : [])],
+    },
   };
   const { error } = await supabaseAdmin().from("app_settings").upsert({ key: "tiktok", value, updated_at: now });
   if (error) return fail(error);

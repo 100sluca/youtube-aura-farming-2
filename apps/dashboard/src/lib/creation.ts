@@ -75,6 +75,7 @@ export async function getCreationData(channel: Channel | undefined): Promise<Cre
       .from("productions")
       .select("id, status, concept_id, concepts(title)")
       .eq("channel_id", channel.id)
+      .neq("kind", "long") // vidéos longues : leur propre page (docs/63)
       .in("status", ["draft", "scripting", "generating", "storyboard_review"])
       .order("created_at"),
     getGeminiStatus(),

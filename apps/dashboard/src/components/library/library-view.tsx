@@ -308,7 +308,6 @@ export function LibraryView({
                 setNotice(res);
                 setSelected(new Set());
                 setSelecting(false);
-                router.refresh();
               })
             }
           >

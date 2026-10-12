@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from worker.media import measure_loudness
+from worker.media import measure_loudness, replace_file
 from worker.models import ScriptV1
 from worker.montage import AudioLayer, MontageTemplate
 from worker.music import Track
@@ -239,6 +239,16 @@ def test_fix_level_brings_a_quiet_final_back_to_target(tmp_path: Path):
     assert assemble.fix_level(final) > 5
     assert measure_loudness(final).lufs == pytest.approx(-14.0, abs=1.0)  # type: ignore[arg-type]
     assert assemble.fix_level(final) == 0.0 and not (tmp_path / "final.niveau.mp4").exists()
+
+
+def test_replace_file_copies_over_a_final_open_elsewhere(tmp_path: Path):
+    """01/10 : final.mp4 lu par le dashboard, Windows refusait de le remplacer (« Accès refusé ») ; copie par-dessus."""
+    src, dst = tmp_path / "final.niveau.mp4", tmp_path / "final.mp4"
+    src.write_bytes(b"new")
+    dst.write_bytes(b"old")
+    with dst.open("rb"):  # ouvert ailleurs : sous Windows le remplacement est refusé, l'écriture permise
+        replace_file(src, dst, tries=2, wait_s=0)
+    assert dst.read_bytes() == b"new" and not src.exists()
 
 
 def test_tts_step_redoes_the_voice_chosen_by_the_retouch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

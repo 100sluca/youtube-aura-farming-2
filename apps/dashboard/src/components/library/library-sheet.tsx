@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowRight, CircleCheck, CircleX, Copy, ExternalLink, HardDrive, PenLine, Play, Square, Trash2 } from "lucide-react";
+import { ArrowRight, CircleCheck, CircleX, Copy, ExternalLink, HardDrive, PenLine, Play, Sparkles, Square, Trash2 } from "lucide-react";
 
 import { toggleFavorite } from "@/app/favorites/actions";
 import { deleteVideos, fetchLibraryDetail } from "@/app/library/actions";
@@ -79,16 +78,15 @@ function Player({ item }: { item: LibraryItem }) {
 
 const STOPPABLE = new Set(["draft", "scripting", "generating", "assembling"]);
 
-/** Retouche à la main (docs/34) : vidéo de l'appli montée, fichiers sur le PC, pas encore sortie ; une vidéo déjà
- * programmée ou publiée sur YouTube aussi, refaite elle repart comme une nouvelle vidéo (docs/44, docs/47). */
+/** Retouche (docs/34) : toute vidéo de l'appli montée dont les fichiers sont sur le PC, quel que soit son statut (prête,
+ * programmée, publiée, refusée…). Ce qui ne se retouche pas pour l'instant, la page le dit ; l'onglet Récit (docs/53)
+ * marche dans tous les cas, puisqu'il fait une nouvelle vidéo. */
 function canRetouch(v: LibraryItem): boolean {
-  return (
-    v.origin !== "imported" &&
-    !v.files_deleted_at &&
-    Boolean(v.final_asset_id) &&
-    (v.youtube_video_id ? ["scheduled", "published"].includes(v.status) : ["review", "qa", "ready", "failed", "rendering"].includes(v.status))
-  );
+  return v.origin !== "imported" && !v.files_deleted_at && Boolean(v.final_asset_id);
 }
+
+/** Récit en voix off (pas un drame en dialogues, ni un accéléré ou une visite) : son texte se réécrit (docs/53). */
+const isNarrated = (v: LibraryItem) => v.format === "A_voiceover" && (v.recipe ?? "story") === "story";
 
 /** Vidéo pas encore montée (docs/28) : où en est sa fabrication, ses clips déjà faits, et les gestes possibles. */
 function MakingPanel({
@@ -173,7 +171,6 @@ function MakingPanel({
 
 /** Fiche d'une vidéo de la bibliothèque : lecture, publication, stats, fabrication, suppression. */
 export function LibrarySheet({ item, onClose }: { item: LibraryItem | null; onClose: () => void }) {
-  const router = useRouter();
   const [loaded, setLoaded] = React.useState<{ id: string; data: LibraryDetail } | null>(null);
   const [notice, setNotice] = React.useState<Notice | null>(null);
   const [pending, startTransition] = React.useTransition();
@@ -204,8 +201,7 @@ export function LibrarySheet({ item, onClose }: { item: LibraryItem | null; onCl
   // Arrêter / reprendre : la liste (et donc cette fiche) se met à jour aussitôt
   const act = (fn: () => Promise<Notice>) =>
     startTransition(async () => {
-      setNotice(await fn());
-      router.refresh();
+      setNotice(await fn()); // pas de router.refresh() : l'action appelle revalidatePath, sa réponse apporte déjà la page recalculée (docs/56)
     });
 
   return (
@@ -256,31 +252,49 @@ export function LibrarySheet({ item, onClose }: { item: LibraryItem | null; onCl
                 )}
 
                 {!making && canRetouch(item) ? (
-                  <Button size="sm" variant="outline" className="w-fit" asChild>
-                    <Link href={`/library/${item.id}/retouche`}>
-                      <PenLine />
-                      Retoucher : titre, sous-titres, musique, voix
-                    </Link>
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="w-fit" asChild>
+                      <Link href={`/library/${item.id}/retouche`}>
+                        <PenLine />
+                        Retoucher : titre, sous-titres, musique, voix
+                      </Link>
+                    </Button>
+                    {isNarrated(item) ? (
+                      <Button size="sm" variant="outline" className="w-fit" asChild>
+                        <Link href={`/library/${item.id}/retouche?onglet=recit`}>
+                          <Sparkles />
+                          Réécrire le récit ou l’accroche
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 {item.error && item.status === "failed" ? <p className="text-destructive text-sm">{item.error}</p> : null}
 
-                {isDecidable(item.status) && !onYouTube ? (
+                {item.origin === "long" ? (
+                  <section className="flex flex-col gap-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-3 text-sm">
+                    <h3 className="font-semibold">Vidéo longue</h3>
+                    <p className="text-muted-foreground">Titre, miniature et publication se règlent dans la page Vidéos longues (jour de sortie des vidéos longues, miniature posée à l’envoi).</p>
+                    <Link href="/long" className="flex items-center gap-1 underline">
+                      Ouvrir Vidéos longues <ArrowRight className="size-3.5" />
+                    </Link>
+                  </section>
+                ) : isDecidable(item.status) && !onYouTube ? (
                   <section className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
                     <h3 className="text-sm font-semibold">Publier cette vidéo ?</h3>
                     <VideoDecision videoId={item.id} />
                   </section>
                 ) : null}
 
-                {!making && item.origin !== "imported" && data?.tiktok ? (
+                {!making && item.origin !== "imported" && item.origin !== "long" && data?.tiktok ? (
                   <>
                     <Separator />
                     <TikTokPanel key={item.id} videoId={item.id} initial={data.tiktok} canPublish={Boolean(item.final_asset_id) && !item.files_deleted_at} />
                   </>
                 ) : null}
 
-                {!making && item.origin !== "imported" && data?.instagram ? (
+                {!making && item.origin !== "imported" && item.origin !== "long" && data?.instagram ? (
                   <>
                     <Separator />
                     <InstagramPanel key={item.id} videoId={item.id} initial={data.instagram} canPublish={Boolean(item.final_asset_id) && !item.files_deleted_at} />

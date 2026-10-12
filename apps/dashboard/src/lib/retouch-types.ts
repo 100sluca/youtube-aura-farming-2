@@ -32,7 +32,32 @@ export interface RetouchData {
   voice?: string | null;
   acting?: string | null; // jeu des voix retenu pour cette vidéo (« gemini », docs/41 §8) : une nouvelle prise le garde
   plans?: Record<string, PlanCorrection[]>; // consignes données plan par plan (SQL redo_plan, migration 0028)
+  drafts?: Record<string, string>; // consignes écrites, pas encore envoyées (SQL save_plan_note, migration 0038)
+  takes?: Record<string, VoiceTake>; // prises de voix à écouter puis valider ou non (docs/49 §7)
+  lines?: Record<string, string>; // drame en voix des clips : plan → prise de synthèse qui remplace le son du clip (docs/49 §11)
+  sfx?: boolean | null; // bruitages ajoutés (case « Bruitages ») ; absent : ceux du format, aucun sur un drame (docs/49 §13)
+  muted?: number[]; // plans au son du clip coupé (Retoucher → Plans) : la réplique d'un plan parlé reste (voix isolée)
 }
+
+/** Choix « voix des clips » du menu des voix des personnages (drames, docs/49 §11). */
+export const CLIP_VOICES = "clips";
+
+/** Une nouvelle prise d'une réplique (worker/takes.py) : le fichier, ce que Whisper y entend, et la décision de Luca. */
+export interface VoiceTake {
+  asset_id: string;
+  note: string;
+  said: string; // ce que la voix a lu (la consigne peut changer la prononciation)
+  heard: string | null; // ce que Whisper entend dans la prise
+  ratio: number | null; // ressemblance réplique écrite / entendue (0 à 1)
+  keep: boolean | null; // null : à écouter ; true : validée ; false : refusée (à refaire avec une nouvelle consigne)
+  at: string;
+  direction: string | null; // consigne de jeu reçue par la voix (personnage ; ton ; consigne), en plus de « en français, mot pour mot »
+  engine: string | null; // moteur qui a vraiment parlé : gemini, ou son repli local quand le quota est épuisé
+  source: "clip" | null; // « clip » : la voix du modèle vidéo, reprise du clip brut du plan
+}
+
+/** Ressemblance au-dessous de laquelle une réplique est douteuse (dite en anglais, mots avalés) : worker/takes.py TAKE_OK. */
+export const TAKE_OK = 0.6;
 
 /** Un personnage d'un drame et sa voix, gardée du début à la fin de la vidéo. */
 export interface CastVoice {
@@ -59,9 +84,15 @@ export interface RetouchPlan {
   end: number;
   speaker: string | null; // nom de qui parle ; null : plan sans réplique
   line: string;
+  /** Consigne de jeu de base écrite par le scénariste : la voix du personnage et le ton de la réplique (« loud, mocking »). */
+  direction: { voice: string; tone: string } | null;
   characters: string[]; // noms des personnages à l'image
   clipAssetId: string | null; // le clip tel que le modèle vidéo l'a fait (avec son propre son)
   corrections: PlanCorrection[];
+  draft: string; // consigne écrite, pas encore envoyée
+  take: VoiceTake | null; // dernière prise de voix, à écouter ou déjà jugée
+  heard: { text: string; ratio: number } | null; // ce que Whisper entend de la réplique dans la vidéo actuelle
+  replaced: boolean; // voix des clips : la réplique de ce plan est remplacée par une prise de synthèse validée
 }
 
 /** Une scène parlée : ce que dit la voix, ce que le montage automatique affiche, et la retouche enregistrée. */
@@ -104,7 +135,10 @@ export interface RetouchPageData {
     lang: VoiceLang;
     format: MontageFormat;
     recipe: string | null; // recette de la série (drama : onglet Plans)
-    voiced: boolean; // récit narré : sous-titres et voix
+    clipVoices: boolean; // drame en voix des clips (format B) : le son des clips fait la piste de voix (docs/49 §11)
+    voiced: boolean; // récit narré ou drame (voix de synthèse ou voix des clips) : sous-titres et voix
+    sfx: boolean; // bruitages possibles (drame, chantier, visite) : case « Bruitages » et leur volume
+    sfxDefault: boolean; // bruitages sans retouche : aucun sur un drame (le son des clips a les siens, 01/10), sinon oui
     channelName: string | null;
     youtubeVideoId: string | null; // programmée ou publiée sur YouTube : la retouche la détache de cet envoi (docs/44, docs/47)
     published: boolean; // déjà sortie : la version sortie et ses stats partent sur une fiche à part (docs/47)
@@ -160,7 +194,8 @@ export interface RetouchInput {
   music: { track: string | null; startS: number | null } | null;
   audio: Partial<Levels>;
   voice: string | null; // « moteur:voix » à refaire ; null = garder la voix actuelle
-  acting: string | null; // voix des personnages à refaire avec ce jeu (« gemini ») ; null = les garder
+  acting: string | null; // voix des personnages à refaire avec ce jeu (« gemini »), ou CLIP_VOICES ; null = les garder
+  sfx: boolean | null; // bruitages ajoutés ou non ; null = ceux du format
 }
 
 /** « scheduled » / « published » : déjà envoyée sur YouTube ; refaite, elle repart comme une nouvelle vidéo (docs/44, docs/47). */

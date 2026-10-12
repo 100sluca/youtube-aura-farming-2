@@ -9,15 +9,38 @@ import * as React from "react";
 import { LoaderCircle, MemoryStick, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
 
 import type { ActionResult } from "@/app/production/actions";
-import { fetchMemoryHogs, fetchSystemStatus, restartEverything, restartService } from "@/app/system/actions";
+import { restartEverything, restartService } from "@/app/system/actions";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { getJson } from "@/lib/get-json";
 import type { MemoryHog, RestartTarget, ServiceState, SystemStatus } from "@/lib/system-types";
 import { cn } from "@/lib/utils";
 
 const fmt = (n: number) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+
+// Lectures par routes GET, pas par actions serveur : ces dernières passent une par une et bloquaient les clics (docs/56)
+const fetchSystemStatus = () => getJson<SystemStatus>("/api/system/status");
+const fetchMemoryHogs = () => getJson<MemoryHog[]>("/api/system/memory");
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/** Version du dashboard servie et mise à jour automatique (launcher/dashboard.ps1, docs/56). */
+function dashboardDetail(d: SystemStatus["dashboard"]): string {
+  const up = d.update;
+  const version =
+    d.mode === "dev" ? "Mode développement (lent)" : up?.builtAt ? `Version rapide du ${shortDate(up.builtAt)}` : "Version rapide";
+  const update = up?.building
+    ? "mise à jour en cours…"
+    : up?.waiting === "code"
+      ? "mise à jour dans moins d'une minute"
+      : up?.waiting === "memoire"
+        ? "mise à jour quand la mémoire se libère"
+        : null;
+  return [version, update, `${fmt(d.rssGb)} Go · lancé ${ago(d.uptimeS)}`].filter(Boolean).join(" · ");
+}
 
 function ago(s: number | null): string {
   if (s === null) return "jamais";
@@ -303,13 +326,20 @@ function SystemDialog({
                 </ConfirmButton>
               ) : null}
             </ServiceRow>
-            <ServiceRow name="Dashboard" state="ok"
-              detail={s ? `Serveur : ${fmt(s.dashboard.rssGb)} Go de mémoire · lancé ${ago(s.dashboard.uptimeS)}` : "…"}>
+            <ServiceRow name="Dashboard" state="ok" detail={s ? dashboardDetail(s.dashboard) : "…"}>
               <ConfirmButton size="sm" variant="outline" disabled={busy} onConfirm={() => restart("dashboard")}
                 confirmLabel="Recharger la page ?">
                 Redémarrer
               </ConfirmButton>
             </ServiceRow>
+            {s?.dashboard.update?.error ? (
+              <details className="pb-2 text-xs">
+                <summary className="text-muted-foreground cursor-pointer">Pourquoi la nouvelle version ne se construit pas</summary>
+                <pre className="bg-muted mt-1 max-h-48 overflow-auto rounded-md p-2 text-[11px] whitespace-pre-wrap">
+                  {s.dashboard.update.error}
+                </pre>
+              </details>
+            ) : null}
           </div>
         </section>
 

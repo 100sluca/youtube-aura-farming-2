@@ -63,6 +63,12 @@ class Series:
         )
 
     @property
+    def variant(self) -> str | None:
+        """Variante de la recette (source_config.variant) : la série a alors son propre scénariste et son propre guide
+        d'idées (recipes.prompt_key ; « insolite » = chantier de lieu insolite, docs/51)."""
+        return str(self.source_config.get("variant") or "") or None
+
+    @property
     def lang(self) -> str:
         return str(self.source_config.get("lang", "fr"))
 

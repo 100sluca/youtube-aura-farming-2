@@ -105,8 +105,14 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   analyze: "Analyse des vidéos",
   tiktok_publish: "Publication TikTok",
   sync_tiktok: "Synchro stats TikTok",
+  sync_instagram: "Synchro stats Instagram",
   instagram_publish: "Publication Instagram",
   paf_publish: "Paf, j’achète (vendredi)",
+  rewrite: "Réécriture du récit",
+  research: "Recherche (veille des niches)",
+  long_write: "Vidéo longue : écriture et publication",
+  long_make: "Vidéo longue : images, voix, montage",
+  long_take: "Vidéo longue : vérification d’une prise",
 };
 
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {

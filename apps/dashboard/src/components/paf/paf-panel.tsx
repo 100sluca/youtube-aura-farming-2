@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Camera, CircleCheck, CircleX, Dices, ExternalLink, FolderOpen, KeyRound, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
+import { CalendarDays, Camera, CircleCheck, CircleX, Clock, Dices, ExternalLink, FolderOpen, KeyRound, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
 
-import { deletePafKey, refreshPafAccounts, retryPaf, savePafKey, savePafSettings, setPafEnabled } from "@/app/paf-j-achete/actions";
+import { deletePafKey, refreshPafAccounts, retryPaf, savePafHour, savePafKey, savePafSettings, setPafEnabled } from "@/app/paf-j-achete/actions";
 import { ToneBadge, type Tone } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,20 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
-import { PAF_STATUS_LABELS, type PafAccount, type PafOverview, type PafStatus } from "@/lib/paf-types";
+import { formatBytes, formatDate, formatDateTime, formatTime } from "@/lib/format";
+import {
+  normalizePafHour,
+  PAF_DATE_MODES,
+  PAF_DATE_TAG,
+  PAF_STATUS_LABELS,
+  pafDateLabel,
+  pafHourLabel,
+  renderPafCaption,
+  type PafAccount,
+  type PafDateMode,
+  type PafOverview,
+  type PafStatus,
+} from "@/lib/paf-types";
 
 type Notice = { ok: boolean; message: string } | null;
 
@@ -42,7 +54,7 @@ function NoticeLine({ result }: { result: Notice }) {
   );
 }
 
-/** Onglet « Paf, j'achète » (docs/50) : la même vidéo chaque vendredi à 7 h sur un compte Instagram à part. */
+/** Onglet « Paf, j'achète » (docs/50) : la même vidéo chaque vendredi, à l'heure choisie, sur un compte Instagram à part. */
 export function PafPanel({ overview }: { overview: PafOverview }) {
   const { settings, video, folder, posts, job } = overview;
   const [pending, startTransition] = React.useTransition();
@@ -53,10 +65,26 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
     account_id: settings.account_id,
     captions: settings.captions.length ? settings.captions : Array.from({ length: START_SLOTS }, () => ""),
     share_to_feed: settings.share_to_feed,
+    date_caption: settings.date_caption,
   });
   const setCaption = (i: number, value: string) => setForm((f) => ({ ...f, captions: f.captions.map((c, j) => (j === i ? value : c)) }));
   const filled = form.captions.filter((c) => c.trim()).length;
+  const captionRefs = React.useRef<(HTMLTextAreaElement | null)[]>([]);
+  /** Écrit {date} là où est le curseur de la légende i. */
+  const insertDate = (i: number) => {
+    const el = captionRefs.current[i];
+    const c = form.captions[i] ?? "";
+    const start = el?.selectionStart ?? c.length;
+    const end = el?.selectionEnd ?? c.length;
+    setCaption(i, c.slice(0, start) + PAF_DATE_TAG + c.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + PAF_DATE_TAG.length, start + PAF_DATE_TAG.length);
+    });
+  };
+  const [hour, setHour] = React.useState(settings.hour);
   const [toggleNotice, setToggleNotice] = React.useState<Notice>(null);
+  const [hourNotice, setHourNotice] = React.useState<Notice>(null);
   const [keyNotice, setKeyNotice] = React.useState<Notice>(null);
   const [formNotice, setFormNotice] = React.useState<Notice>(null);
 
@@ -76,8 +104,18 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
   const known: PafAccount[] =
     accounts ?? (settings.account_id ? [{ id: settings.account_id, username: settings.username, displayName: settings.username, avatar: null, active: true, kind: null }] : []);
   const username = known.find((a) => a.id === form.account_id)?.username ?? (form.account_id === settings.account_id ? settings.username : "");
+  const twin = accounts?.find((a) => a.sameAsMain) ?? null;
+  const savedIsTwin = Boolean(accounts?.find((a) => a.id === settings.account_id)?.sameAsMain);
   const nextSlot = new Date(overview.nextSlot);
-  const nextPost = posts.find((p) => p.friday === overview.nextSlot.slice(0, 10)) ?? null;
+  const nextPost = posts.find((p) => p.friday === overview.nextFriday) ?? null;
+  const fridayAfter = new Date(Date.parse(`${overview.nextFriday}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+  const [focused, setFocused] = React.useState(0);
+  const previewIndex = form.captions[focused]?.trim() ? focused : form.captions.findIndex((c) => c.trim());
+  const preview =
+    form.date_caption === "only" || previewIndex >= 0
+      ? renderPafCaption(previewIndex >= 0 ? form.captions[previewIndex] : "", overview.nextFriday, form.date_caption)
+      : "";
+  const hourOk = normalizePafHour(hour);
 
   return (
     <div className="flex flex-col gap-6">
@@ -88,7 +126,7 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
               <span className="text-lg font-semibold">{settings.enabled ? "En marche" : "À l’arrêt"}</span>
               <span className="text-muted-foreground text-sm">
                 {settings.enabled
-                  ? `Prochain envoi : vendredi ${formatDate(nextSlot, "d MMMM")} à 7 h${settings.username ? ` sur @${settings.username}` : ""}`
+                  ? `Prochain envoi : vendredi ${formatDate(nextSlot, "d MMMM")} à ${pafHourLabel(settings.hour)}${settings.username ? ` sur @${settings.username}` : ""}`
                   : "Rien ne part tant que l’interrupteur est coupé."}
               </span>
               {nextPost ? (
@@ -98,6 +136,11 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
                 </span>
               ) : null}
               {job?.label ? <span className="text-muted-foreground text-xs">{job.label}</span> : null}
+              {settings.enabled && savedIsTwin ? (
+                <span className="text-destructive text-xs">
+                  @{settings.username} est l’Instagram du compte principal : rien ne partira tant que @paf.jachete n’est pas branché et choisi ci-dessous.
+                </span>
+              ) : null}
             </div>
             <Switch
               className="scale-125"
@@ -108,6 +151,26 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
             />
           </div>
           <NoticeLine result={toggleNotice} />
+          <div className="flex flex-wrap items-end gap-3 border-t pt-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="paf-hour" className="flex items-center gap-1.5 text-sm font-medium">
+                <Clock className="size-4" />
+                Heure de publication
+              </label>
+              <Input id="paf-hour" type="time" className="w-32" value={hour} onChange={(e) => setHour(e.target.value)} />
+            </div>
+            <Button
+              variant="outline"
+              disabled={pending || !hourOk || hourOk === settings.hour}
+              onClick={() => startTransition(async () => setHourNotice(await savePafHour(hour)))}
+            >
+              Changer l’heure
+            </Button>
+            <span className="text-muted-foreground basis-full text-xs">
+              Chaque vendredi, heure de Paris. Changée après coup, le Reel déjà programmé chez Zernio est reprogrammé à la nouvelle heure.
+            </span>
+          </div>
+          <NoticeLine result={hourNotice} />
         </CardContent>
       </Card>
 
@@ -202,6 +265,23 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
                   </a>
                 </p>
               ) : null}
+              {twin ? (
+                <div className="flex flex-col gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+                  <span className="font-medium">
+                    @{twin.username} est le même Instagram que celui du compte Zernio principal : la clé est bonne, c’est l’Instagram branché sur ce
+                    compte Zernio qui n’est pas le bon.
+                  </span>
+                  <span>Instagram branche le compte ouvert dans le navigateur au moment de la connexion. Pour brancher @paf.jachete :</span>
+                  <ol className="list-decimal pl-4">
+                    <li>Fenêtre de navigation privée → instagram.com → se connecter en @paf.jachete (compte pro : Créateur ou Entreprise).</li>
+                    <li>Dans la même fenêtre, zernio.com avec le second compte Zernio → Accounts → Connect → Instagram : vérifier que c’est bien @paf.jachete qui s’affiche.</li>
+                    <li>Revenir ici → Actualiser → choisir @paf.jachete → Enregistrer.</li>
+                  </ol>
+                  <span className="text-muted-foreground">
+                    Ne pas déconnecter @{twin.username} sur le compte Zernio principal : c’est lui qui publie les vidéos YouTube / TikTok sur Instagram.
+                  </span>
+                </div>
+              ) : null}
               <Select value={form.account_id || "none"} onValueChange={(v) => setForm((f) => ({ ...f, account_id: v === "none" ? "" : v }))} disabled={!known.length}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Choisir le compte" />
@@ -209,9 +289,9 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
                 <SelectContent>
                   <SelectItem value="none">Aucun</SelectItem>
                   {known.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
+                    <SelectItem key={a.id} value={a.id} disabled={a.sameAsMain && a.id !== settings.account_id}>
                       <Camera className="size-4" />@{a.username}
-                      {a.active ? null : " (à reconnecter sur Zernio)"}
+                      {a.sameAsMain ? " (compte principal, pas celui du vendredi)" : a.active ? null : " (à reconnecter sur Zernio)"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -230,16 +310,63 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
               {form.captions.map((c, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <span className="text-muted-foreground w-4 pt-2 text-xs">{i + 1}</span>
-                  <Textarea rows={2} maxLength={2200} aria-label={`Légende ${i + 1}`} placeholder="Bonjour, c’est vendredi." value={c} onChange={(e) => setCaption(i, e.target.value)} />
-                  <Button variant="ghost" size="icon" aria-label={`Retirer la légende ${i + 1}`} onClick={() => setForm((f) => ({ ...f, captions: f.captions.filter((_, j) => j !== i) }))}>
-                    <X />
-                  </Button>
+                  <Textarea
+                    ref={(el) => {
+                      captionRefs.current[i] = el;
+                    }}
+                    rows={2}
+                    maxLength={2200}
+                    aria-label={`Légende ${i + 1}`}
+                    placeholder="Bonjour, c’est vendredi."
+                    value={c}
+                    onFocus={() => setFocused(i)}
+                    onChange={(e) => setCaption(i, e.target.value)}
+                  />
+                  <div className="flex flex-col">
+                    <Button variant="ghost" size="icon" title="Insérer la date du vendredi" aria-label={`Insérer la date du vendredi dans la légende ${i + 1}`} onClick={() => insertDate(i)}>
+                      <CalendarDays />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Retirer" aria-label={`Retirer la légende ${i + 1}`} onClick={() => setForm((f) => ({ ...f, captions: f.captions.filter((_, j) => j !== i) }))}>
+                      <X />
+                    </Button>
+                  </div>
                 </div>
               ))}
               <Button variant="outline" size="sm" className="self-start" onClick={() => setForm((f) => ({ ...f, captions: [...f.captions, ""] }))}>
                 <Plus />
                 Ajouter une légende
               </Button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <CalendarDays className="size-4" />
+                Date du vendredi dans la légende
+              </span>
+              <Select value={form.date_caption} onValueChange={(v) => setForm((f) => ({ ...f, date_caption: v as PafDateMode }))}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAF_DATE_MODES.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                Écrite toute seule à chaque envoi : « {pafDateLabel(overview.nextFriday)} », puis « {pafDateLabel(fridayAfter)} »… Le bouton calendrier d’une légende y
+                place {PAF_DATE_TAG} à l’endroit du curseur.
+              </p>
+              {preview ? (
+                <div className="bg-muted flex flex-col gap-1 rounded-md p-3 text-xs">
+                  <span className="text-muted-foreground">
+                    Aperçu pour le {pafDateLabel(overview.nextFriday)}
+                    {form.date_caption !== "only" && previewIndex >= 0 ? ` (légende ${previewIndex + 1})` : ""}
+                  </span>
+                  <span className="whitespace-pre-line">{preview}</span>
+                </div>
+              ) : null}
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
               <label htmlFor="paf-feed" className="text-sm">
@@ -264,14 +391,17 @@ export function PafPanel({ overview }: { overview: PafOverview }) {
       <Card>
         <CardHeader>
           <CardTitle>Les vendredis</CardTitle>
-          <CardDescription>Chaque envoi, préparé 2 jours avant et programmé chez Zernio pour 7 h.</CardDescription>
+          <CardDescription>Chaque envoi, préparé 2 jours avant et programmé chez Zernio pour {pafHourLabel(settings.hour)}.</CardDescription>
         </CardHeader>
         <CardContent>
           {posts.length ? (
             <ul className="divide-y">
               {posts.map((p) => (
                 <li key={p.friday} className="flex flex-wrap items-center gap-3 py-2 text-sm">
-                  <span className="w-36 font-medium">Vendredi {formatDate(`${p.friday}T12:00:00Z`, "d MMM yyyy")}</span>
+                  <span className="w-44 font-medium">
+                    Vendredi {formatDate(`${p.friday}T12:00:00Z`, "d MMM yyyy")}
+                    {p.scheduled_for ? <span className="text-muted-foreground font-normal"> · {pafHourLabel(formatTime(p.scheduled_for))}</span> : null}
+                  </span>
                   <ToneBadge tone={TONES[p.status] ?? "neutral"}>{PAF_STATUS_LABELS[p.status] ?? p.status}</ToneBadge>
                   {p.username ? <Badge variant="outline">@{p.username}</Badge> : null}
                   {p.file_name ? <span className="text-muted-foreground text-xs">{p.file_name}</span> : null}

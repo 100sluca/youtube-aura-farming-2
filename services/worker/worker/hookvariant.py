@@ -45,7 +45,14 @@ PRODUCTION_COLUMNS = (
     "image_workflow",
     "channel_id",
 )
-COPIED_ASSETS = ("clip", "storyboard")  # au niveau de la production ; voix, montage et affiche sont refaits
+COPIED_ASSETS = ("clip", "storyboard")
+# réglages de la retouche de l'originale repris par la copie (affichage et son), pas les voix ni les plans corrigés
+KEPT_RETOUCH = (
+    "hook_title",
+    "hook_display",
+    "music",
+    "audio",
+)  # au niveau de la production ; voix, montage et affiche sont refaits
 
 
 @dataclass
@@ -141,18 +148,46 @@ def make_variant(
     on_screen: str | None = None,
     description: str | None = None,
 ) -> Variant:
+    v, p = source_of(db, video_id)
+    lang = v["lang"]
+    script = variant_script(ScriptV1.model_validate(p["script"]), lang, hook, promise, hook_title, title, on_screen)
+    return clone(db, data_dir, v, p, script, title, description, check_texts(hook, promise, hook_title, lang))
+
+
+def source_of(db: Any, video_id: str | UUID, *, voiced: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
+    """(vidéo, production) d'origine d'une variante : une vidéo montée dont les fichiers sont sur le PC ; `voiced` : un
+    récit narré, voix connue (sinon aussi un drame en voix des clips, docs/49 §11)."""
     v = db.fetch_one("select * from videos where id = %s", (video_id,))
     if not v:
         raise ValueError(f"vidéo introuvable : {video_id}")
-    if v["format"] != "A_voiceover" or not v["final_asset_id"] or v.get("files_deleted_at"):
+    if (voiced and v["format"] != "A_voiceover") or not v["final_asset_id"] or v.get("files_deleted_at"):
         raise ValueError("il faut un récit narré déjà monté, dont les fichiers sont sur le PC")
-    if not (v.get("tts_provider") and v.get("tts_voice")):
+    if voiced and not (v.get("tts_provider") and v.get("tts_voice")):
         raise ValueError("voix de la vidéo d'origine inconnue")
     p = db.fetch_one("select * from productions where id = %s", (v["production_id"],))
-    lang = v["lang"]
-    script = variant_script(ScriptV1.model_validate(p["script"]), lang, hook, promise, hook_title, title, on_screen)
-    issues = check_texts(hook, promise, hook_title, lang)
+    return v, p
 
+
+def clone(
+    db: Any,
+    data_dir: Path,
+    v: dict[str, Any],
+    p: dict[str, Any],
+    script: ScriptV1,
+    title: str,
+    description: str | None,
+    issues: list[str],
+    *,
+    seo: bool = False,
+    clip_voices: bool = False,
+    extra_retouch: dict[str, Any] | None = None,
+) -> Variant:
+    """Copie de la production avec `script` (clips et storyboard liés sur le disque), sa vidéo reliée à `v`
+    (variant_of), puis voix → montage → contrôle ; `seo` : métadonnées YouTube réécrites par l'agent SEO.
+    `clip_voices` (drame) : la vidéo garde le son de ses clips, voix du modèle vidéo et ambiance comprises (format B,
+    drama.build_dialogue_track), sans voix de synthèse ; ses réglages d'affichage et de son (titre d'accroche, musique,
+    niveaux) suivent l'originale."""
+    lang = v["lang"]
     cols = ", ".join(PRODUCTION_COLUMNS)
     pid = db.fetch_one(
         f"""insert into productions ({cols}, script, status, autopilot)
@@ -195,38 +230,48 @@ def make_variant(
             ),
         )
 
-    seo = dict(v.get("seo") or {})
-    if seo:
-        titles = [t for t in seo.get("titles") or [] if t.get("title") != title]
-        seo |= {"titles": [{"angle": "variante d'accroche", "title": title}, *titles], "chosen": 0}
+    pack = dict(v.get("seo") or {})  # métadonnées YouTube de l'originale, le titre de la copie en tête
+    if pack:
+        titles = [t for t in pack.get("titles") or [] if t.get("title") != title]
+        pack |= {"titles": [{"angle": "variante d'accroche", "title": title}, *titles], "chosen": 0}
     narration = " ".join(s.narration.get(lang, "") for s in script.scenes if s.narration.get(lang))  # type: ignore[call-overload]
     vid = db.fetch_one(
         """insert into videos (production_id, channel_id, lang, format, status, title, description, tags, narration_text,
-                               seo, subtitle_profile, origin, music_track, audio_mix, variant_of)
-           values (%s, %s, %s, %s, 'rendering', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning id""",
+                               seo, subtitle_profile, origin, music_track, audio_mix, variant_of, retouch)
+           values (%s, %s, %s, %s, 'rendering', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning id""",
         (
             pid,
             v["channel_id"],
             lang,
-            v["format"],
+            "B_visual" if clip_voices else v["format"],
             title[:100],
             description or v["description"],
             v["tags"],
             narration,
-            Jsonb(seo) if seo else None,
+            Jsonb(pack) if pack else None,
             v["subtitle_profile"],
             v["origin"],
             v["music_track"],
             Jsonb(v["audio_mix"]) if v["audio_mix"] is not None else None,
             v["id"],
+            Jsonb(kept)
+            if (kept := {**{k: x for k, x in (v.get("retouch") or {}).items() if k in KEPT_RETOUCH}, **(extra_retouch or {})})
+            else None,
         ),
     )["id"]
 
-    # la voix d'origine, telle quelle (sans jeu) : seule l'ouverture doit différer entre les deux vidéos
-    voice = f"{v['tts_provider']}:{v['tts_voice']}"
-    tts = db.enqueue("tts", production_id=pid, video_id=vid, payload={"voice": voice}, priority=20, max_attempts=2)
-    asm = db.enqueue("assemble", production_id=pid, video_id=vid, depends_on=[tts], priority=20, max_attempts=2)
+    # la voix d'origine, telle quelle (sans jeu) : seule l'ouverture doit différer entre les deux vidéos, les plans dont le
+    # texte n'a pas changé reprennent sa voix au lieu d'être redits (voices_from, steps/tts.kept_speeches) ; voix des
+    # clips : pas d'étape voix, le montage prend le son des clips
+    before: list[Any] = []
+    if not clip_voices:
+        voice = f"{v['tts_provider']}:{v['tts_voice']}"
+        payload = {"voice": voice, "voices_from": str(v["id"])}
+        before = [db.enqueue("tts", production_id=pid, video_id=vid, payload=payload, priority=20, max_attempts=2)]
+    asm = db.enqueue("assemble", production_id=pid, video_id=vid, depends_on=before, priority=20, max_attempts=2)
     db.enqueue("qa", production_id=pid, video_id=vid, depends_on=[asm], priority=20)
+    if seo:
+        db.enqueue("seo", production_id=pid, video_id=vid, payload={"force": True}, priority=110)
     log.info("variante.creee", origine=str(v["id"]), video=str(vid), production=str(pid), lies=linked)
     return Variant(pid, vid, linked, issues)
 

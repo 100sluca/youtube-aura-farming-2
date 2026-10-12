@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Layers, Plus } from "lucide-react";
 
 import { selectChannel } from "@/app/channel-actions";
@@ -22,14 +21,12 @@ import type { Channel } from "@/lib/types";
 
 /** Chaîne affichée partout (Vue d'ensemble, Bibliothèque, Calendrier, Création) ; « Toutes » cumule. */
 export function ChannelSwitcher({ channels, selected }: { channels: Channel[]; selected: string | null }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const current = channels.find((c) => c.slug === selected);
 
   function choose(slug: string) {
     startTransition(async () => {
-      await selectChannel(slug);
-      router.refresh();
+      await selectChannel(slug); // la réponse apporte déjà la page recalculée (docs/56)
     });
   }
 

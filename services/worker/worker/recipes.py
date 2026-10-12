@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from . import drama
+from . import drama, quotes
 from .hooktitle import clean_hook, lint_hook_title
 from .models import ScriptScene, ScriptV1
 from .numbers import script_to_digits
@@ -101,17 +101,33 @@ RECIPES: dict[str, RecipeSpec] = {
     ),
     # Drame (worker/drama.py, docs/35) : une réplique par plan, dite par le modèle vidéo ; coupes franches
     "drama": RecipeSpec("drama", True, True, None, drama.SCENES_RANGE, drama.SCENE_S, False, 0.12, 1330),
+    # Citation (worker/quotes.py, docs/58) : une scène, une image, le texte dessiné au montage, sans voix
+    "quote": RecipeSpec("quote", False, False, None, (1, 1), quotes.DURATION_S, False, 0.0, 768),
 }
 
 # Durées d'une scène de chantier selon sa place (normalize_script) : étapes rapides, le fini, la révélation.
 # Un clip première + dernière image fait 81 images (5,06 s) : à 1,2 s il est accéléré ×4,2 (≤ max_speedup).
 STAGE_S, DONE_S, REVEAL_S = (1.2, 2.5), (1.5, 3.0), (3.0, 5.0)
+# Lieu insolite (docs/51) : une étape toutes les 2,5 à 3 s (le clip de 5 s accéléré ×2), 60 à 70 s en 20 à 26 plans ;
+# le gros plan des mains se coupe dans un clip de 5 s
+WIDE_STAGE_S, WIDE_DONE_S, INSERT_S = (2.2, 3.2), (2.5, 3.5), (1.8, 2.6)
+TWO_VIEW_SCENES = (16, 28)
 # Visite : une pièce se montre 2,5 à 4 s (le clou 5 s), le passage vers la suivante dure 1,2 s (clip de 5 s accéléré)
 ROOM_S, PASSAGE_S = (2.5, 4.0), 1.2
 
 
 def spec(recipe: str | None) -> RecipeSpec:
     return RECIPES.get(recipe or "story", RECIPES["story"])
+
+
+def video_negative(script: ScriptV1, pos: int, recipe: str | None) -> str:
+    """Ce que le négatif du modèle vidéo exclut en plus pour ce plan : celui de la recette, sauf pour le gros plan des
+    mains d'un lieu insolite (les mains au premier plan y sont voulues)."""
+    if not is_visual(recipe):
+        return ""
+    if recipe == "timelapse" and is_insert(script, pos):
+        return "face, camera, tripod, text"
+    return spec(recipe).video_negative
 
 
 def recipe_for_production(db: Any, production_id: UUID | str) -> str:
@@ -219,6 +235,62 @@ def indoor(script: ScriptV1) -> bool:
     return any(sc.interior for sc in script.scenes)
 
 
+def two_views(script: ScriptV1) -> bool:
+    """Chantier « lieu insolite » (docs/51) : le scénariste marque chaque plan `shot` (large ou gros plan des mains) ;
+    le chantier se voit dehors puis dedans, chaque vue est construite à rebours depuis son propre résultat fini."""
+    return any(sc.shot for sc in script.scenes)
+
+
+def is_insert(script: ScriptV1, pos: int) -> bool:
+    return script.scenes[pos].shot == "insert"
+
+
+def segments(script: ScriptV1) -> list[list[int]]:
+    """Positions des plans larges d'un chantier, par vue : un seul groupe pour un chantier d'une vue (pièce ou
+    bâtiment) ; sinon les plans larges qui se suivent avec la même vue (dehors / dedans), les gros plans à part."""
+    wide = [p for p in range(len(script.scenes)) if not is_insert(script, p)]
+    if not two_views(script):
+        return [wide] if wide else []
+    out: list[list[int]] = []
+    for p in wide:
+        if out and bool(script.scenes[out[-1][-1]].interior) == bool(script.scenes[p].interior):
+            out[-1].append(p)
+        else:
+            out.append([p])
+    return out
+
+
+def stage_role(script: ScriptV1, pos: int) -> str:
+    """Place d'un plan de chantier : start (état d'origine de sa vue), stage (étape), done (résultat fini de sa vue,
+    seule image générée de sa chaîne), dusk (révélation du soir, à la fin), insert (gros plan des mains)."""
+    if is_insert(script, pos):
+        return "insert"
+    segs = segments(script)
+    for k, seg in enumerate(segs):
+        if pos not in seg:
+            continue
+        final = k == len(segs) - 1
+        done = seg[-2] if final and len(seg) >= 2 else seg[-1]
+        if pos == done:
+            return "done"
+        if pos > done:
+            return "dusk"
+        return "start" if pos == seg[0] else "stage"
+    return "stage"
+
+
+def chain_next(script: ScriptV1, pos: int) -> int | None:
+    """Position du plan sur lequel finit le clip « première + dernière image » du plan `pos` : le plan large suivant
+    de la même vue (un gros plan intercalé ne compte pas) ; hors chantier, simplement le plan suivant."""
+    if not any(sc.shot for sc in script.scenes):
+        return pos + 1 if pos + 1 < len(script.scenes) else None
+    for seg in segments(script):
+        if pos in seg:
+            k = seg.index(pos)
+            return seg[k + 1] if k + 1 < len(seg) else None
+    return None
+
+
 def _clamp(value: float, bounds: tuple[float, float]) -> float:
     return round(min(bounds[1], max(bounds[0], value)), 2)
 
@@ -229,6 +301,8 @@ def normalize_script(script: ScriptV1, recipe: str) -> ScriptV1:
     drama.normalize (personnages, une réplique par plan, durées tirées des répliques)."""
     if recipe == "drama":
         return drama.normalize(script)
+    if recipe == quotes.RECIPE:  # citation : une seule scène, durée tirée du texte (docs/58)
+        return quotes.normalize(script)
     if not is_visual(recipe):
         return script
     rs = spec(recipe)
@@ -269,23 +343,33 @@ def _question_mark(text: str, lang: str) -> str:
 
 
 def _normalize_timelapse(s: ScriptV1) -> None:
-    """Chantier à rebours : l'avant-dernière scène (le fini, en plein jour) est la seule image générée ; chaque
-    étape antérieure retouche la suivante ; la dernière (crépuscule) retouche le fini."""
-    n = len(s.scenes)
-    done = n - 2
-    for i, sc in enumerate(s.scenes):
+    """Chantier à rebours, vue par vue : dans chaque vue, le résultat fini est la seule image générée et chaque étape
+    antérieure retouche la suivante ; à la fin, la révélation du soir retouche le fini de la dernière vue. Un chantier
+    d'une seule vue (pièce ou bâtiment) : l'avant-dernière scène est le fini, la dernière le crépuscule. Lieu insolite
+    (docs/51) : dehors puis dedans, et des gros plans des mains, images générées à part, coupés franc."""
+    long = two_views(s)
+    stage_s, done_s = (WIDE_STAGE_S, WIDE_DONE_S) if long else (STAGE_S, DONE_S)
+    for p, sc in enumerate(s.scenes):
         sc.transition = "cut"  # chaque clip finit sur l'image clé où commence le suivant : coupe invisible
-        if i < done:
-            sc.edit_from = i + 1
+        role = stage_role(s, p)
+        if role == "insert":
+            sc.edit_prompt, sc.edit_from, sc.clip_mode = None, None, "i2v"
+            sc.duration_s = _clamp(sc.duration_s, INSERT_S)
+        elif role in ("start", "stage"):
+            nxt = chain_next(s, p)
+            sc.edit_from = s.scenes[nxt].index if nxt is not None else None
             sc.edit_prompt = (sc.edit_prompt or "").strip() or sc.visual_prompt
             sc.clip_mode = "flf"
-            sc.duration_s = _clamp(sc.duration_s, STAGE_S)
-        elif i == done:
-            sc.edit_prompt, sc.edit_from, sc.clip_mode = None, None, "flf"
-            sc.duration_s = _clamp(sc.duration_s, DONE_S)
-        else:
+            sc.duration_s = _clamp(sc.duration_s, stage_s)
+        elif role == "done":
+            sc.edit_prompt, sc.edit_from = None, None
+            sc.clip_mode = "flf" if chain_next(s, p) is not None else "i2v"  # le fini → le soir ; fini du dehors : i2v
+            sc.duration_s = _clamp(sc.duration_s, done_s)
+        else:  # dusk
+            done = next(q for q in range(p - 1, -1, -1) if stage_role(s, q) == "done")
             sc.edit_from = s.scenes[done].index
-            sc.edit_prompt = (sc.edit_prompt or "").strip() or (DUSK_ROOM if indoor(s) else DUSK)
+            room = sc.interior if long else indoor(s)
+            sc.edit_prompt = (sc.edit_prompt or "").strip() or (DUSK_ROOM if room else DUSK)
             sc.clip_mode = "i2v"
             sc.duration_s = _clamp(sc.duration_s, REVEAL_S)
 
@@ -352,14 +436,17 @@ def lint_recipe_script(script: ScriptV1, recipe: str, langs: Sequence[str], targ
     conforme."""
     if recipe == "drama":
         return drama.lint(script, langs, target_duration_s)
+    if recipe == quotes.RECIPE:
+        return quotes.lint(script, langs)
     rs = spec(recipe)
     issues: list[str] = []
     total_s = script.duration_s  # passages compris : c'est la durée de la vidéo
     if any(sc.passage for sc in script.scenes):  # le reste se vérifie sur les scènes écrites par le LLM (les pièces)
         script = script.model_copy(update={"scenes": [sc for sc in script.scenes if not sc.passage]})
     n = len(script.scenes)
-    if not rs.scenes[0] <= n <= rs.scenes[1]:
-        issues.append(f"{n} scènes : {rs.scenes[0]} à {rs.scenes[1]} pour ce format")
+    bounds = TWO_VIEW_SCENES if recipe == "timelapse" and two_views(script) else rs.scenes
+    if not bounds[0] <= n <= bounds[1]:
+        issues.append(f"{n} scènes : {bounds[0]} à {bounds[1]} pour ce format")
     for lang in langs:
         issues += lint_hook_title(script.hook_title.get(lang, ""), lang)  # type: ignore[call-overload]
     if not (script.design_bible or "").strip():
@@ -412,24 +499,29 @@ def _lint_timelapse(script: ScriptV1, langs: Sequence[str]) -> list[str]:
     n = len(script.scenes)
     if n < 3:
         return issues
-    done = script.scenes[n - 2]
-    if len(words(done.visual_prompt)) < 25:
-        issues.append(
-            f"scène {n - 1} (le résultat fini, seule image générée) : visual_prompt trop court, décrire le "
-            "résultat terminé en détail (matériaux, mobilier, portes, fenêtres, lumière) et ce qu'on voit dehors"
-        )
-    first = script.scenes[0].visual_prompt
+    roles = [stage_role(script, p) for p in range(n)]
+    for p in (p for p, r in enumerate(roles) if r == "done"):
+        if len(words(script.scenes[p].visual_prompt)) < 25:
+            issues.append(
+                f"scène {p + 1} (le résultat fini, seule image générée de sa vue) : visual_prompt trop court, décrire "
+                "le résultat terminé en détail (matériaux, mobilier, portes, fenêtres, lumière) et ce qu'on voit dehors"
+            )
+    done = script.scenes[roles.index("done")] if "done" in roles else script.scenes[n - 2]
+    first = script.scenes[roles.index("start") if "start" in roles else 0].visual_prompt
     if not _INITIAL.search(first) or _overlap(first, done.visual_prompt, script.design_bible or "") > 0.8:
         issues.append(
             "scène 1 : c'est l'ÉTAT INITIAL, avant tout travaux (pièce délabrée, sale, abîmée, ruine, lieu "
             "abandonné), jamais le résultat ; l'ordre des scènes est chronologique"
         )
-    forward = [i + 1 for i, sc in enumerate(script.scenes[: n - 2]) if not _REMOVAL.search(sc.edit_prompt or "")]
-    if len(forward) > (n - 2) // 2:
+    steps = [p for p, r in enumerate(roles) if r in ("start", "stage")]
+    forward = [p + 1 for p in steps if not _REMOVAL.search(script.scenes[p].edit_prompt or "")]
+    if len(forward) > len(steps) // 2:
         issues.append(
             f"scènes {forward} : edit_prompt doit ENLEVER ce qui n'est pas encore construit (« Remove the "
             "roof and the windows… ») : l'image d'une étape est une retouche de l'étape SUIVANTE"
         )
+    if two_views(script):
+        issues += _lint_two_views(script, roles)
     for lang in langs:
         days = [_day(sc.on_screen_text.get(lang, "")) for sc in script.scenes[: n - 1]]  # type: ignore[call-overload]
         got = [d for d in days if d is not None]
@@ -437,6 +529,31 @@ def _lint_timelapse(script: ScriptV1, langs: Sequence[str]) -> list[str]:
             issues.append(f"[{lang}] compteur de jours manquant : on_screen_text « Jour 1 », « Jour 14 »… sur chaque étape")
         elif any(b < a for a, b in zip(got, got[1:], strict=False)):
             issues.append(f"[{lang}] compteur de jours qui recule : {got}")
+    return issues
+
+
+def _lint_two_views(script: ScriptV1, roles: list[str]) -> list[str]:
+    """Lieu insolite (docs/51) : dehors puis dedans, chaque vue assez longue pour se construire, des gros plans
+    intercalés mais jamais deux de suite, ni en ouverture ni en révélation."""
+    issues: list[str] = []
+    segs = segments(script)
+    views = ["dedans" if script.scenes[seg[0]].interior else "dehors" for seg in segs]
+    if views != ["dehors", "dedans"]:
+        issues.append(
+            f"vues dans l'ordre {views} : deux vues seulement, d'abord DEHORS (interior false, plans larges), puis "
+            "DEDANS (interior true) ; les gros plans (shot insert) peuvent s'intercaler partout"
+        )
+    short = [v for v, seg in zip(views, segs, strict=True) if len(seg) < 5]
+    if short:
+        issues.append(f"vue {short} : 5 plans larges au moins par vue (état d'origine, étapes, résultat fini)")
+    inserts = [p for p, r in enumerate(roles) if r == "insert"]
+    if not 3 <= len(inserts) <= 7:
+        issues.append(f"{len(inserts)} gros plans des mains (shot insert) : 3 à 7, un toutes les 3 à 4 étapes")
+    if any(b == a + 1 for a, b in zip(inserts, inserts[1:], strict=False)):
+        issues.append("deux gros plans de suite : toujours un plan large entre deux gros plans")
+    n = len(script.scenes)
+    if inserts and (inserts[0] == 0 or inserts[-1] >= n - 2):
+        issues.append("un gros plan ouvre la vidéo ou précède la révélation : ouvrir et finir sur un plan large")
     return issues
 
 
@@ -642,10 +759,107 @@ titre YouTube ≤ 60 caractères (différent du hook_title, un émoji permis), d
 l'agent SEO. Réponds uniquement en JSON conforme à ScriptV1.""",
 }
 
+# Lieu insolite (docs/51, 01/10) : même recette « timelapse », son propre guide d'idées et son propre scénariste (série
+# dont source_config.variant = « insolite », prompt_key)
+IDEA_GUIDES["timelapse_insolite"] = """FORMAT : construction en accéléré (time-lapse) d'un LIEU INSOLITE, sans voix off,
+60 à 70 s : un endroit improbable, petit ou abandonné, devient un cocon tout confort. Le modèle : les chantiers IA qui
+font 10 à 28 millions de vues sur TikTok (maison de terre souterraine dans la jungle avec TV et clim, abri en vieux
+pneus sous le jardin, bunker douillet sous un surplomb rocheux, bus à impériale rouillé devenu petit logement, tour de
+pierre en ruine devenue refuge). Le plaisir : voir un trou, une épave ou une ruine devenir un endroit où l'on aurait
+envie de dormir ce soir, et se demander « comment c'est possible ? ». Chaque concept : le lieu de départ insolite et
+précis (premise), le résultat final (un intérieur chaleureux et crédible : bois, lumière chaude, lit, étagères, et
+UN confort moderne inattendu : TV murale, clim, frigo, poêle, baignoire), les étapes visibles dans l'ordre
+(visual_beats : d'abord DEHORS — terrain ou épave d'origine, creuser ou dégager, structure, toit ou couverture, porte,
+panneau solaire ; puis DEDANS — bâche, isolant, plancher, murs, peinture ou bois, lumières, meubles un par un, la TV
+ou la clim en dernier ; fin le soir, lumières allumées), et l'accroche (hook) = un titre d'accroche de 3 à 8 mots,
+parlé, qui pose l'énigme (« Il vit sous un rocher », « Ce bus était une épave », « 300 pneus sous son jardin »).
+Mots qui marchent : secret, caché, sous terre, bunker, abri, épave, ruine, hors réseau. Lieux variés d'une vidéo à
+l'autre : sous le jardin, sous un rocher, dans une falaise, dans un arbre, au bord d'un lac gelé, conteneur, citerne,
+bus, wagon, bateau échoué, silo, tour, grotte, igloo, cabane sur pilotis… Jamais deux fois le même lieu de suite."""
+
+SCRIPT_PROMPTS["timelapse_insolite"] = """Tu écris le script d'UN Short « construction en accéléré d'un lieu insolite »,
+9:16, 60 à 70 s, SANS voix off : bruitages, musique, un titre d'accroche et un compteur de jours. Un endroit
+improbable (trou dans un jardin, dessous d'un rocher, bus rouillé, tour en ruine, conteneur…) devient un cocon
+chaleureux et tout confort. Comme dans les modèles qui font des millions de vues : DEUX VUES FIXES, d'abord DEHORS
+(on voit le lieu se construire), puis DEDANS (la pièce se finit), un ouvrier toujours là, et des gros plans de mains
+intercalés pour le rythme.
+
+LE RÉSULTAT : un intérieur crédible et désirable, petit mais douillet (bois, lumière chaude, textiles, étagères,
+lit), avec UN confort moderne qui surprend (TV murale, clim, frigo, poêle, baignoire) ; jamais un rendu 3D, jamais un
+palais. Dehors : le lieu fini, discret et bien intégré (trappe dans la pelouse, porte sous le rocher, bus repeint).
+
+ORDRE DES SCÈNES : CHRONOLOGIQUE, 20 à 26 scènes en tout, champ shot sur CHACUNE :
+- VUE DEHORS (interior false, shot « wide »), 7 à 10 plans larges : le lieu d'origine (terrain vierge, épave, ruine)
+  → creuser, dégager → structure → couverture, toit → porte, accès → finitions extérieures ; le dernier plan large du
+  dehors est le lieu FINI vu de dehors, en plein jour ;
+- VUE DEDANS (interior true, shot « wide »), 9 à 12 plans larges : l'intérieur brut (trou, coque vide, épave
+  vidée) → bâche ou isolant → plancher → murs et plafond → peinture ou bois → lumières → meubles un par un → le
+  confort moderne en dernier ; puis le RÉSULTAT FINI en plein jour ; puis la révélation, la même pièce le soir,
+  lampes allumées (dernière scène) ;
+- GROS PLANS (shot « insert », interior selon la vue où il s'intercale), 4 à 6 en tout : les mains font un geste
+  satisfaisant de l'étape en cours (poser un panneau solaire, lisser un enduit, poser un carreau, visser la TV,
+  fixer la clim) ; un toutes les 3 à 4 étapes, jamais deux de suite, jamais en première ni dans les deux dernières.
+FABRICATION (pour écrire edit_prompt) : pour CHAQUE vue, le code génère l'image du résultat fini de cette vue, puis
+obtient chaque étape antérieure de la même vue en RETOUCHANT l'image de l'étape large qui la SUIT (les gros plans ne
+comptent pas) ; on remonte le temps en enlevant ce qui n'est pas encore fait : c'est ce qui garde le même lieu, la
+même échelle et le même cadre. Les gros plans sont des images générées à part.
+Chaque scène :
+- shot : « wide » ou « insert » ; interior : false dehors, true dedans ;
+- visual_prompt, en anglais : ce que montre l'image de CETTE scène. Le dernier plan large de chaque vue AVANT la
+  révélation (le fini) est généré : décris-le EN DÉTAIL (matériaux, porte, fenêtres ou ouvertures, mobilier,
+  lumières, ce qu'on voit autour) ; une porte, des marches ou des meubles de taille normale donnent l'échelle ;
+  personne. Gros plan : les mains, l'outil, le matériau, de près, sans visage. Jamais les mots « camera »,
+  « tripod » ni « time-lapse » ;
+- edit_prompt, en anglais, plans larges sauf le fini de chaque vue et la révélation : la RETOUCHE qui transforme
+  l'image de l'étape large SUIVANTE de la même vue en celle-ci : ce qu'il faut ENLEVER (pas encore fait) et ce qu'il
+  faut ajouter à ce moment (outils, matériaux, l'ouvrier qui travaille) ; premier plan de chaque vue : tout remettre
+  dans l'état d'origine (terre, rouille, ruine, coque vide). Gros plans : aucun edit_prompt. Révélation :
+  « Change the time of day to evening, the lamps are on… ». Exemple (extrait, abri sous un jardin) :
+  scène 1 (wide, dehors) : visual_prompt « An untouched green lawn in a suburban backyard with a wooden fence and a
+            pile of old tyres »,
+            edit_prompt « Remove the dug pit and the worker; put back the untouched lawn and the pile of tyres »
+  scène 2 (wide, dehors) : visual_prompt « A deep rectangular pit dug in the lawn, earth piled on the side »,
+            edit_prompt « Remove the tyre walls stacked in the pit: bare earth walls, a worker digging »
+  scène 4 (insert, dehors) : visual_prompt « Close-up of gloved hands bolting a solar panel onto an aluminium frame
+            on the grass », pas d'edit_prompt ;
+- motion_prompt, en anglais : ce qui se fait pendant le passage à l'étape suivante (« the tyre walls rise row by
+  row », « the oak floor is laid board by board ») ; le style accéléré (ouvrier rapide et flou, lumière qui tourne)
+  est ajouté par le code ; gros plan : le geste des mains (« the hands smooth the plaster with a trowel ») ;
+  révélation : un mouvement lent (« slow push-in toward the bed and the glowing lamp ») ;
+- sfx : 1 à 2 étiquettes de la liste (outils de l'étape : shovel, debris, hammer, drill, saw, sanding,
+  paint_roller, tiles… ; room_tone ou fireplace pour la fin) ;
+- on_screen_text FR et EN : le compteur « Jour 1 », « Jour 4 »… croissant sur TOUTES les scènes (gros plans
+  compris), la révélation garde le dernier jour ;
+- duration_s : 2.7 par plan large (2.2 à 3.2), 2.2 par gros plan, 3 pour le fini, 4 pour la révélation ; total 60
+  à 70 s.
+Chaque étape change UNE chose bien visible par rapport à la suivante (trop d'écart et la retouche échoue). UN seul
+ouvrier, en tenue de travail (même tenue d'un bout à l'autre, à écrire dans design_bible), à taille humaine, au
+milieu du cadre, jamais au premier plan, jamais face à l'objectif.
+design_bible, en anglais, en une phrase : ce qui NE CHANGE PAS : le lieu et ses alentours, la tenue de l'ouvrier
+(« a suburban backyard lawn with a wooden fence and brick houses behind; the worker wears grey overalls and a black
+cap ») ; ni le résultat, ni l'état de départ.
+music_mood : prise dans la liste MUSIQUE DE FOND. loop_note : comment la fin renvoie au début. metadata : par langue,
+titre YouTube ≤ 60 caractères (différent du hook_title, un émoji permis), description, 10 tags ; affiné par
+l'agent SEO. Réponds uniquement en JSON conforme à ScriptV1."""
+
+
+def prompt_key(recipe: str, variant: str | None = None) -> str:
+    """Clé du scénariste et du guide d'idées d'une série : sa recette, ou « recette_variante » quand la série a sa
+    propre variante (series.source_config.variant, ex. timelapse_insolite) et que le code en a les prompts."""
+    key = f"{recipe}_{variant}" if variant else recipe
+    return key if key in SCRIPT_PROMPTS else recipe
+
+
 # Drame (worker/drama.py, docs/35) : son scénariste et son guide d'idées, modifiables dans l'onglet Agents (clés
 # script_drama et guide_drama)
 SCRIPT_PROMPTS["drama"] = drama.SCRIPT_PROMPT
 IDEA_GUIDES["drama"] = drama.IDEA_GUIDE
+# Citation (worker/quotes.py, docs/58) : clés script_quote et guide_quote
+SCRIPT_PROMPTS[quotes.RECIPE] = quotes.SCRIPT_PROMPT
+IDEA_GUIDES[quotes.RECIPE] = quotes.IDEA_GUIDE
+# Citations d'auteurs, tirées de Wikiquote (docs/70) : clés script_quote_auteur et guide_quote_auteur
+SCRIPT_PROMPTS[f"{quotes.RECIPE}_{quotes.VARIANT_AUTHOR}"] = quotes.SCRIPT_PROMPT_AUTHOR
+IDEA_GUIDES[f"{quotes.RECIPE}_{quotes.VARIANT_AUTHOR}"] = quotes.IDEA_GUIDE_AUTHOR
 
 
 def script_context(recipe: str, hook_rules: str = HOOK_RULES) -> str:
@@ -654,6 +868,8 @@ def script_context(recipe: str, hook_rules: str = HOOK_RULES) -> str:
     le son vient des clips)."""
     if recipe == "drama":
         return hook_rules
+    if recipe == quotes.RECIPE:  # ni titre d'accroche ni bruitages : la citation et sa musique
+        return quotes.MUSIC_BRIEF
     return f"{hook_rules}\n\nBRUITAGES DISPONIBLES (champ sfx, étiquettes séparées par des virgules) :\n{vocabulary_text()}"
 
 
@@ -688,6 +904,20 @@ WORKER_SCALE_ROOM = (
     "Workers are at normal human size for the room, in the middle of the room, never close to the viewer, never in "
     "the foreground."
 )
+# Lieu insolite (docs/51) : comme dans les modèles de Luca, UN ouvrier toujours là, flou comme dans un vrai accéléré ;
+# gros plans des mains intercalés, sans visage
+FINISHED_PLACE = (
+    "the whole place is fully visible in one wide view at eye level with open space around it, realistic human scale "
+    "with a door, steps or railings, nobody, realistic photograph in natural daylight, not a 3D render"
+)
+ONE_WORKER = (
+    "One single worker in work clothes, at normal human size, slightly motion-blurred as in a real time-lapse, in the "
+    "middle distance, never in the foreground, face not visible."
+)
+INSERT_SHOT = (
+    "close-up photograph of a pair of hands in work gloves or bare hands doing the task, sleeves and tools visible, "
+    "no face, shallow depth of field, realistic photograph in natural light, not a 3D render"
+)
 _WORKERS = re.compile(r"\b(workers?|crew|builders?|people|men|climbers?|labou?rers?|masons?|carpenters?)\b", re.I)
 
 
@@ -704,7 +934,11 @@ def image_prompt(script: ScriptV1, index: int, recipe: str) -> str:
     if recipe == "tour":
         return _tour_prompt(script, sc, prompt, bible)
     extra = ""
-    if recipe == "timelapse":  # jamais « tripod » ni « camera » dans une image : le modèle les dessine
+    if recipe == "timelapse" and two_views(script):  # lieu insolite : la vue de ce plan, ou le gros plan des mains
+        if sc.shot == "insert":
+            return f"{prompt}, {INSERT_SHOT}, vertical framing"
+        extra = f", {FINISHED_ROOM if sc.interior else FINISHED_PLACE}, static wide shot, vertical framing"
+    elif recipe == "timelapse":  # jamais « tripod » ni « camera » dans une image : le modèle les dessine
         extra = f", {FINISHED_ROOM if indoor(script) else FINISHED_FRAMING}, static wide shot, vertical framing"
     return f"{prompt}{extra}" + (f". {bible}" if bible else "")
 
@@ -740,13 +974,16 @@ def edit_instruction(script: ScriptV1, index: int, recipe: str) -> str:
     if recipe == "timelapse":
         src = edit_source(script, index)
         backwards = src is not None and src > index  # on remonte le temps
-        room = indoor(script)
+        long = two_views(script)
+        room = bool(sc.interior) if long else indoor(script)
         if backwards and not text.lower().startswith("show"):
             text = (EARLIER_ROOM if room else EARLIER) + text
         target = _no_camera(sc.visual_prompt.strip()).rstrip(".")
         if backwards and len(words(target)) >= 5 and target[:30].lower() not in text.lower():
             text = f"{text.rstrip('.')}. The result shows: {target}."  # la cible, en plus de ce qu'il faut enlever
-        if _WORKERS.search(text):
+        if long and backwards:  # lieu insolite : l'ouvrier est là à chaque étape (docs/51)
+            text = f"{text.rstrip('.')}. {ONE_WORKER}"
+        elif _WORKERS.search(text):
             text = f"{text.rstrip('.')}. {WORKER_SCALE_ROOM if room else WORKER_SCALE}"
         return f"{text} {KEEP_FRAME}"
     return f"{text} Same house and same style: {bible}" if bible else text
@@ -772,6 +1009,12 @@ ROOM_MOTION = (
     "fast renovation time-lapse, fixed camera, workers bustle quickly around the room as motion blur, patches of "
     "sunlight sweep quickly across the floor and the walls"
 )
+# Lieu insolite : un seul ouvrier, rapide et flou ; le gros plan des mains se joue à vitesse normale
+ONE_WORKER_MOTION = (
+    "fast construction time-lapse, fixed camera, one worker moves quickly as a motion blur, the work progresses "
+    "step by step, light and shadows sweep quickly"
+)
+INSERT_MOTION = "close-up, the hands work steadily and precisely, natural light, shallow depth of field"
 ROOM_DUSK_MOTION = (
     "time-lapse, fixed camera, the daylight through the windows fades quickly to a deep blue evening, the lamps turn "
     "on one after another and a warm glow fills the room"
@@ -802,10 +1045,14 @@ def motion_prompt(script: ScriptV1, index: int, recipe: str) -> str:
         text = _no_rig(_PEOPLE.sub("", text).strip(" ,;"))
         return f"{text}, {WALK_THROUGH if sc.passage else EMPTY_HOUSE}"
     if recipe == "timelapse":
-        n, room = len(script.scenes), indoor(script)
-        if index == n - 2 and sc.clip_mode == "flf":  # le fini → le crépuscule
+        long = two_views(script)
+        room = bool(sc.interior) if long else indoor(script)
+        role = stage_role(script, index)
+        if role == "insert":
+            return f"{_no_rig(text)}, {INSERT_MOTION}"
+        if role == "done" and sc.clip_mode == "flf":  # le fini → le crépuscule
             return ROOM_DUSK_MOTION if room else DUSK_MOTION
         if sc.clip_mode == "flf":  # une grue de chantier est ici voulue : pas de _no_rig
-            return f"{ROOM_MOTION if room else TIMELAPSE_MOTION}, {text}"
+            return f"{ONE_WORKER_MOTION if long else ROOM_MOTION if room else TIMELAPSE_MOTION}, {text}"
         return f"{_no_rig(_PEOPLE.sub('', text).strip(' ,;'))}, {EMPTY_HOUSE}"  # révélation : seule la caméra bouge
     return text

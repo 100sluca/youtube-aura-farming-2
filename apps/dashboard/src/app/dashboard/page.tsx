@@ -3,9 +3,13 @@ import Link from "next/link";
 import { Info } from "lucide-react";
 
 import { AutoRefresh } from "@/components/auto-refresh";
+import { NetworkSwitcher } from "@/components/networks/network-cards";
 import { PageHeader } from "@/components/page-header";
 import { AnalysisPanel } from "@/components/stats/analysis-panel";
-import { PlatformTabs, isStatsPlatform } from "@/components/stats/platform-tabs";
+import { InstagramAccounts } from "@/components/stats/instagram-accounts";
+import { InstagramExplorer } from "@/components/stats/instagram-explorer";
+import { InstagramKpis } from "@/components/stats/instagram-kpis";
+import { isStatsPlatform } from "@/components/stats/platform-tabs";
 import { StatsExplorer } from "@/components/stats/stats-explorer";
 import { StatsKpis } from "@/components/stats/stats-kpis";
 import { StatsToolbar } from "@/components/stats/stats-toolbar";
@@ -14,6 +18,9 @@ import { TikTokExplorer } from "@/components/stats/tiktok-explorer";
 import { TikTokKpis } from "@/components/stats/tiktok-kpis";
 import { getChannelContext } from "@/lib/channel-server";
 import { formatDate } from "@/lib/format";
+import { getInstagramStatsPage } from "@/lib/instagram-stats";
+import type { NetworkAccount } from "@/lib/network-types";
+import { getNetworkAccounts } from "@/lib/networks";
 import { getStatsPage } from "@/lib/stats";
 import { isStatsPeriod } from "@/lib/stats-types";
 import { getTikTokStatsPage } from "@/lib/tiktok-stats";
@@ -21,24 +28,31 @@ import { getTikTokStatsPage } from "@/lib/tiktok-stats";
 export const metadata: Metadata = { title: "Dashboard" };
 
 /** Dashboard des statistiques (docs/25-dashboard-statistiques.md) : toutes les vidéos publiées avec leurs chiffres,
- * triables, en graphiques, et l'agent analyste qui dit ce qui marche et pourquoi. Deux onglets (docs/39) : YouTube, et
- * TikTok (?plateforme=tiktok) avec les mêmes chiffres pour chaque compte relié. */
+ * triables, en graphiques, et l'agent analyste qui dit ce qui marche et pourquoi. Trois onglets : YouTube, TikTok
+ * (?plateforme=tiktok, docs/39) et Instagram (?plateforme=instagram, docs/62), avec les mêmes chiffres pour chaque compte.
+ * En haut, une rangée avec chaque compte de chaque réseau (docs/62) : un clic change d'onglet et de compte. */
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const [{ periode, plateforme, compte }, { channels, selected }] = await Promise.all([searchParams, getChannelContext()]);
+  const [{ periode, plateforme, compte, chaine }, { channels, selected }] = await Promise.all([searchParams, getChannelContext()]);
   const period = isStatsPeriod(periode) ? periode : "28";
   const platform = isStatsPlatform(plateforme) ? plateforme : "youtube";
-  if (platform === "tiktok") return <TikTokTab period={period} channels={channels} selected={selected} account={typeof compte === "string" ? compte : undefined} />;
+  const account = typeof compte === "string" ? compte : undefined;
+  const networks = await getNetworkAccounts(channels, selected);
+  if (platform === "tiktok") return <TikTokTab period={period} channels={channels} selected={selected} account={account} networks={networks} />;
+  if (platform === "instagram") return <InstagramTab period={period} channels={channels} selected={selected} account={account} networks={networks} />;
 
-  const data = await getStatsPage(channels, selected, period);
+  // Chaîne choisie dans la rangée du haut (?chaine=), sinon celle de l'en-tête
+  const ytSelected = (typeof chaine === "string" && channels.find((c) => c.slug === chaine)) || selected;
+  const data = await getStatsPage(channels, ytSelected, period);
   const busy = data.sync.active || data.analysis.running;
 
   return (
     <div className="flex flex-col gap-6">
       <AutoRefresh seconds={busy ? 4 : 60} />
       <PageHeader
-        description={`Les chiffres de chaque vidéo publiée ${selected ? `sur « ${selected.name} »` : "sur tes chaînes"}, pour voir ce qui marche : vues, rétention, accroche à 3 s, j’aime, commentaires, partages, abonnés. La période filtre les vidéos par date de mise en ligne.`}
+        description={`Les chiffres de chaque vidéo publiée ${ytSelected ? `sur « ${ytSelected.name} »` : "sur tes chaînes"}, pour voir ce qui marche : vues, rétention, accroche à 3 s, j’aime, commentaires, partages, abonnés. La période filtre les vidéos par date de mise en ligne.`}
         actions={
           <StatsToolbar
+            channel={ytSelected && ytSelected !== selected ? ytSelected.slug : null}
             period={period}
             syncActive={data.sync.active}
             syncSince={data.sync.since}
@@ -48,7 +62,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           />
         }
       />
-      <PlatformTabs platform="youtube" period={period} />
+      <NetworkSwitcher accounts={networks} platform="youtube" account={ytSelected && ytSelected !== selected ? ytSelected.slug : null} period={period} />
 
       {data.connected && !data.analytics_through ? (
         <div className="flex gap-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
@@ -64,7 +78,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       ) : null}
 
       <StatsKpis data={data} />
-      <StatsExplorer data={data} showChannel={!selected && channels.length > 1} />
+      <StatsExplorer data={data} showChannel={!ytSelected && channels.length > 1} />
       <AnalysisPanel analysis={data.analysis} />
     </div>
   );
@@ -76,11 +90,13 @@ async function TikTokTab({
   channels,
   selected,
   account,
+  networks,
 }: {
   period: Parameters<typeof getTikTokStatsPage>[2];
   channels: Parameters<typeof getTikTokStatsPage>[0];
   selected: Parameters<typeof getTikTokStatsPage>[1];
   account?: string;
+  networks: NetworkAccount[];
 }) {
   const data = await getTikTokStatsPage(channels, selected, period, account);
   const fetchedAt = data.accounts.map((a) => a.fetched_at).filter((t): t is string => Boolean(t)).sort().at(-1) ?? null;
@@ -107,7 +123,7 @@ async function TikTokTab({
           />
         }
       />
-      <PlatformTabs platform="tiktok" period={period} />
+      <NetworkSwitcher accounts={networks} platform="tiktok" account={data.account_id} period={period} />
 
       {!data.configured || data.accounts.length === 0 ? (
         <div className="flex gap-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
@@ -162,6 +178,106 @@ async function TikTokTab({
         <>
           <TikTokKpis data={data} />
           <TikTokExplorer data={data} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Onglet Instagram (docs/62) : le compte des Shorts et celui de « Paf, j'achète », chiffres de chaque Reel, Reels
+ * programmés. */
+async function InstagramTab({
+  period,
+  channels,
+  selected,
+  account,
+  networks,
+}: {
+  period: Parameters<typeof getInstagramStatsPage>[2];
+  channels: Parameters<typeof getInstagramStatsPage>[0];
+  selected: Parameters<typeof getInstagramStatsPage>[1];
+  account?: string;
+  networks: NetworkAccount[];
+}) {
+  const data = await getInstagramStatsPage(channels, selected, period, account);
+  const connected = data.accounts.filter((a) => a.connected);
+  const fetchedAt = connected.map((a) => a.fetched_at).filter((t): t is string => Boolean(t)).sort().at(-1) ?? null;
+  const viewsPending = data.videos.filter((v) => v.views_pending).length;
+  const current = data.accounts.find((a) => a.id === data.account_id);
+  const noVideo = (current ? current.connected : connected.length > 0) && data.videos.length === 0;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <AutoRefresh seconds={data.sync.active ? 4 : 60} />
+      <PageHeader
+        description="Les chiffres de chaque Reel sorti sur Instagram, comme pour YouTube et TikTok : vues, accroche à 3 s, part regardée, portée, j’aime, commentaires, partages, enregistrements. Deux comptes : celui où partent les Shorts, et celui de « Paf, j’achète ». La période filtre les Reels par date de sortie."
+        actions={
+          <StatsToolbar
+            platform="instagram"
+            account={account ?? null}
+            period={period}
+            syncActive={data.sync.active}
+            syncSince={data.sync.since}
+            countersAt={fetchedAt}
+            lastError={data.sync.last_error}
+            connected={data.configured && connected.length > 0}
+          />
+        }
+      />
+      <NetworkSwitcher accounts={networks} platform="instagram" account={account ?? null} period={period} />
+
+      {!data.configured || connected.length === 0 ? (
+        <div className="flex gap-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-400" />
+          <p>
+            <span className="font-medium">{!data.configured ? "Instagram n’est pas encore relié." : "Aucun compte Instagram relevé pour l’instant."}</span>{" "}
+            <span className="text-muted-foreground">
+              La clé Zernio de{" "}
+              <Link href="/settings#tiktok" className="underline underline-offset-2">
+                Réglages → TikTok
+              </Link>{" "}
+              lit le compte des Shorts, celle de l’onglet{" "}
+              <Link href="/paf-j-achete" className="underline underline-offset-2">
+                Paf, j’achète
+              </Link>{" "}
+              le compte du vendredi : leurs chiffres arrivent ici dans l’heure (ou tout de suite avec « Actualiser »).
+            </span>
+          </p>
+        </div>
+      ) : null}
+
+      {data.accounts.length > 0 ? <InstagramAccounts data={data} period={period} /> : null}
+
+      {noVideo ? (
+        <div className="flex gap-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-400" />
+          <p>
+            <span className="font-medium">Aucun Reel sorti {period === "all" ? "pour l’instant" : "sur cette période"}.</span>{" "}
+            <span className="text-muted-foreground">
+              {data.upcoming[0]?.scheduled_for
+                ? `Le prochain sort ${formatDate(data.upcoming[0].scheduled_for, "EEEE d MMMM 'à' HH:mm")} : ses chiffres arrivent dans l’heure qui suit.`
+                : "Les chiffres arrivent dans l’heure qui suit la sortie d’un Reel."}
+            </span>
+          </p>
+        </div>
+      ) : null}
+
+      {viewsPending > 0 ? (
+        <div className="flex gap-3 rounded-xl border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-400" />
+          <p>
+            <span className="font-medium">
+              {viewsPending} Reel{viewsPending > 1 ? "s" : ""} tout juste sorti{viewsPending > 1 ? "s" : ""}.
+            </span>{" "}
+            <span className="text-muted-foreground">J’aime et commentaires sont lus en direct, les vues arrivent au relevé suivant.</span>
+          </p>
+        </div>
+      ) : null}
+
+      {connected.length > 0 && !(current && !current.connected) ? (
+        <>
+          <InstagramKpis data={data} />
+          <InstagramExplorer data={data} />
         </>
       ) : null}
     </div>

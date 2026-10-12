@@ -65,7 +65,7 @@ def _script(scenes: list[dict[str, Any]] | None = None, cast: list[dict[str, Any
     scenes = (
         scenes
         if scenes is not None
-        else [_scene(i, ["Kiwi", "prune", "madame_figue"][i % 3], "Cinquante mille euros. Je vais le rendre.") for i in range(16)]
+        else [_scene(i, ["Kiwi", "prune", "madame_figue"][i % 3], "Cinquante mille euros. Je vais le rendre.") for i in range(22)]
     )
     scenes = scenes + [_scene(100 + k) for k in range(4 - len(scenes))]  # ScriptV1 : 4 scènes au moins (plans muets)
     return ScriptV1.model_validate(
@@ -104,7 +104,7 @@ def test_normalize_resolves_characters_merges_a_speakers_lines_and_times_the_sce
     assert first.index == 0 and first.characters == ["kiwi", "madame_figue", "prune"]  # celui qui parle d'abord, 3 au plus
     # nombres en chiffres à l'écran, groupés par une espace insécable (docs/33)
     assert len(first.lines) == 1 and first.lines[0].text == "50\xa0000. Je le rends."
-    assert first.duration_s == pytest.approx(0.8 + 5 / drama.DIALOGUE_WPS)
+    assert first.duration_s == pytest.approx(drama.LINE_LEAD_S + 5 / drama.DIALOGUE_WPS)
     # ce qui est dit et écrit : la réplique seule, jamais « Kiwi : » (règle de Luca, 29/09) ; qui parle reste dans lines
     assert first.narration["fr"] == "50\xa0000. Je le rends."
     assert drama.speaker_line(n, first) == "Kiwi : 50\xa0000. Je le rends." and drama.speaker_line(n, second) == ""
@@ -185,10 +185,16 @@ def test_clip_prompt_makes_the_character_say_the_line_in_words():
     s = drama.normalize(_script([_scene(0, "kiwi", "Cinquante mille euros."), _scene(1)]))
     p = drama.clip_prompt(s, 0, "fr", "pixar_fruit")
     assert p.startswith("3D animated Pixar-style film with anthropomorphic fruit characters. move 0.")
-    assert 'Kiwi says in French, in a soft trembling young male voice: "cinquante mille euros."' in p  # ton déjà dans la voix
+    # ton déjà dans la voix ; H3 parle dès le début du plan, sans traîner (docs/70)
+    assert (
+        "Right at the start of the shot, Kiwi says in French, in a soft trembling young male voice, at a brisk, natural "
+        'pace, without pausing: "cinquante mille euros."' in p
+    )
     assert "Nobody speaks" in drama.clip_prompt(s, 1, "fr", "pixar_fruit")
     s.scenes[0].lines[0].tone = "Trembling, stunned whisper."
-    assert 'young male voice, stunned whisper: "' in drama.clip_prompt(s, 0, "fr", "pixar_fruit")
+    assert 'young male voice, stunned whisper, at a brisk, natural pace, without pausing: "' in drama.clip_prompt(
+        s, 0, "fr", "pixar_fruit"
+    )
 
 
 def test_heard_words_are_glued_like_the_script_and_timed_on_the_voice():
@@ -210,16 +216,93 @@ def test_heard_words_are_glued_like_the_script_and_timed_on_the_voice():
     assert far[0].start == 0.0 and far[-1].end == pytest.approx(4.42, abs=0.01)
 
 
-def test_dialogue_timeline_stretches_a_scene_to_its_last_word_but_never_past_its_clip():
+def test_dialogue_timeline_cuts_the_silence_around_a_line_and_never_goes_past_its_clip():
     s = drama.normalize(_script([_scene(0, "kiwi", "Oui."), _scene(1), _scene(2, "prune", "Non merci.")]))
-    heard = {"words": [{"w": "Oui", "start": 0.3, "end": 2.9}]}
-    tl = drama.dialogue_timeline(
-        s, "fr", [{"duration": 5.17, "dialogue": heard}, {"duration": 5.17}, {"duration": 3.0}, {"duration": 5.17}]
-    )
+    heard = {"words": [{"w": "Oui", "start": 0.9, "end": 1.6}]}
+    clips = [{"duration": 5.17, "dialogue": heard}, {"duration": 5.17}, {"duration": 3.0}, {"duration": 5.17}]
+    tl = drama.dialogue_timeline(s, "fr", clips)
     a, b, c, _ = tl.scenes
-    assert a.duration == pytest.approx(2.9 + drama.TAIL_S) and a.words[0].start == 0.3 and tl.aligner == "whisper"
+    # le silence avant la réplique est coupé, la scène finit TAIL_S après le dernier mot : plus de durée prévue en
+    # minimum (elle gardait jusqu'à 4 s de blanc, docs/70)
+    assert drama.dialogue_heads(s, clips)[0] == pytest.approx(0.9 - drama.HEAD_LEAD_S)
+    assert a.words[0].start == pytest.approx(drama.HEAD_LEAD_S) and tl.aligner == "whisper"
+    assert a.duration == pytest.approx(drama.SCENE_MIN_S)  # « Oui. » : 0,7 s de voix, la scène dure le minimum
+    assert b.duration <= drama.SILENT_S[1]  # drame en dialogues : un plan muet est une réaction courte
     assert b.start == pytest.approx(a.duration) and b.words == []
     assert c.duration <= 3.0 and c.words and c.words[0].start >= c.start  # sans transcription : réplique répartie
+
+
+def test_clips_played_a_little_faster_keep_words_on_the_voice_and_never_ask_more_than_the_clip():
+    from worker.steps.assemble import _clip_chain
+
+    s = drama.normalize(_script([_scene(0, "kiwi", "Oui je le rends."), _scene(1), _scene(2, "prune", "Non.")]))
+    heard = {"words": [{"w": "Oui", "start": 1.0, "end": 1.3}, {"w": "je", "start": 1.3, "end": 1.5},
+                       {"w": "le", "start": 1.5, "end": 1.7}, {"w": "rends.", "start": 1.7, "end": 3.2}]}  # fmt: skip
+    clips = [{"duration": 5.17, "dialogue": heard}, {"duration": 5.17}, {"duration": 5.17}, {"duration": 5.17}]
+    slow, fast = drama.dialogue_timeline(s, "fr", clips), drama.dialogue_timeline(s, "fr", clips, pace=drama.PACE)
+    assert fast.scenes[0].duration == pytest.approx(slow.scenes[0].duration / drama.PACE, abs=1e-3)
+    assert fast.scenes[0].words[-1].end == pytest.approx(slow.scenes[0].words[-1].end / drama.PACE, abs=1e-3)
+    assert fast.scenes[1].start == pytest.approx(fast.scenes[0].duration)  # le plan suivant suit, sans trou
+    # l'image suit la voix : début coupé, puis lecture accélérée du même facteur
+    chain = _clip_chain(0, fast.scenes[0].duration, 5.17, "trim", False, offset=0.8, speed=drama.PACE)
+    assert "trim=start=0.800,setpts=PTS-STARTPTS,setpts=PTS/1.1200" in chain and "tpad" not in chain
+
+
+def test_clip_voices_drop_words_the_video_model_added_around_the_line():
+    def said(*ws: tuple[str, float, float]) -> list[dict[str, Any]]:
+        return [{"w": w, "start": a, "end": b} for w, a, b in ws]
+
+    # « Il pouvait se venger », plan 7 (01/10) : H3 dit trois mots de trop avant la réplique
+    junk = said(
+        ("Les", 0.0, 0.72), ("développeurs,", 0.72, 1.78), ("au", 2.02, 2.32), ("lieu", 2.32, 2.6), ("de", 2.6, 2.9),
+        ("voir,", 2.9, 2.9), ("assez", 3.76, 3.96), ("pour", 3.96, 4.16), ("une", 4.16, 4.3), ("porte.", 4.3, 4.68),
+    )  # fmt: skip
+    assert drama.line_window("Assez pour une porte.", junk) == (6, 10)
+    head, kept, end = drama.line_cut("Assez pour une porte.", junk, 5.17)
+    assert head == pytest.approx(3.76 - drama.LINE_IN_S) and kept[0]["start"] == pytest.approx(0.35) and end is None
+    # après la réplique : la scène finit avant les mots en trop ; une réplique bien dite reste entière
+    tail = said(("Personne", 0.5, 0.9), ("ne", 0.9, 1.0), ("viendra,", 1.0, 1.5), ("je", 2.4, 2.5), ("l'ai.", 2.5, 2.8))
+    head, kept, end = drama.line_cut("Personne ne viendra…", tail, 5.17)
+    assert head == pytest.approx(0.5 - drama.HEAD_LEAD_S) and [w["w"] for w in kept] == ["Personne", "ne", "viendra,"]
+    assert kept[0]["start"] == pytest.approx(drama.HEAD_LEAD_S) and end == pytest.approx(1.5 - head + drama.TAIL_S)
+    clean = said(
+        ("mais", 0.2, 0.4), ("je", 0.4, 0.5), ("suis", 0.5, 0.7), ("ta", 0.7, 0.8), ("mère", 0.8, 1.0), ("à", 1.0, 1.1),
+        ("pi", 1.1, 1.3),
+    )  # fmt: skip
+    assert drama.line_window("Mais… je suis ta mère, Api.", clean) == (0, 7)
+
+    s = drama.normalize(_script([_scene(0, "kiwi", "Assez pour une porte."), _scene(1)]))
+    clips = [{"duration": 5.17, "dialogue": {"words": junk}}] + [{"duration": 5.17}] * (len(s.scenes) - 1)
+    tl = drama.dialogue_timeline(s, "fr", clips)
+    assert drama.dialogue_heads(s, clips) == [pytest.approx(3.41)] + [0.0] * (len(s.scenes) - 1)
+    first = tl.scenes[0]
+    assert first.duration <= 5.17 - 3.41 + 1e-6 and first.words[0].text == "Assez" and first.words[0].start == pytest.approx(0.35)
+
+
+def test_drama_sound_has_no_added_sfx_by_default_and_skips_muted_plans(tmp_path: Path):
+    from worker.retouch import Retouch
+    from worker.steps.assemble import RenderPlan, drama_sound, muted_voices
+
+    s = drama.normalize(_script([_scene(0, "kiwi", "Oui.", sfx="laughter"), _scene(1, sfx="cafeteria, gasp")]))
+    n = len(s.scenes)
+    clips = [{"local_path": str(tmp_path / f"absent_{k}.mp4")} for k in range(n)]
+
+    def plan() -> RenderPlan:
+        return RenderPlan(clips=[Path("c.mp4")] * n, clip_durations=[5.0] * n, scene_durations=[4.0] * n)
+
+    # Luca, 01/10 : le son des clips a déjà ses bruitages ; aucun n'est ajouté à un drame sans demande
+    assert Retouch().bruitages(drama=True) is False and Retouch().bruitages(drama=False) is True
+    assert Retouch(sfx=True).bruitages(drama=True) is True
+    off = drama_sound(plan(), s, "fr", clips, sfx_dir=tmp_path, key="v", ambience=False)
+    assert off["bruitages"] == "aucun"
+    on = drama_sound(plan(), s, "fr", clips, sfx_dir=tmp_path, key="v", ambience=False, bruitages=True, muted={1})
+    assert on["bruitages"] == ["laughter"]  # le plan 2, au son coupé, perd les siens
+    # plan parlé au son coupé : sans séparation possible, il garde son son (sa réplique n'est jamais perdue)
+    settings = Settings(database_url="postgresql://x", supabase_url="http://x", supabase_service_role_key="x", data_dir=tmp_path)
+    settings.yt2_home = str(tmp_path)  # pas d'environnement de séparation ici
+    (tmp_path / "absent_0.mp4").write_bytes(b"x")
+    assert muted_voices(settings, s, clips, {0, 1}, []) == ({}, {0})
+    assert muted_voices(settings, s, clips, {1}, []) == ({}, set())  # plan sans réplique : coupé sans séparation
 
 
 def test_voices_follow_the_writer_then_the_description_and_are_not_shared():

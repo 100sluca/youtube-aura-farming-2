@@ -19,8 +19,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .models import ScriptV1
-from .recipes import edit_instruction, edit_source, indoor
+from .image_text import keyframe_allowance
+from .models import ScriptScene, ScriptV1
+from .recipes import edit_instruction, edit_source, indoor, stage_role, two_views
 from .speaker import requirement as speaker_requirement
 
 QC_SYSTEM = """Tu es le contrôleur qualité d'une chaîne YouTube de vidéos réalistes générées par IA. On te montre
@@ -31,6 +32,12 @@ crédibilité (une pièce qui est en fait dehors, une personne là où il n'en f
 le bord, une échelle absurde, une retouche non faite ou un cadre qui a changé) et indulgent sur le goût."""
 
 PHOTO = "L'image est une photo réaliste (ni dessin, ni rendu 3D grossier), sans texte, logo ni filigrane."
+# Plan dont le texte écrit est voulu (scene.image_text, docs/57 §5) : le texte exact est relu à part (image_text.check_image)
+PHOTO_WITH_TEXT = "L'image est une photo réaliste (ni dessin, ni rendu 3D grossier), sans logo ni filigrane."
+NO_WORDS = (
+    "Aucun sous-titre, légende, titre, panneau avec des mots, logo ni filigrane ajouté à l'image (les chiffres d'un "
+    "cadran ou d'une horloge et les petites inscriptions d'un objet sont tolérés)."
+)
 NOBODY = "Aucune personne n'est visible, même au loin ou en reflet."
 
 
@@ -45,10 +52,10 @@ PATIENCE_S = (30, 90, 180)
 _TRANSIENT = re.compile(r"503|429|500|502|504|timed out|timeout|unavailable|overloaded|high demand|RESOURCE_EXHAUSTED", re.I)
 
 
-def _ask(llm: Any, system: str, user: str, images: list[Path]) -> KeyframeVerdict:
+def _ask_model(llm: Any, system: str, user: str, images: list[Path], schema: type[Any]) -> Any:
     for wait in (*PATIENCE_S, None):
         try:
-            return llm.complete_json(system, user, KeyframeVerdict, images=images)
+            return llm.complete_json(system, user, schema, images=images)
         except Exception as exc:
             if wait is None or not _TRANSIENT.search(str(exc)):
                 raise
@@ -56,8 +63,25 @@ def _ask(llm: Any, system: str, user: str, images: list[Path]) -> KeyframeVerdic
     raise AssertionError("inatteignable")
 
 
+def _ask(llm: Any, system: str, user: str, images: list[Path]) -> KeyframeVerdict:
+    return _ask_model(llm, system, user, images, KeyframeVerdict)
+
+
+def _text_rules(reqs: list[str], sc: ScriptScene) -> list[str]:
+    """Un plan qui porte un texte voulu (scene.image_text) : « sans texte » devient « ce texte seulement »."""
+    if sc.image_text is None:
+        return reqs
+    allowance = keyframe_allowance(sc.image_text)
+    out = [PHOTO_WITH_TEXT if r == PHOTO else allowance if r == NO_WORDS else r for r in reqs]
+    return out if allowance in out else [*out, allowance]
+
+
 def requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     """Les exigences d'une image clé, d'après sa place dans le script (en français, lues par le modèle)."""
+    return _text_rules(_requirements(script, pos, recipe), script.scenes[pos])
+
+
+def _requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
     sc = script.scenes[pos]
     what = sc.visual_prompt.strip()[:300]
     if recipe == "tour":
@@ -70,6 +94,8 @@ def requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
         else:
             reqs = [f"Vue extérieure qui correspond à : {what}"]
         return [PHOTO, *reqs, NOBODY]
+    if recipe == "timelapse" and two_views(script):
+        return _two_view_requirements(script, pos, what)
     if recipe == "timelapse" and indoor(script):
         return _room_requirements(script, pos, what)
     if recipe == "timelapse":
@@ -107,6 +133,44 @@ def requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
         ]
         return reqs
     return [PHOTO]
+
+
+def _two_view_requirements(script: ScriptV1, pos: int, what: str) -> list[str]:
+    """Lieu insolite (docs/51) : chaque vue (dehors, dedans) garde son cadre ; un ouvrier à taille humaine sur les
+    étapes ; gros plans des mains sans visage."""
+    sc = script.scenes[pos]
+    role = stage_role(script, pos)
+    place = "la pièce" if sc.interior else "le lieu"
+    if role == "insert":
+        return [
+            PHOTO,
+            f"Gros plan des mains au travail : {what}",
+            "On voit les mains et l'outil ou le matériau de près ; aucun visage, aucun texte écrit.",
+        ]
+    if role == "done":
+        return [
+            PHOTO,
+            f"L'image montre : {what}",
+            f"C'est {place} TERMINÉ, propre : aucune bâche, aucun outil, aucun matériau de chantier qui traîne.",
+            "On voit l'ensemble en grand, à hauteur d'œil, avec une porte, des marches ou des meubles de taille normale.",
+            NOBODY,
+        ]
+    if role == "dusk":
+        return [PHOTO, "C'est la même vue que l'image 2, le soir, lumières allumées ; même cadrage.", NOBODY]
+    if role == "start":
+        return [
+            PHOTO,
+            f"L'image montre {place} AVANT tout travaux : {what}",
+            "Même point de vue et même cadrage que l'image 2 ; terre, ruine, rouille, saleté ou végétation en plus sont "
+            "normaux, c'est l'état d'origine.",
+        ]
+    return [
+        PHOTO,
+        f"L'image montre cette étape du chantier : {what}",
+        "Elle est MOINS avancée que l'image 2 (étape suivante) : ce qui n'est pas encore fait a été enlevé ; le point "
+        "de vue et le cadrage sont les mêmes que dans l'image 2.",
+        "Un ouvrier à taille humaine normale peut être là, flou ; aucun n'est géant, en gros plan ou coupé par le bord.",
+    ]
 
 
 def _room_requirements(script: ScriptV1, pos: int, what: str) -> list[str]:
@@ -171,6 +235,15 @@ def clip_requirements(script: ScriptV1, pos: int, recipe: str) -> list[str]:
         return [NO_NEW_TEXT, *([req] if (req := speaker_requirement(script, sc)) else [])]
     if sc.passage:  # un passage d'une pièce à l'autre transforme l'image : seuls personnes et appareils comptent
         return ["Aucune personne n'apparaît, même au loin ou en reflet.", NO_RIG]
+    if recipe == "timelapse" and stage_role(script, pos) == "insert":
+        return [NO_RIG, "Les mains et l'objet travaillé restent cohérents, sans se déformer ; aucun visage n'apparaît."]
+    if recipe == "timelapse" and two_views(script) and stage_role(script, pos) in ("start", "stage"):
+        return [
+            "L'ouvrier reste à taille humaine normale : aucune personne géante, en gros plan, près de l'objectif ou "
+            "coupée par le bord de l'image.",
+            NO_RIG.replace(", grue", ""),
+            "Le point de vue et le cadrage restent ceux de l'image 1.",
+        ]
     if recipe == "timelapse" and sc.clip_mode == "flf" and pos < len(script.scenes) - 2 and indoor(script):
         return [
             "Les ouvriers éventuels restent à taille humaine normale pour la pièce : aucune personne géante, en gros "
@@ -231,8 +304,7 @@ def continuity_requirements(script: ScriptV1, pos: int, previous_pos: int | None
     sc = script.scenes[pos]
     reqs = [
         f"L'image montre ce que décrit le plan : {sc.visual_prompt.strip()[:400]}",
-        "Aucun sous-titre, légende, titre, panneau avec des mots, logo ni filigrane ajouté à l'image (les chiffres d'un "
-        "cadran ou d'une horloge et les petites inscriptions d'un objet sont tolérés).",
+        NO_WORDS,
         "Pas de défaut grossier : visage déformé, membres en trop ou manquants, objets fondus les uns dans les autres.",
     ]
     if previous_pos is not None:
@@ -245,7 +317,7 @@ def continuity_requirements(script: ScriptV1, pos: int, previous_pos: int | None
             "Seulement si les deux descriptions parlent de la même personne ou du même objet : il garde la même apparence "
             "(visage, âge, vêtements, forme, couleurs).",
         ]
-    return reqs
+    return _text_rules(reqs, sc)
 
 
 def check_continuity(

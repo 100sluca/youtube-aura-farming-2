@@ -13,7 +13,11 @@ videos.retouch (jsonb ; null = aucune retouche) :
 - subtitles : {index de la scène : texte affiché} ; absent = les mots de la voix (la voix lit toujours la narration) ;
 - music : {"track": identifiant | null, "start_s": s | null} ; absent = choix du montage, track null = sans musique ;
 - audio : niveaux voice_db, music_db, duck_db, solo_db, sfx_db ; absents = ceux du modèle de montage ;
-- voice : dernière voix demandée (« moteur:voix »), pour l'écran de retouche.
+- voice : dernière voix demandée (« moteur:voix »), pour l'écran de retouche ;
+- sfx : bruitages ajoutés au montage (case « Bruitages ») ; absent = ceux du format : aucun sur un drame (le son des
+  clips a déjà les siens, choix de Luca le 01/10), ceux de la recette ailleurs (chantiers, visites) ;
+- muted : plans (index de scène) dont le son du clip est coupé (Retoucher → Plans, docs/49 §13) : ni ambiance ni
+  bruitage ; sur un plan parlé en voix des clips, la réplique reste (voix isolée par Demucs).
 
 Un texte retouché est final : il ne repasse pas par la conversion en chiffres (worker/numbers.py), Luca a le dernier mot.
 Ses mots sont recalés sur les temps des mots de la voix : un mot inchangé garde son temps, un passage réécrit prend le
@@ -60,9 +64,15 @@ class Retouch(BaseModel):
     music: MusicChoice | None = None
     audio: dict[str, float] = Field(default_factory=dict)
     voice: str | None = None
+    sfx: bool | None = None  # bruitages ajoutés ; None : ceux du format (aucun sur un drame)
+    muted: list[int] = Field(default_factory=list)  # plans au son du clip coupé
 
     def __bool__(self) -> bool:
         return bool(self.parts())
+
+    def bruitages(self, drama: bool) -> bool:
+        """Bruitages ajoutés au montage : le choix de la retouche, sinon aucun sur un drame (ses clips ont leur son)."""
+        return self.sfx if self.sfx is not None else not drama
 
     def parts(self) -> list[str]:
         """Ce qui est retouché (journal et résultat du job)."""
@@ -80,6 +90,10 @@ class Retouch(BaseModel):
             out.append("mixage")
         if self.voice:
             out.append("voix")
+        if self.sfx is not None:
+            out.append("bruitages" if self.sfx else "sans bruitages")
+        if self.muted:
+            out.append(f"son coupé ({len(self.muted)} plan{'s' if len(self.muted) > 1 else ''})")
         return out
 
     def hook(self, auto: str) -> str:

@@ -5,10 +5,12 @@ import {
   Clapperboard,
   LayoutDashboard,
   LibraryBig,
+  MonitorPlay,
   Settings,
   ShoppingBag,
   Sparkles,
   Star,
+  Telescope,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,7 +25,9 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Vue d’ensemble", icon: LayoutDashboard },
   { href: "/dashboard", label: "Dashboard", icon: ChartColumnBig }, // stats de chaque vidéo + agent analyste (docs/25)
+  { href: "/research", label: "Recherche", icon: Telescope }, // niches, tendances, vidéos à reproduire (docs/60)
   { href: "/create", label: "Création", icon: Sparkles },
+  { href: "/long", label: "Vidéos longues", icon: MonitorPlay }, // histoire et mystères narrées par Luca (docs/63)
   { href: "/library", label: "Bibliothèque", icon: LibraryBig },
   { href: "/favorites", label: "Favoris", icon: Star },
   { href: "/calendar", label: "Calendrier", icon: CalendarDays },

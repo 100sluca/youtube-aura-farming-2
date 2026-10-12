@@ -12,11 +12,14 @@ from psycopg.types.json import Jsonb
 
 from ..models import QACheck, QAReport
 from ..notify import queue_video_ready
+from ..recipes import recipe_for_production
 from .base import Context, Step
 
 # Durée admise d'un Short : YouTube en accepte jusqu'à 3 min depuis octobre 2024 ; les drames durent 60 à 80 s (docs/35)
 # et les récits 60 à 90 s (docs/37). L'ancienne borne (58 s) aurait refusé les deux.
 DURATION_S = (15.0, 180.0)
+# Citation (docs/58) : 6 à 13 s, faite pour être relue en boucle
+MIN_S_BY_RECIPE = {"quote": 5.0}
 
 
 class QAStep(Step):
@@ -37,7 +40,9 @@ class QAStep(Step):
         report = (
             QAReport(ok=True, checks=[], duration_s=30.0)
             if ctx.settings.dry_run
-            else self._analyse(Path(v["local_path"]), v["format"])
+            else self._analyse(
+                Path(v["local_path"]), v["format"], MIN_S_BY_RECIPE.get(recipe_for_production(ctx.db, ctx.job.production_id))
+            )
         )
         ctx.db.execute("update videos set qa_report = %s where id = %s", (Jsonb(report.model_dump()), vid))
         if not report.ok:
@@ -51,7 +56,7 @@ class QAStep(Step):
         self._maybe_mark_production_ready(ctx)
         return report.model_dump()
 
-    def _analyse(self, path: Path, fmt: str) -> QAReport:
+    def _analyse(self, path: Path, fmt: str, min_s: float | None = None) -> QAReport:
         probe = json.loads(
             subprocess.run(
                 ["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)],
@@ -63,7 +68,7 @@ class QAStep(Step):
         vs = next(s for s in probe["streams"] if s["codec_type"] == "video")
         dur = float(probe["format"]["duration"])
         checks = [
-            QACheck(name="duration", ok=DURATION_S[0] <= dur <= DURATION_S[1], value=dur),
+            QACheck(name="duration", ok=(min_s or DURATION_S[0]) <= dur <= DURATION_S[1], value=dur),
             QACheck(name="resolution", ok=(vs["width"], vs["height"]) == (1080, 1920), value=f"{vs['width']}x{vs['height']}"),
         ]
         lufs = None

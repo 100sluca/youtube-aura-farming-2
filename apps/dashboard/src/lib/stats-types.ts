@@ -36,6 +36,7 @@ export const RECIPE_LABELS: Record<string, string> = {
   timelapse: "Chantier",
   tour: "Visite",
   story: "Récit",
+  quote: "Citation",
 };
 
 export interface VideoInsight {

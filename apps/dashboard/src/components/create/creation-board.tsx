@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { CircleCheck, CircleX, ListChecks, LoaderCircle, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 
 import { selectChannel } from "@/app/channel-actions";
@@ -51,7 +50,6 @@ function SectionTitle({ id, title, count, children }: { id?: string; title: stri
  * et les images ; le storyboard revient ici, et son ✓ lance la fabrication d'une traite (clips, voix, montage).
  */
 export function CreationBoard({ channels, channel, data }: { channels: Channel[]; channel: Channel; data: CreationData }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [seriesSlug, setSeriesSlug] = React.useState(data.defaultSeries ?? "");
   const [count, setCount] = React.useState(6);
@@ -84,7 +82,7 @@ export function CreationBoard({ channels, channel, data }: { channels: Channel[]
       const res = await fn();
       if (!res.ok) unhide(id);
       setNotice({ ...res, undo: res.ok && undo ? id : undefined });
-      router.refresh();
+      // pas de router.refresh() : l'action appelle revalidatePath, sa réponse apporte déjà la page recalculée (docs/56)
     });
   };
 
@@ -95,7 +93,6 @@ export function CreationBoard({ channels, channel, data }: { channels: Channel[]
       const res = await toggleFavorite(productionId);
       setStarred((prev) => ({ ...prev, [productionId]: res.favorite }));
       setNotice({ ok: res.ok, message: res.message });
-      router.refresh();
     });
   };
 
@@ -109,7 +106,6 @@ export function CreationBoard({ channels, channel, data }: { channels: Channel[]
               onValueChange={(slug) =>
                 startTransition(async () => {
                   await selectChannel(slug);
-                  router.refresh();
                 })
               }
             >
@@ -167,7 +163,6 @@ export function CreationBoard({ channels, channel, data }: { channels: Channel[]
             onClick={() =>
               startTransition(async () => {
                 setNotice(await generateIdeas(channel.id, seriesSlug, count));
-                router.refresh();
               })
             }
           >
@@ -205,7 +200,6 @@ export function CreationBoard({ channels, channel, data }: { channels: Channel[]
                   const res = await restoreIdea(id);
                   if (res.ok) unhide(id);
                   setNotice(res);
-                  router.refresh();
                 });
               }}
             >
@@ -331,7 +325,6 @@ export function CreationBoard({ channels, channel, data }: { channels: Channel[]
                         const res = await restoreIdea(c.id);
                         if (res.ok) unhide(c.id);
                         setNotice(res);
-                        router.refresh();
                       })
                     }
                   >

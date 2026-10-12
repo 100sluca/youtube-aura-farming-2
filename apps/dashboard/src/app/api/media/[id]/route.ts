@@ -5,10 +5,9 @@
  * Le chemin n'est jamais pris dans la requête : l'identifiant est cherché dans la table `assets`
  * (`local_path`), comme le fait MJClipIt. Sans identifiant connu : 404.
  */
-import { createReadStream, statSync } from "node:fs";
 import { extname } from "node:path";
-import { Readable } from "node:stream";
 
+import { fileResponse } from "@/lib/file-response";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -32,33 +31,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const path = data?.local_path as string | undefined;
   if (!path) return new Response("Not found", { status: 404 });
 
-  let size: number;
-  try {
-    size = statSync(path).size;
-  } catch {
-    return new Response("Fichier absent du disque", { status: 404 });
-  }
-  const type = MIME[extname(path).toLowerCase()] ?? "application/octet-stream";
-  const headers: Record<string, string> = {
-    "Content-Type": type,
-    "Accept-Ranges": "bytes",
+  return fileResponse(req, path, {
+    "Content-Type": MIME[extname(path).toLowerCase()] ?? "application/octet-stream",
     "Cache-Control": "private, max-age=60",
-  };
-
-  const range = req.headers.get("range");
-  const match = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
-  if (match && size > 0) {
-    const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
-    const end = match[1] && match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
-    if (Number.isNaN(start) || start > end || start >= size) {
-      return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
-    }
-    headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
-    headers["Content-Length"] = String(end - start + 1);
-    const stream = Readable.toWeb(createReadStream(path, { start, end })) as ReadableStream;
-    return new Response(stream, { status: 206, headers });
-  }
-  headers["Content-Length"] = String(size);
-  const stream = Readable.toWeb(createReadStream(path)) as ReadableStream;
-  return new Response(stream, { status: 200, headers });
+  });
 }

@@ -24,6 +24,8 @@ class UploadStep(Step):
         if v["youtube_video_id"]:  # idempotence stricte : jamais deux uploads
             return {"youtube_video_id": v["youtube_video_id"], "skipped": True}
         assert v["status"] in ("ready", "uploading"), f"statut {v['status']} : upload refusé"
+        # une vidéo longue part par sa page (miniature, catégorie, chapitres : long_write « publish », docs/63)
+        assert v.get("origin") != "long", "vidéo longue : à programmer depuis la page Vidéos longues"
         assert v["scheduled_at"], "scheduled_at manquant"
         ctx.db.set_status("videos", vid, "uploading")
 

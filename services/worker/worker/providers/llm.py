@@ -283,6 +283,12 @@ class KeyedLLM:
     def __init__(self, name: str, model: str, clients: list[tuple[str, LLM]]) -> None:
         self.name, self.model, self.clients = name, model, clients  # (empreinte de la clé, client)
         self.last_key = 1  # numéro de la clé qui a répondu en dernier
+        # suivi des clés (worker/keyusage.py, docs/49 §9) : (empreinte, numéro, erreur ou None) ; posé par get_llm
+        self.recorder: Any = None
+
+    def _note(self, fp: str, exc: BaseException | None) -> None:
+        if self.recorder is not None:
+            self.recorder(fp, next(i for i, c in enumerate(self.clients, start=1) if c[0] == fp), exc)
 
     def complete_json(self, system: str, user: str, schema: type[T], images: Sequence[Path] = ()) -> T:
         with _BUSY_LOCK:
@@ -299,12 +305,14 @@ class KeyedLLM:
             try:
                 out = client.complete_json(system, user, schema, images) if images else client.complete_json(system, user, schema)
                 self.last_key = next(i for i, c in enumerate(self.clients, start=1) if c[0] == fp)
+                self._note(fp, None)
                 return out
             except Exception as exc:  # noqa: BLE001
                 kind, seconds = failure_kind(exc)
                 if kind not in ("quota", "key"):
                     raise
                 last = exc
+                self._note(fp, exc)
                 _cool(("quota", self.name, self.model, fp) if kind == "quota" else ("key", self.name, fp), seconds)
                 slot = next(i for i, c in enumerate(self.clients, start=1) if c[0] == fp)
                 log.warning("llm.cle_suivante", provider=self.name, model=self.model, cle=slot, raison=kind, error=str(exc)[:200])
@@ -404,7 +412,19 @@ def get_llm(settings: Settings, db: Any | None = None, *, writer: bool = False) 
     if not chain:
         raise RuntimeError("aucun fournisseur LLM configuré : clé API dans Réglages → IA du dashboard, ou dans .env, ou Ollama")
     log.debug("llm.chain", providers=[p.name for p in chain], models=[getattr(p, "model", "?") for p in chain], source=cfg.source)
+    track_keys(chain, db)
     return FallbackLLM(chain)
+
+
+def track_keys(chain: Sequence[LLM], db: Any | None) -> None:
+    """Le suivi des clés (worker/keyusage.py) sur chaque modèle à plusieurs clés de la chaîne, quand la base est là."""
+    if db is None:
+        return
+    from ..keyusage import recorder
+
+    for p in chain:
+        if isinstance(p, KeyedLLM):
+            p.recorder = recorder(db, p.name, p.model, "ia", len(p.clients))
 
 
 def get_vision_llm(settings: Settings, db: Any | None = None) -> LLM | None:
@@ -412,6 +432,7 @@ def get_vision_llm(settings: Settings, db: Any | None = None) -> LLM | None:
     images clés est alors sauté et la revue humaine reste la règle)."""
     cfg = load_llm_config(settings, db)
     chain = [p for p in _chain(settings, cfg, "default") if sees_images(p)]
+    track_keys(chain, db)
     return FallbackLLM(chain) if chain else None
 
 

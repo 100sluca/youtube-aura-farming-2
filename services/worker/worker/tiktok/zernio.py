@@ -119,13 +119,38 @@ class ZernioClient:
         """Ce que TikTok autorise pour ce compte : niveaux de visibilité, interactions, `canPostMore`."""
         return self._get(f"/accounts/{account_id}/tiktok/creator-info", "compte TikTok", mediaType="video")
 
+    # ---- Musiques des plateformes (docs/58 §4) ------------------------------------------------------------------------
+    def commercial_music(self, account_id: str, country: str = "FR") -> list[dict[str, Any]]:
+        """Musiques de la bibliothèque commerciale de TikTok en tendance dans ce pays (100 environ : `id`, `name`,
+        `artist`, `durationSec`, `genres`, `rank`, `clip`), utilisables par un compte connecté par l'appli TikTok for
+        Business ; `id` va dans tiktokSettings.musicSoundInfo.musicSoundId. Pas de recherche : seulement ce classement."""
+        data = self._get(f"/accounts/{account_id}/tiktok/commercial-music", "musiques TikTok", countryCode=country)
+        return [t for t in data.get("tracks") or [] if isinstance(t, dict) and t.get("id")]
+
+    def instagram_audio(self, account_id: str, query: str, audio_type: str = "music") -> list[dict[str, Any]]:
+        """Musiques du catalogue d'Instagram (`audioId`, `title`, `displayArtist`, `durationInMs`) pour une recherche ;
+        un compte connecté par Instagram Login reçoit 400 instagram_audio_requires_facebook_login."""
+        data = self._get(f"/accounts/{account_id}/instagram/audio", "musiques Instagram", audioType=audio_type, q=query)
+        items = data.get("audio") or data.get("audios") or data.get("data") or data.get("results") or []
+        return [a for a in items if isinstance(a, dict) and a.get("audioId")]
+
     # ---- Fichier ---------------------------------------------------------------------------------------------------
     def upload_video(self, path: str | Path, on_progress: Callable[[float], None] | None = None, attempts: int = 3) -> str:
         """Envoie le MP4 au stockage de Zernio et renvoie son adresse publique (à mettre dans `mediaItems`)."""
+        return self.upload_file(path, "video/mp4", on_progress, attempts)
+
+    def upload_image(self, path: str | Path, attempts: int = 3) -> str:
+        """Envoie une image (JPEG, PNG) : une page d'un carrousel photo TikTok (docs/58 §5)."""
+        ctype = "image/png" if Path(path).suffix.lower() == ".png" else "image/jpeg"
+        return self.upload_file(path, ctype, None, attempts)
+
+    def upload_file(
+        self, path: str | Path, content_type: str, on_progress: Callable[[float], None] | None = None, attempts: int = 3
+    ) -> str:
         p = Path(path)
         size = p.stat().st_size
         resp = self.http.post(
-            f"{self.base_url}/media/presign", json={"filename": p.name, "contentType": "video/mp4", "size": size}
+            f"{self.base_url}/media/presign", json={"filename": p.name, "contentType": content_type, "size": size}
         )
         if resp.status_code >= 400:
             raise _error(resp, "adresse d'envoi")
@@ -147,7 +172,7 @@ class ZernioClient:
             try:
                 # Content-Length explicite : le stockage refuse l'envoi « chunked » d'une adresse signée
                 put = self.storage.put(
-                    upload_url, content=chunks(), headers={"Content-Type": "video/mp4", "Content-Length": str(size)}
+                    upload_url, content=chunks(), headers={"Content-Type": content_type, "Content-Length": str(size)}
                 )
             except httpx.TransportError:
                 if attempt == attempts:
@@ -195,11 +220,12 @@ class ZernioClient:
 
     # ---- Statistiques (docs/39-tiktok-partout.md) ------------------------------------------------------------------
     def post_analytics(
-        self, account_id: str, *, days: int = 365, max_pages: int = 20
+        self, account_id: str, *, days: int = 365, max_pages: int = 20, platform: str = "tiktok"
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Chiffres de chaque vidéo sortie sur le compte (publiée par l'appli ou à la main), toutes pages lues, et le
         résumé de la première page (`overview.lastSync` : dernier passage de Zernio chez TikTok). Seules les vidéos
-        sorties y figurent : une publication programmée n'apparaît qu'une fois publiée. 366 jours au plus par requête."""
+        sorties y figurent : une publication programmée n'apparaît qu'une fois publiée. 366 jours au plus par requête.
+        `platform="instagram"` : les Reels d'un compte Instagram (docs/62)."""
         since = (datetime.now(UTC) - timedelta(days=min(days, 365))).date().isoformat()
         posts: list[dict[str, Any]] = []
         overview: dict[str, Any] = {}
@@ -207,7 +233,7 @@ class ZernioClient:
             data = self._get(
                 "/analytics",
                 "statistiques des vidéos",
-                platform="tiktok",
+                platform=platform,
                 accountId=account_id,
                 fromDate=since,
                 limit=100,
@@ -237,6 +263,27 @@ class ZernioClient:
         if resp.status_code >= 400:
             raise _error(resp, "relecture des vidéos du compte")
         return _json(resp).get("synced") or {}
+
+    def post_analytics_one(self, post_id: str) -> tuple[int, dict[str, Any]]:
+        """Chiffres d'une seule publication (id Zernio ou id de la plateforme) et le code HTTP : 202 tant que Zernio la
+        relit. Constaté le 04/10 sur Instagram : un Reel absent de la liste de `post_analytics` y apparaît après cette
+        lecture (Zernio crée sa fiche à ce moment-là)."""
+        resp = self.http.get(f"{self.base_url}/analytics", params={"postId": post_id})
+        if resp.status_code >= 400:
+            raise _error(resp, "statistiques de la publication")
+        return resp.status_code, _json(resp)
+
+    def instagram_insights(self, account_id: str, *, days: int = 28) -> dict[str, Any]:
+        """Chiffres du compte Instagram entier sur les `days` derniers jours (vues, portée, interactions, comptes
+        engagés), jusqu'à 48 h de retard chez Instagram (docs/62)."""
+        since = (datetime.now(UTC) - timedelta(days=min(days, 89))).date().isoformat()
+        return self._get(
+            "/analytics/instagram/account-insights",
+            "statistiques du compte Instagram",
+            accountId=account_id,
+            metrics="reach,views,accounts_engaged,total_interactions",
+            fromDate=since,
+        )
 
     def account_insights(self, account_id: str) -> dict[str, Any]:
         """Compteurs du compte lus en direct chez TikTok : abonnés, abonnements, j'aime reçus, vidéos."""

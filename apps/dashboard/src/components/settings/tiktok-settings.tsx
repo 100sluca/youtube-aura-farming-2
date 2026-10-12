@@ -72,6 +72,7 @@ export function TikTokSettingsCard({
     allow_duet: initial.allow_duet,
     allow_stitch: initial.allow_stitch,
     ai_label: initial.ai_label,
+    quote_music: initial.platform_music.recipes.includes("quote"),
   });
   const [pending, startTransition] = React.useTransition();
   const [keyNotice, setKeyNotice] = React.useState<{ ok: boolean; message: string } | null>(null);
@@ -324,6 +325,13 @@ export function TikTokSettingsCard({
             help="Coupée par défaut : TikTok repère lui-même les contenus IA. À activer si tu veux la cocher sur chaque vidéo."
             checked={options.ai_label}
             onChange={(v) => setOptions((o) => ({ ...o, ai_label: v }))}
+          />
+          <Toggle
+            id="tiktok-quote-music"
+            label="Musique de TikTok sur les citations"
+            help="Une citation part avec une musique de la bibliothèque commerciale de TikTok (libre de droits pour les comptes pro), à la place de la nôtre. Refusée : elle part avec la sienne."
+            checked={options.quote_music}
+            onChange={(v) => setOptions((o) => ({ ...o, quote_music: v }))}
           />
         </section>
         <p className="text-muted-foreground text-xs">

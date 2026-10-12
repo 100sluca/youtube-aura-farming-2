@@ -1078,6 +1078,7 @@ class GeminiWebVideo:
         dry_run: bool = False,
         image_path: Path | None = None,
         end_image_path: Path | None = None,
+        allowed_text: str | None = None,  # texte voulu de l'image : décrit dans le prompt, rien à ajouter ici
     ) -> ClipInfo:
         target = pick_duration(duration_s, self.rt.duration)
         if dry_run:

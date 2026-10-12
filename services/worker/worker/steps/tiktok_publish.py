@@ -6,10 +6,12 @@ YouTube, au créneau resté vide donné dans `payload.at`, ou Luca clique « Pub
 Déroulé :
 
 1. le montage final part au stockage de Zernio (presign + PUT) ;
-2. la publication est créée à l'heure du créneau YouTube (`scheduledFor`), ou tout de suite si le créneau est passé
-   ou si Luca l'a demandé : Zernio publie à l'heure même si le PC est éteint, comme YouTube avec publishAt ;
-3. le job se remet en file (Postpone) jusqu'à l'heure prévue, vérifie que la vidéo est sortie et récupère son lien,
-   que TikTok ne donne que quelques minutes après.
+2. la publication est créée au premier créneau libre sur TikTok (docs/55, slots.free_post_slot : l'heure de la vidéo
+   sur YouTube quand rien ne s'est libéré avant), ou tout de suite si le créneau est passé ou si Luca l'a demandé :
+   Zernio publie à l'heure même si le PC est éteint, comme YouTube avec publishAt ;
+3. le job se remet en file (Postpone) jusqu'à l'heure prévue, en repassant toutes les 3 h : une publication supprimée
+   chez Zernio entre-temps libère son créneau (docs/55). À l'heure, il vérifie que la vidéo est sortie et récupère son
+   lien, que TikTok ne donne que quelques minutes après.
 
 videos.tiktok garde l'état : status (sending, scheduled, publishing…, published, failed, cancelled), post_id, url,
 scheduled_for, account_id, username, error, round. Un job relancé après une panne reprend le même envoi (même clé
@@ -28,7 +30,9 @@ from zoneinfo import ZoneInfo
 
 from psycopg.types.json import Jsonb
 
+from .. import platform_music
 from ..postpone import Postpone
+from ..slots import free_post_slot
 from ..tiktok.config import load_tiktok_config, zernio_key
 from ..tiktok.post import (
     WAITING,
@@ -44,6 +48,7 @@ from ..tiktok.zernio import ZernioClient, ZernioError
 from .base import Context, Step
 
 FOLLOW_AFTER = timedelta(minutes=3)  # après l'heure prévue, le temps que TikTok traite la vidéo
+RECHECK = timedelta(hours=3)  # publication programmée : toujours là chez Zernio ? (docs/55)
 URL_CHECK_S = 300  # vidéo publiée sans lien : on revient voir toutes les 5 min…
 URL_CHECKS = 12  # … pendant une heure au plus
 
@@ -99,8 +104,12 @@ class TikTokPublishStep(Step):
             round_ += 1
         now = datetime.now(UTC)
         draft = bool(payload.get("draft"))
-        # rattrapage (docs/39) : l'heure du créneau resté vide, pas celle du créneau YouTube, passé depuis longtemps
-        slot = _parse(payload.get("at")) or v["scheduled_at"]
+        # rattrapage (docs/39) : l'heure du créneau resté vide, pas celle du créneau YouTube, passé depuis longtemps ;
+        # publication automatique : le premier créneau libre sur TikTok (docs/55)
+        slot = _parse(payload.get("at"))
+        if slot is None and not payload.get("source") and not payload.get("now") and not draft:
+            slot = free_post_slot(ctx.db, v["id"], "tiktok", ch.enabled_at if ch else None, now)
+        slot = slot or v["scheduled_at"]
         when = publish_time(slot, now, force_now=bool(payload.get("now")) or draft)
         state = {
             "status": "sending",
@@ -120,16 +129,38 @@ class TikTokPublishStep(Step):
             path, on_progress=lambda f: ctx.progress(2 + int(f * 88), f"Envoi à Zernio {int(f * 100)} %")
         )
         ctx.progress(92, "Création de la publication TikTok")
-        body = post_body(
-            caption=build_caption(v["title"], v["description"]),
-            media_url=media_url,
-            account_id=account_id,
-            cfg=cfg,
-            when=when,
-            draft=draft,
-        )
+        # Musique de TikTok à la place de la nôtre (citations sans voix : worker/platform_music.py, docs/58 §4)
+        music = None if draft else self._platform_music(ctx, client, v, account_id)
+        if music:
+            state["music"] = music["summary"]
+            self._save(ctx, v["id"], state)
+
+        def body_with(sound: dict[str, Any] | None) -> dict[str, Any]:
+            return post_body(
+                caption=build_caption(v["title"], v["description"]),
+                media_url=media_url,
+                account_id=account_id,
+                cfg=cfg,
+                when=when,
+                draft=draft,
+                music=sound,
+            )
+
+        key = idempotency_key(v["id"], round_, int(v.get("generation") or 0))
         try:
-            code, resp = client.create_post(body, idempotency_key(v["id"], round_, int(v.get("generation") or 0)))
+            try:
+                code, resp = client.create_post(body_with(music["settings"] if music else None), key)
+            except ZernioError as exc:
+                if not music or exc.status != 400:
+                    raise
+                # musique refusée (compte non éligible, morceau retiré) : la vidéo part avec sa propre musique
+                ctx.log("tiktok.musique_refusee", level="warn", musique=music["summary"].get("name"), erreur=str(exc)[:300])
+                state.pop("music", None)
+                state["music_refused"] = str(exc)[:300]
+                self._save(ctx, v["id"], state)
+                # autre clé : Zernio pourrait rejouer la réponse 400 gardée sous la première
+                plain = idempotency_key(f"{v['id']}:sans-musique", round_, int(v.get("generation") or 0))
+                code, resp = client.create_post(body_with(None), plain)
         except ZernioError as exc:
             if exc.status == 429 or exc.code == "idempotency_conflict":
                 raise Postpone(
@@ -146,6 +177,32 @@ class TikTokPublishStep(Step):
             scheduled_for=state["scheduled_for"],
         )
         return self._record(ctx, v, state, read_create(code, resp))
+
+    @staticmethod
+    def _platform_music(ctx: Context, client: ZernioClient, v: dict[str, Any], account_id: str) -> dict[str, Any] | None:
+        """Musique de la bibliothèque commerciale de TikTok pour une vidéo sans voix d'une recette choisie (défaut : les
+        citations) ; None sinon, ou si la liste des musiques ne se lit pas (la vidéo garde alors la sienne)."""
+        try:
+            cfg = platform_music.load_config(ctx.db)
+            recipe, voiced, mood, duration = platform_music.video_facts(ctx.db, v["id"])
+        except Exception as exc:  # noqa: BLE001 — la musique de la plateforme est un plus, jamais une raison d'échouer
+            ctx.log("tiktok.musique_ignoree", level="warn", erreur=str(exc)[:200])
+            return None
+        if not cfg.applies(recipe, voiced):
+            return None
+        try:
+            tracks = platform_music.cached_tracks(client, account_id, cfg.country, ctx.settings.data_dir / "tiktok")
+        except (ZernioError, OSError, ValueError) as exc:
+            ctx.log("tiktok.musiques_illisibles", level="warn", erreur=str(exc)[:300])
+            return None
+        track = platform_music.pick_tiktok_track(tracks, mood, str(v["id"]))
+        if not track:
+            return None
+        ctx.log("tiktok.musique", musique=track.get("name"), artiste=track.get("artist"), ambiance=mood)
+        return {
+            "settings": platform_music.tiktok_settings(track, duration, cfg.volume),
+            "summary": platform_music.summary(track),
+        }
 
     # ---- Ancienne publication d'une vidéo retouchée après son envoi (docs/44) ---------------------------------------
     def _delete(self, ctx: Context, post_id: str) -> dict[str, Any]:
@@ -171,7 +228,15 @@ class TikTokPublishStep(Step):
     # ---- Suivi d'une publication existante ---------------------------------------------------------------------------
     def _follow(self, ctx: Context, client: ZernioClient, v: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
         ctx.progress(50, "Vérification sur Zernio")
-        return self._record(ctx, v, state, read_post(client.get_post(str(state["post_id"]))))
+        try:
+            post = client.get_post(str(state["post_id"]))
+        except ZernioError as exc:
+            if exc.status != 404:
+                raise
+            # supprimée chez Zernio (par Luca) : elle ne sortira pas, son créneau TikTok est libre (docs/55)
+            gone = Outcome(status="cancelled", post_id=str(state["post_id"]), error="publication supprimée chez Zernio")
+            return self._record(ctx, v, state, gone)
+        return self._record(ctx, v, state, read_post(post))
 
     def _record(self, ctx: Context, v: dict[str, Any], state: dict[str, Any], out: Outcome) -> dict[str, Any]:
         now = datetime.now(UTC)
@@ -208,7 +273,7 @@ class TikTokPublishStep(Step):
             local = when.astimezone(ZoneInfo(v["timezone"]))
             raise Postpone(
                 f"Programmée sur TikTok pour le {local:%d/%m à %H:%M}",
-                (when + FOLLOW_AFTER - now).total_seconds(),
+                min(when + FOLLOW_AFTER - now, RECHECK).total_seconds(),
                 label=f"TikTok : programmée le {local:%d/%m à %H:%M}",
             )
         raise Postpone("Publication TikTok en cours de traitement", 120, label="TikTok : publication en cours")

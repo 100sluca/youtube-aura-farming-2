@@ -5,11 +5,14 @@ Payload : {"count": 10} répartit les idées entre séries actives selon leurs p
           {"series": "animaux_etranges", "count": 6} ne sert qu'une série ;
           "channel_id" (écran Création) : chaîne pour laquelle les idées sont demandées (concepts.channel_id).
 Une idée d'une série documentaire n'est gardée que si au moins deux de ses faits citent une source fournie.
+Série de citations d'auteurs (source_config.quotes = « wikiquote », docs/70) : l'agent choisit parmi des citations
+sourcées de Wikiquote ; une idée qui ne recopie pas une citation fournie mot pour mot est écartée.
 """
 
 from __future__ import annotations
 
 from datetime import date
+from difflib import SequenceMatcher
 from typing import Any
 from uuid import UUID
 
@@ -19,8 +22,9 @@ from ..lessons import lessons_text
 from ..models import IdeaBatch
 from ..prompts import active_prompt, prompt_text
 from ..providers.llm import get_llm
-from ..recipes import IDEA_GUIDES
+from ..recipes import IDEA_GUIDES, prompt_key
 from ..series import Series, active_series, get_series, weighted_counts
+from ..sources import wikiquote
 from ..sources.wikipedia import (
     SourceDoc,
     WikipediaClient,
@@ -110,7 +114,14 @@ class IdeateStep(Step):
         ]
         docs: list[SourceDoc] = []
         material = ""
-        if s.source == "wikipedia":
+        bank: list[wikiquote.Quote] = []
+        if s.source_config.get("quotes") == "wikiquote":  # citations d'auteurs : la réserve sourcée du jour
+            bank = self._quotes(ctx, s)
+            if not bank:
+                ctx.log("ideate.sans_citation", level="warn", series=s.slug)
+                return 0
+            material = wikiquote.material_text(bank)
+        elif s.source == "wikipedia":
             docs = self._material(ctx, s)
             if not docs:
                 ctx.log("ideate.sans_matiere", level="warn", series=s.slug)
@@ -119,7 +130,7 @@ class IdeateStep(Step):
         system, tpl_id = tpl
         # formats visuels : le guide du format (pas de voix, un titre d'accroche, docs/15) ; sinon les règles du storytelling
         guide = (
-            prompt_text(db, f"guide_{s.recipe}", IDEA_GUIDES[s.recipe])
+            prompt_text(db, f"guide_{prompt_key(s.recipe, s.variant)}", IDEA_GUIDES[prompt_key(s.recipe, s.variant)])
             if s.recipe in IDEA_GUIDES
             else prompt_text(db, "rules_storytelling", RULES)
         )
@@ -129,7 +140,13 @@ class IdeateStep(Step):
                 f"SÉRIE : {s.name} ({s.slug})\nBrief : {s.brief}\nCatégories : {s.categories or CATEGORIES}\n"
                 f"Durée des vidéos : {s.target_duration_s} s",
                 guide,
-                f"MATIÈRE DU JOUR (sources numérotées, seule base des faits) :\n{material}" if material else "",
+                (
+                    f"CITATIONS SOURCÉES (Wikiquote, numérotées ; choisis-en, recopie-les mot pour mot) :\n{material}"
+                    if bank
+                    else f"MATIÈRE DU JOUR (sources numérotées, seule base des faits) :\n{material}"
+                )
+                if material
+                else "",
                 f"Répartition des 30 derniers jours : {recent}\nTop 20 publiées : {top}\nDéjà proposées (éviter) : {existing}",
                 f"Stratégie validée :\n{guidance_text(active_strategies(db))}",
                 # leçons de l'agent analyste validées dans le Dashboard (docs/25)
@@ -148,7 +165,17 @@ class IdeateStep(Step):
         batch = get_llm(ctx.settings, ctx.db, writer=True).complete_json(system, user, IdeaBatch)
         created = 0
         for idea in batch.ideas:
-            refs, facts = sources_for(docs, idea.facts) if docs else ([], [])
+            if bank:  # citation d'auteur : celle de la réserve, texte exact, auteur et œuvre (wikiquote.Quote)
+                picked = pick_quote(bank, idea.title, [f.source for f in idea.facts])
+                if picked is None:
+                    ctx.log("ideate.idee_ecartee", level="warn", title=idea.title, reason="citation absente de la réserve")
+                    continue
+                idea = idea.model_copy(update={"title": picked.text})
+                refs, facts = [picked.to_ref()], picked.facts()
+                # un auteur par idée du lot (deux citations de Lao Tseu le 12/10) : ses autres citations sortent
+                bank = [q for q in bank if q.author != picked.author]
+            else:
+                refs, facts = sources_for(docs, idea.facts) if docs else ([], [])
             if docs and len(facts) < 2:
                 ctx.log("ideate.idee_ecartee", level="warn", title=idea.title, reason="moins de 2 faits sourcés")
                 continue
@@ -176,6 +203,26 @@ class IdeateStep(Step):
             )
             created += 1
         return created
+
+    @staticmethod
+    def _quotes(ctx: Context, s: Series) -> list[wikiquote.Quote]:
+        """Réserve de citations d'auteurs proposée à l'agent : jamais une citation déjà proposée dans la série, les
+        auteurs des 20 dernières idées en dernier."""
+        rows = ctx.db.fetch_all(
+            "select facts, sources from concepts where series_id = %s order by created_at desc limit 500", (s.id,)
+        )
+        recent = {str((r["sources"] or [{}])[0].get("title") or "") for r in rows[:20] if r["sources"]}
+        client = wikiquote.WikiquoteClient(lang=s.lang, user_agent=ctx.settings.effective_wikipedia_user_agent)
+        return wikiquote.candidates(
+            client,
+            ctx.settings.data_dir / "sources" / "wikiquote",
+            authors=s.source_config.get("authors") or wikiquote.AUTHORS,
+            used=wikiquote.used_keys(rows),
+            recent_authors={p for p, shown in wikiquote.DISPLAY.items() if shown in recent} | recent,
+            n_authors=int(s.source_config.get("authors_per_batch", 10)),
+            per_author=int(s.source_config.get("quotes_per_author", 5)),
+            seed=f"{s.slug}:{date.today().isoformat()}:{len(rows)}",
+        )
 
     @staticmethod
     def _material(ctx: Context, s: Series) -> list[SourceDoc]:
@@ -235,3 +282,18 @@ personne ne prend. Écarte l'actualité brûlante, les décès récents, les fic
 validée. Concepts universels (FR et EN), réalisables en images générées par IA, sans personne réelle reconnaissable.
 score = potentiel 0-100 (force de l'histoire × rétention attendue × faisabilité visuelle).
 Réponds en JSON : {"ideas":[{title, hook, category, angle, premise, visual_beats[], facts[{claim, source}], score}]}."""
+
+
+def pick_quote(bank: list[wikiquote.Quote], title: str, numbers: list[int]) -> wikiquote.Quote | None:
+    """Citation de la réserve qu'une idée a choisie : par son numéro [n] si le texte de l'idée y ressemble, sinon par
+    son texte ; None si l'agent a écrit ou modifié une citation (elle ne serait plus authentique)."""
+    want = wikiquote.norm(title)
+    for n in numbers:
+        if 1 <= n <= len(bank) and _same_quote(wikiquote.norm(bank[n - 1].text), want):
+            return bank[n - 1]
+    return next((q for q in bank if _same_quote(wikiquote.norm(q.text), want)), None)
+
+
+def _same_quote(a: str, b: str) -> bool:
+    """Même citation, à la ponctuation, à la casse et à un mot près (le code remet ensuite le texte exact)."""
+    return bool(a and b) and (a == b or SequenceMatcher(None, a, b).ratio() >= 0.92)

@@ -50,8 +50,14 @@ export type JobType =
   | "analyze"
   | "tiktok_publish"
   | "sync_tiktok"
+  | "sync_instagram"
   | "instagram_publish"
-  | "paf_publish";
+  | "paf_publish"
+  | "rewrite"
+  | "research"
+  | "long_write"
+  | "long_make"
+  | "long_take";
 
 /** Série de contenu (table series, migration 0003) : un « thème » dans l'interface. */
 export interface Series {
@@ -62,7 +68,7 @@ export interface Series {
   is_active: boolean;
   weight: number;
   style_preset: string | null;
-  recipe?: string; // story | timelapse | tour (migration 0006) | drama (migration 0021)
+  recipe?: string; // story | timelapse | tour (migration 0006) | drama (migration 0021) | quote (migration 0047)
 }
 
 /** Image candidate d'une scène du storyboard (assets kind = storyboard). */
@@ -82,6 +88,8 @@ export interface StoryboardScene {
   narration?: string | null;
   /** Drame (docs/35) : le personnage qui dit la réplique, montré à part ; son nom n'est ni dit ni écrit dans la vidéo. */
   speaker?: string | null;
+  /** Texte écrit DANS l'image par le générateur, relu lettre à lettre (scene.image_text, docs/57 §5). */
+  image_text?: string | null;
   continues_previous: boolean;
   /** i2v (depuis l'image) ou flf (première + dernière image, chantier en accéléré : impossible avec Gemini). */
   clip_mode?: string;
@@ -158,6 +166,8 @@ export interface ScriptScene {
   /** Drame (recette drama, docs/35) : personnages à l'image (clés du cast) et la réplique du plan. */
   characters?: string[];
   lines?: { who: string; text: string; tone?: string }[];
+  /** Texte écrit dans l'image par le générateur (docs/57 §5) : les mots exacts et leur support (anglais). */
+  image_text?: { text: string; on: string } | null;
 }
 /** Personnage d'un drame : sa fiche (image) sert de référence à chaque plan où il apparaît. */
 export interface CastMember {
@@ -314,7 +324,7 @@ export interface VideoOverview {
   poster_url?: string | null;
   // Bibliothèque (migration 0008)
   channel_name?: string;
-  origin?: "app" | "imported";
+  origin?: "app" | "imported" | "long"; // long : vidéo longue narrée par Luca (docs/63)
   created_at?: string;
   error?: string | null;
   description?: string | null;
@@ -338,7 +348,7 @@ export interface VideoOverview {
   estimated_minutes_watched?: number | null;
   stats_fetched_at?: string | null;
   analytics_through?: string | null; // dernier jour publié par YouTube Analytics
-  recipe?: "story" | "timelapse" | "tour" | null;
+  recipe?: "story" | "timelapse" | "tour" | "drama" | "quote" | null;
   video_provider?: string | null;
   image_workflow?: string | null;
   tags?: string[];

@@ -69,7 +69,7 @@ Les boutons ne marchent que depuis le PC lui-même (`http://localhost:3000`).
 | `services/worker/worker/main.py` | fil du signe de vie ; relance demandée traitée comme une modification du code |
 | `services/worker/worker/providers/video.py` | `ComfyClient` : `ensure_comfy` avant l'envoi d'un rendu et après une chute pendant le calcul |
 | `launcher/restart.ps1` | `-Target comfyui\|worker\|dashboard` : arrête le programme avec sa fenêtre (jamais celle du lanceur, qui a démarré les trois), le relance par l'explorateur Windows ; `-DryRun` montre ce qu'il ferait ; journal `C:\YouTube2\data\logs\restart.log` |
-| `C:\YouTube2\dashboard.bat` | relance le dashboard seul (comme `comfyui.bat` et `worker.bat`) |
+| `C:\YouTube2\dashboard.bat` | relance le dashboard seul (comme `comfyui.bat` et `worker.bat`) ; depuis le 02/10, en version de production tenue à jour par `launcher/dashboard.ps1` (docs/56) |
 | `apps/dashboard/src/lib/system.ts`, `app/system/actions.ts` | état de la machine, programmes gourmands, redémarrages |
 | `apps/dashboard/src/components/system/system-panel.tsx` | le bloc « Machine » et sa fenêtre |
 | `apps/dashboard/src/app/api/system/ping/route.ts` | numéro du serveur : la page sait quand le nouveau dashboard répond |

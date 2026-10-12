@@ -4,14 +4,16 @@
  * Retouche d'une vidéo montée (Bibliothèque → Retoucher, docs/34-retouche.md). À gauche la vidéo, qu'on peut écouter
  * avec le nouveau mixage, et « Refaire la vidéo » ; à droite trois onglets : Textes (titre d'accroche, sous-titres scène
  * par scène, nombres en chiffres), Musique et son (une musique choisie dans un menu, son départ, les niveaux), Voix (une
- * autre voix, écoutée avant). Pour cette vidéo seulement : la chaîne de production ne change pas.
+ * autre voix, écoutée avant). Pour cette vidéo seulement : la chaîne de production ne change pas. Un récit en voix off a
+ * aussi l'onglet Récit (retouch-story.tsx, docs/53) : le texte dit réécrit sur les mêmes plans, en une nouvelle vidéo.
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AudioLines, CircleCheck, CircleX, Clapperboard, Hash, Info, LoaderCircle, Play, RotateCcw, TriangleAlert, Undo2 } from "lucide-react";
 
-import { fetchRetouchState, retouchVideo, suggestDigits } from "@/app/library/retouch-actions";
+import { retouchVideo, suggestDigits } from "@/app/library/retouch-actions";
 import { PlanBadge, PlansPanel, planAt } from "@/components/library/retouch-plans";
+import { StoryPanel } from "@/components/library/retouch-story";
 import { SliderField } from "@/components/montage/fields";
 import { useVideoMix, type LiveMix } from "@/components/montage/use-mix-player";
 import { VideoDecision, isDecidable } from "@/components/production/video-panel";
@@ -26,12 +28,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDuration, mixLevels, musicStart, speechSegments } from "@/lib/audio-mix";
 import { formatDateTime } from "@/lib/format";
+import { getJson } from "@/lib/get-json";
 import { FORMAT_LABELS, FORMAT_SHORT, MUSIC_MIN_DB, MUSIC_SLIDER_MIN_DB, type AudioLayer, type MusicTrack } from "@/lib/montage-types";
-import { HOOK_MIN_S, LEVEL_KEYS, type Levels, type PreviousUpload, type RetouchInput, type RetouchJob, type RetouchPageData, type RetouchScene, type RetouchState } from "@/lib/retouch-types";
+import {
+  CLIP_VOICES,
+  HOOK_MIN_S,
+  LEVEL_KEYS,
+  type Levels,
+  type PreviousUpload,
+  type RetouchInput,
+  type RetouchJob,
+  type RetouchPageData,
+  type RetouchScene,
+  type RetouchState,
+} from "@/lib/retouch-types";
+import type { RewriteData } from "@/lib/rewrite-types";
 import { cn } from "@/lib/utils";
 
 const KEEP = "__keep";
 const NONE = "__none";
+const CLIP_VOICES_LABEL = "Voix des clips (MiniMax H3)"; // drames : le son des clips fait la piste de voix (docs/49 §11)
 const POLL_MS = 2000;
 
 type Notice = { ok: boolean; message: string };
@@ -47,6 +63,7 @@ interface Draft {
   levels: Levels;
   voice: string; // « moteur:voix »
   acting: string; // KEEP ou le jeu avec lequel refaire les voix (« gemini », docs/41 §8)
+  sfx: boolean; // bruitages ajoutés au montage (aucun par défaut sur un drame)
 }
 
 /** Deux textes affichés identiques, espaces (insécables comprises) mises à part. */
@@ -67,6 +84,7 @@ function savedDraft(d: RetouchPageData): Draft {
     levels: { ...levelsOf(d.template.audio), ...r.audio },
     voice: d.voice.current ?? "",
     acting: KEEP,
+    sfx: r.sfx ?? d.video.sfxDefault,
   };
 }
 
@@ -80,6 +98,7 @@ function automaticDraft(d: RetouchPageData): Draft {
     levels: levelsOf(d.template.audio),
     voice: d.voice.current ?? "",
     acting: KEEP,
+    sfx: d.video.sfxDefault,
   };
 }
 
@@ -100,6 +119,7 @@ function toInput(d: RetouchPageData, draft: Draft): RetouchInput {
     audio: Object.fromEntries(LEVEL_KEYS.filter((k) => draft.levels[k] !== base[k]).map((k) => [k, draft.levels[k]])),
     voice: draft.voice && draft.voice !== d.voice.current ? draft.voice : null,
     acting: draft.acting === KEEP ? null : draft.acting,
+    sfx: draft.sfx === d.video.sfxDefault ? null : draft.sfx,
   };
 }
 
@@ -116,8 +136,10 @@ function changes(d: RetouchPageData, draft: Draft, before: Draft, trackTitle: (i
     out.push(draft.music === NONE ? "Sans musique" : draft.music === KEEP ? "Musique d’origine" : `Musique « ${trackTitle(draft.music)} »`);
   }
   if (LEVEL_KEYS.some((k) => draft.levels[k] !== before.levels[k])) out.push("Mixage");
+  if (draft.sfx !== before.sfx) out.push(draft.sfx ? "Avec bruitages" : "Sans bruitages");
   if (draft.voice && draft.voice !== before.voice) out.push("Voix");
-  if (draft.acting !== KEEP) out.push(`Voix rejouées · ${d.voice.acting.entries.find((a) => a.id === draft.acting)?.label ?? draft.acting}`);
+  if (draft.acting === CLIP_VOICES) out.push("Voix des clips (MiniMax H3)");
+  else if (draft.acting !== KEEP) out.push(`Voix rejouées · ${d.voice.acting.entries.find((a) => a.id === draft.acting)?.label ?? draft.acting}`);
   return out;
 }
 
@@ -245,7 +267,7 @@ function TrackCard({ track, moods, start, onStart, adjustable, disabled }: {
   );
 }
 
-export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
+export function RetouchEditor({ data: d, story = null, tab }: { data: RetouchPageData; story?: RewriteData | null; tab?: string }) {
   const router = useRouter();
   const before = React.useMemo(() => savedDraft(d), [d]);
   const [draft, setDraft] = React.useState<Draft>(before);
@@ -273,6 +295,8 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
     };
   }, [el]);
   const drama = d.video.recipe === "drama" && d.plans.length > 0;
+  // Citation (docs/58) : le « titre d'accroche » de la vidéo est la citation dessinée au milieu de l'image
+  const quote = d.video.recipe === "quote";
 
   const c = d.music.constants;
   const locked = Boolean(d.blocked) || state.busy || pending;
@@ -336,7 +360,8 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
     if (!state.busy) return;
     let alive = true;
     const timer = setInterval(async () => {
-      const next = await fetchRetouchState(d.video.id).catch(() => null);
+      // route GET, pas une action serveur : celles-ci passent une par une et bloquaient les boutons de la page (docs/56)
+      const next = await getJson<RetouchState | null>(`/api/retouch/${d.video.id}/state`).catch(() => null);
       if (!alive || !next) return;
       setState(next);
       if (!next.busy) {
@@ -367,7 +392,6 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
     startTransition(async () => {
       const res = await retouchVideo(d.video.id, input);
       setNotice(res);
-      if (res.ok) router.refresh();
     });
   };
   const digits = () =>
@@ -470,7 +494,7 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
               <AudioLines className="mt-px size-3.5 shrink-0" />
               <span>
                 {listen === "draft"
-                  ? `▶ joue la vidéo ${narration ? "avec sa voix et " : "avec "}${draftTrack ? `« ${draftTrack.title} »` : "sans musique"}, aux niveaux réglés${d.video.voiced ? "" : " (sans les bruitages)"}.${voiceChanged ? " La nouvelle voix s’entend dans Voix → Écouter, puis dans la vidéo refaite." : ""}`
+                  ? `▶ joue la vidéo ${narration ? (d.video.clipVoices ? "avec le son de ses clips (voix et ambiance) et " : "avec sa voix et ") : "avec "}${draftTrack ? `« ${draftTrack.title} »` : "sans musique"}, aux niveaux réglés${d.video.sfx && draft.sfx ? " (sans les bruitages)" : ""}.${voiceChanged ? " La nouvelle voix s’entend dans Voix → Écouter, puis dans la vidéo refaite." : ""}`
                   : "Le son de la vidéo telle qu’elle est. Titre et sous-titres corrigés : visibles une fois la vidéo refaite."}
               </span>
             </p>
@@ -550,19 +574,33 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
           ) : null}
         </aside>
 
-        <Tabs defaultValue={drama ? "plans" : "textes"} className="min-w-0 gap-4">
+        <Tabs defaultValue={tab === "recit" && story ? "recit" : drama ? "plans" : "textes"} className="min-w-0 gap-4">
           <TabsList className="w-full">
             {drama ? <TabsTrigger value="plans">Plans</TabsTrigger> : null}
             <TabsTrigger value="textes">Textes</TabsTrigger>
             <TabsTrigger value="son">Musique et son</TabsTrigger>
             <TabsTrigger value="voix">Voix</TabsTrigger>
+            {story ? <TabsTrigger value="recit">Récit</TabsTrigger> : null}
           </TabsList>
+
+          {story ? (
+            <TabsContent value="recit">
+              <StoryPanel
+                data={story}
+                onSeek={(index) => {
+                  const scene = d.scenes.find((s) => s.index === index);
+                  if (scene) seek(scene.start);
+                }}
+              />
+            </TabsContent>
+          ) : null}
 
           {drama ? (
             <TabsContent value="plans">
               <PlansPanel
                 videoId={d.video.id}
                 plans={d.plans}
+                muted={d.retouch.muted ?? []}
                 now={now}
                 locked={locked}
                 confirm={uploaded ? uploadedConfirm(d.video.published) : null}
@@ -588,7 +626,7 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
 
             <section className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <h4 className="text-sm font-semibold">Titre d’accroche</h4>
+                <h4 className="text-sm font-semibold">{quote ? "Citation affichée" : "Titre d’accroche"}</h4>
                 {hookTouched ? (
                   <Button
                     size="sm"
@@ -602,16 +640,22 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                   </Button>
                 ) : null}
               </div>
-              <Input value={draft.hook} maxLength={140} disabled={locked || !d.hook.shown} onChange={(e) => edit({ hook: e.target.value })} aria-label="Titre d’accroche" />
+              {quote ? (
+                <Textarea value={draft.hook} maxLength={320} rows={4} disabled={locked} onChange={(e) => edit({ hook: e.target.value })} aria-label="Citation affichée" />
+              ) : (
+                <Input value={draft.hook} maxLength={140} disabled={locked || !d.hook.shown} onChange={(e) => edit({ hook: e.target.value })} aria-label="Titre d’accroche" />
+              )}
               <p className="text-muted-foreground text-[11px] leading-snug">
-                {!d.hook.shown
+                {quote
+                  ? "Dessinée au milieu de l’image, toute la vidéo. Un retour à la ligne est gardé ; une dernière ligne « — Auteur » signe la citation."
+                  : !d.hook.shown
                   ? `Le modèle de montage « ${d.template.name} » n’affiche pas de titre d’accroche sur les ${FORMAT_LABELS[d.video.format].toLowerCase()}.`
                   : same(draft.hook, d.hook.auto)
                     ? "Celui du montage automatique."
                     : `Montage automatique : « ${d.hook.auto} »`}
-                {draft.hook.trim().length > 70 ? " Plus de 70 caractères : le titre risque de tenir sur 3 lignes." : ""}
+                {!quote && draft.hook.trim().length > 70 ? " Plus de 70 caractères : le titre risque de tenir sur 3 lignes." : ""}
               </p>
-              {d.hook.shown ? (
+              {d.hook.shown && !quote ? (
                 <div className="flex flex-col gap-3 rounded-lg border p-3">
                   <label className="flex cursor-pointer items-start gap-2.5">
                     <Checkbox
@@ -736,7 +780,7 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                 {d.video.voiced ? (
                   <>
                     <SliderField
-                      label="Voix IA"
+                      label={d.video.clipVoices ? "Voix des clips" : "Voix IA"}
                       value={draft.levels.voice_db}
                       min={-12}
                       max={12}
@@ -768,30 +812,49 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
                     />
                   </>
                 ) : (
-                  <>
-                    <SliderField
-                      label="Musique"
-                      value={draft.levels.solo_db}
-                      min={MUSIC_SLIDER_MIN_DB}
-                      inputMin={MUSIC_MIN_DB}
-                      max={12}
-                      step={0.5}
-                      unit="dB"
-                      onChange={(solo_db) => edit({ levels: { ...draft.levels, solo_db } }, true)}
-                      hint={levelHint("solo_db")}
-                    />
-                    <SliderField
-                      label="Bruitages"
-                      value={draft.levels.sfx_db}
-                      min={-20}
-                      max={12}
-                      step={0.5}
-                      unit="dB"
-                      onChange={(sfx_db) => edit({ levels: { ...draft.levels, sfx_db } }, true)}
-                      hint={levelHint("sfx_db")}
-                    />
-                  </>
+                  <SliderField
+                    label="Musique"
+                    value={draft.levels.solo_db}
+                    min={MUSIC_SLIDER_MIN_DB}
+                    inputMin={MUSIC_MIN_DB}
+                    max={12}
+                    step={0.5}
+                    unit="dB"
+                    onChange={(solo_db) => edit({ levels: { ...draft.levels, solo_db } }, true)}
+                    hint={levelHint("solo_db")}
+                  />
                 )}
+                {d.video.sfx ? (
+                  <div className="flex flex-col gap-2">
+                    <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium">
+                      <Checkbox checked={draft.sfx} onCheckedChange={(checked) => edit({ sfx: checked === true })} aria-label="Bruitages" />
+                      Bruitages
+                      {d.video.recipe === "drama" ? <span className="text-muted-foreground text-xs font-normal">(aucun par défaut : les clips ont leur son)</span> : null}
+                    </label>
+                    {draft.sfx ? (
+                      <SliderField
+                        label="Volume des bruitages"
+                        value={draft.levels.sfx_db}
+                        min={-20}
+                        max={12}
+                        step={0.5}
+                        unit="dB"
+                        onChange={(sfx_db) => edit({ levels: { ...draft.levels, sfx_db } })}
+                        hint={`${levelHint("sfx_db")} · ne s’entendent qu’une fois la vidéo refaite`}
+                      />
+                    ) : (
+                      <p className="text-muted-foreground text-[11px] leading-snug">
+                        Sans bruitages ajoutés :{" "}
+                        {d.video.clipVoices
+                          ? "le son des clips (voix et ambiance) et la musique."
+                          : d.video.recipe === "drama"
+                            ? "la voix, l’ambiance des clips sous les plans sans réplique, et la musique."
+                            : "la musique seule."}{" "}
+                        {d.video.recipe === "drama" ? "Un plan trop bruyant se coupe dans l’onglet Plans." : ""}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
               </fieldset>
               <p className="text-muted-foreground text-[11px] leading-snug">
                 Pour cette vidéo seulement ; le modèle de montage garde ses niveaux. « Nouveau mixage », sous la vidéo, fait entendre ces réglages pendant la
@@ -803,7 +866,14 @@ export function RetouchEditor({ data: d }: { data: RetouchPageData }) {
 
           <TabsContent value="voix" className="flex flex-col gap-4">
             {drama ? (
-              <ActingPanel acting={d.voice.acting} value={draft.acting} locked={locked} characters onChange={(acting) => edit({ acting })} />
+              <ActingPanel
+                acting={d.voice.acting}
+                value={draft.acting}
+                locked={locked}
+                characters
+                clipVoices={d.video.clipVoices}
+                onChange={(acting) => edit({ acting })}
+              />
             ) : d.video.voiced ? (
               <>
                 <p className="text-sm">
@@ -850,16 +920,18 @@ function ActingPanel({
   value,
   locked,
   characters,
+  clipVoices = false,
   onChange,
 }: {
   acting: RetouchPageData["voice"]["acting"];
   value: string;
   locked: boolean;
   characters: boolean;
+  clipVoices?: boolean; // drame en voix des clips (docs/49 §11)
   onChange: (acting: string) => void;
 }) {
-  const nowId = acting.current ?? acting.settings;
-  const label = (id: string) => acting.entries.find((a) => a.id === id)?.label ?? id;
+  const nowId = clipVoices ? CLIP_VOICES : (acting.current ?? acting.settings);
+  const label = (id: string) => (id === CLIP_VOICES ? CLIP_VOICES_LABEL : (acting.entries.find((a) => a.id === id)?.label ?? id));
   const chosen = acting.entries.find((a) => a.id === value);
   const shown = value === KEEP ? nowId : value; // le jeu dont on montre les voix
   const gemini = acting.entries.find((a) => a.id === shown)?.id === "gemini";
@@ -882,6 +954,7 @@ function ActingPanel({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={KEEP}>{characters ? "Garder les voix actuelles" : "Garder la lecture actuelle"}</SelectItem>
+            {characters && !clipVoices ? <SelectItem value={CLIP_VOICES}>{CLIP_VOICES_LABEL}</SelectItem> : null}
             {acting.entries.map((a) => (
               <SelectItem key={a.id} value={a.id} disabled={a.missing.length > 0}>
                 {a.label}
@@ -891,6 +964,12 @@ function ActingPanel({
           </SelectContent>
         </Select>
         {chosen ? <p className="text-muted-foreground text-xs leading-relaxed">{chosen.detail}</p> : null}
+        {characters && clipVoices && value === KEEP ? (
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Les voix sont celles que MiniMax H3 a données dans chaque clip, calées sur les lèvres. Pour un seul plan, redemande sa réplique dans l’onglet Plans ;
+            choisir un jeu ici redit toutes les répliques en voix de synthèse.
+          </p>
+        ) : null}
       </div>
       {characters && acting.cast.length ? (
         <table className="w-full max-w-xl text-sm">
@@ -914,7 +993,12 @@ function ActingPanel({
       ) : characters ? (
         <p className="text-muted-foreground text-xs">Voix des personnages inconnues (vidéo retouchée avec une seule voix) : elles seront reprises du script.</p>
       ) : null}
-      {value !== KEEP ? (
+      {value === CLIP_VOICES ? (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs leading-relaxed">
+          « Refaire la vidéo » reprendra le son de chaque clip : les voix que MiniMax H3 a données aux personnages, calées sur leurs lèvres, avec l’ambiance du plan ;
+          les bruitages restent.
+        </p>
+      ) : value !== KEEP ? (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs leading-relaxed">
           {characters
             ? "« Refaire la vidéo » redira toutes les répliques : chaque personnage garde sa voix du début à la fin, chaque réplique est jouée selon le ton écrit par le scénariste et ajustée à la durée de la bouche de son plan, puis le montage recale chaque réplique sur les lèvres."

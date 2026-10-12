@@ -204,12 +204,6 @@ function Install-NoeudGGUF {
     return $true
 }
 
-# Lanceurs .bat : fins de ligne CRLF et page de codes de la console (un dossier « Jérôme » reste lisible pour cmd.exe)
-function Write-Bat([string]$Chemin, [string[]]$Lignes) {
-    $oem = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
-    [IO.File]::WriteAllText($Chemin, ($Lignes -join "`r`n") + "`r`n", $oem)
-}
-
 # ---- 0. Garde-fous --------------------------------------------------------------------------------------------------
 
 Write-Titre "YouTube Aura Farming : installation"
@@ -438,15 +432,7 @@ Write-Bat $LanceurWorker @(
     "uv run --frozen worker",
     "pause"
 )
-Write-Bat $LanceurDashboard @(
-    "@echo off",
-    "title Dashboard - YouTube Aura Farming",
-    "rem Cree par INSTALLER.bat : le tableau de bord, $UrlAppli",
-    $path,
-    "cd /d `"$Front`"",
-    "call npm run dev -- --port $PortAppli",
-    "pause"
-)
+Write-LanceurDashboard $path
 Write-Ok "Lanceurs écrits dans $YT2"
 try {
     $raccourci = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "YouTube Aura Farming.lnk"))

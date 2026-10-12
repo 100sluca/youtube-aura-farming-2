@@ -54,6 +54,19 @@ class TTSStep(Step):
         forced = "" if acting else requested
         acting = acting or str((v.get("retouch") or {}).get("acting") or "")
         retake = ctx.job.payload.get("scene")  # Retoucher → Plans (docs/38 §6) : une seule réplique redite
+        # Retoucher → Plans par lot (docs/49 §7) : prises à écouter, puis les prises validées posées dans la piste
+        notes, chosen = ctx.job.payload.get("takes"), ctx.job.payload.get("apply_takes")
+        clips = ctx.job.payload.get("clip_takes")  # la voix du clip brut reprise comme prise (takes.clip_takes)
+        if notes or chosen or clips:
+            from ..takes import apply_takes, clip_takes, make_takes
+
+            script = ScriptV1.model_validate(v["script"])
+            if chosen:
+                return apply_takes(self, ctx, out, script, v["lang"], [int(i) for i in chosen])
+            if clips:
+                return clip_takes(ctx, script, v["lang"], [int(i) for i in clips])
+            speed = float(v["voice_speed"] or ctx.settings.kokoro_speed)
+            return make_takes(ctx, script, v["lang"], speed, {int(k): str(n or "") for k, n in notes.items()}, acting)
         if out.exists() and v["timeline"] and not requested and retake is None:  # idempotence
             return {"path": str(out), "skipped": True}
         if retake is not None:
@@ -89,6 +102,7 @@ class TTSStep(Step):
         catalog = tts_catalog(ctx.settings) if acting else {}
         play = narration_acting(catalog, acting) if acting else {}
         engines = acting_engines(catalog, tts.name, acting) if play else []
+        kept: dict[int, Any] = {}  # variante d'accroche (docs/49 §2) : plans qui gardent la voix de l'originale
 
         if ctx.settings.dry_run:
             scenes = [
@@ -100,10 +114,18 @@ class TTSStep(Step):
             import soundfile as sf
 
             speeches: dict[int, Any] = {}
-            spoken = [s.index for s in script.scenes if texts[s.index]]
+            kept_rate = 0
+            source = ctx.job.payload.get("voices_from")
+            if source and not engines:  # un plan joué par un autre moteur changerait de timbre au milieu de la vidéo
+                kept, kept_rate = kept_speeches(ctx, source, lang, texts, f"{tts.name}:{voice}")
+            spoken = [s.index for s in script.scenes if texts[s.index] and s.index not in kept]
+            if kept:
+                ctx.log("tts.voix_gardees", gardees=sorted(kept), redites=spoken)
             ctx.progress(5, f"Voix · {engines[0] if engines else tts.name}")
             progress = lambda pct, label: ctx.progress(5 + int(0.8 * pct), f"Voix · {label}")  # noqa: E731
-            if engines:
+            if not spoken:
+                results = []
+            elif engines:
                 persona = voice_description(catalog, f"{tts.name}:{voice}") if play.get("persona") else ""
                 results = _say(
                     ctx,
@@ -119,7 +141,7 @@ class TTSStep(Step):
                 )
             else:
                 results = tts.speak_many([texts[i] for i in spoken], voice=voice, lang=lang, speed=speed, on_progress=progress)
-            rate = results[0].rate if results else 24000
+            rate = results[0].rate if results else kept_rate or 24000
             for i, sp in zip(spoken, results, strict=True):
                 speeches[i] = trim_silence(sp.samples, sp.rate)
             if engines and speeches:
@@ -131,6 +153,7 @@ class TTSStep(Step):
                     ctx.log(
                         "tts.narration_acceleree", facteur=round(factor, 2), dite_s=round(said_s, 1), prevue_s=round(planned, 1)
                     )
+            speeches |= {i: resample(x, kept_rate, rate) for i, x in kept.items()}
             scenes = [
                 SceneSpeech(s.index, s.duration_s, texts[s.index], len(speeches[s.index]) / rate if s.index in speeches else None)
                 for s in script.scenes
@@ -153,6 +176,7 @@ class TTSStep(Step):
             **({"acting": acting} if play else {}),
             **({"acting_failed": dead} if (dead := warn_fallback(ctx, acting)) else {}),
             **({"retouch": True} if requested else {}),
+            **({"kept_scenes": sorted(kept)} if kept else {}),
         }
 
     def _drama(self, ctx: Context, out: Any, script: ScriptV1, lang: str, speed: float, acting: str) -> dict[str, Any]:
@@ -451,6 +475,61 @@ def tempo(samples: Any, rate: int, factor: float) -> Any:
         check=True,
     ).stdout
     return np.frombuffer(out, dtype=np.float32).copy()
+
+
+def resample(samples: Any, rate: int, to: int) -> Any:
+    """Le son échantillonné à `rate` ramené à `to` (tel quel si c'est la même fréquence)."""
+    import numpy as np
+
+    if not rate or rate == to:
+        return samples
+    x = np.asarray(samples, dtype=np.float32)
+    return np.interp(np.linspace(0, len(x) - 1, int(len(x) * to / rate)), np.arange(len(x)), x).astype(np.float32)
+
+
+def kept_speeches(ctx: Context, source: Any, lang: str, texts: dict[int, str], voice_id: str) -> tuple[dict[int, Any], int]:
+    """Voix de la vidéo `source` (l'originale d'une variante, docs/49 §2) découpées plan par plan dans sa piste, pour
+    chaque plan dont le texte dit n'a pas changé, et leur fréquence : seuls les autres plans sont redits (02/10, Lukangol :
+    les 19 plans étaient redits pour une nouvelle accroche). Rien n'est gardé si l'originale a été dite par une autre voix
+    ou un autre moteur (jeu des voix, repli : le timbre changerait en cours de vidéo), ou si sa piste ne suit plus sa
+    timeline."""
+    import numpy as np
+    import soundfile as sf
+
+    job = ctx.db.fetch_one(
+        """select result from jobs where video_id = %s and type = 'tts' and status = 'done'
+           order by finished_at desc nulls last limit 1""",
+        (source,),
+    )
+    said = (job or {}).get("result") or {}
+    engine = voice_id.split(":", 1)[0]
+    if said.get("voice") != voice_id or said.get("acting") or said.get("spoken_by", engine) != engine:
+        ctx.log("tts.voix_non_gardees", origine=str(source), voix=said.get("voice"), moteur=said.get("spoken_by"))
+        return {}, 0
+    row = ctx.db.fetch_one(
+        "select v.lang, v.timeline, p.script from videos v join productions p on p.id = v.production_id where v.id = %s",
+        (source,),
+    )
+    if not row or row["lang"] != lang or not row["timeline"] or not row["script"]:
+        return {}, 0
+    timeline = NarrationTimeline.model_validate(row["timeline"])
+    before = {s.index: s.narration.get(lang, "").strip() for s in ScriptV1.model_validate(row["script"]).scenes}
+    try:
+        x, rate = sf.read(str(ctx.settings.data_dir / "videos" / str(source) / "narration.wav"), dtype="float32")
+    except Exception:  # noqa: BLE001 — piste effacée ou illisible : tout est redit
+        return {}, 0
+    x = np.asarray(x, dtype=np.float32)
+    if x.ndim > 1:
+        x = x.mean(axis=1)
+    if abs(len(x) / rate - timeline.duration_s) > 0.05:  # piste refaite sans sa timeline : on n'y découpe rien
+        ctx.log("tts.voix_non_gardees", origine=str(source), piste_s=round(len(x) / rate, 2), timeline_s=timeline.duration_s)
+        return {}, 0
+    kept = {}
+    for sc in timeline.scenes:
+        same = texts.get(sc.index) and texts[sc.index] == before.get(sc.index)
+        if same and sc.speech_start is not None and sc.speech_end is not None and sc.speech_end > sc.speech_start:
+            kept[sc.index] = x[int(round(sc.speech_start * rate)) : int(round(sc.speech_end * rate))].copy()
+    return kept, int(rate)
 
 
 def narration_acting(catalog: dict[str, Any], acting: str) -> dict[str, Any]:

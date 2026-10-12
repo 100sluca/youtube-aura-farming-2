@@ -16,6 +16,8 @@ dependencies = [
   "structlog>=24",
   "pillow>=10",  # titre d'accroche gravé (worker/hooktitle.py, repris de MJClipIt)
   "numpy>=1.26",  # scène carte (worker/maps.py), calage des voix (worker/lipsync.py), montage (worker/timeline.py)
+  "praat-parselmouth>=0.4.5",  # modificateur de voix réglé par Luca (worker/longform/voice_mod.py, docs/67)
+  "onnxruntime>=1.18",  # vocodeur du modificateur de voix, méthode « naturel » (worker/longform/vocoder.py, docs/68)
 ]
 
 [project.optional-dependencies]

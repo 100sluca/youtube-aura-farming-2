@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { CircleCheck, CircleX, DownloadCloud, Link2, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { createChannel, deleteChannel, importChannelHistory, updateChannel } from "@/app/settings/actions";
@@ -96,14 +95,12 @@ function ChannelDialog({
 }
 
 function ChannelCard({ channel, counts, onNotice }: { channel: Channel; counts: ChannelVideoCounts | undefined; onNotice: (n: Notice) => void }) {
-  const router = useRouter();
   const [editing, setEditing] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
   const connected = Boolean(channel.youtube_channel_id);
   const run = (fn: () => Promise<Notice>) =>
     startTransition(async () => {
-      onNotice(await fn());
-      router.refresh();
+      onNotice(await fn()); // l'action appelle revalidatePath : sa réponse apporte déjà la page recalculée (docs/56)
     });
 
   return (
@@ -195,7 +192,6 @@ function ChannelCard({ channel, counts, onNotice }: { channel: Channel; counts: 
         onSubmit={async (name, lang) => {
           const res = await updateChannel(channel.id, name, lang);
           onNotice(res);
-          router.refresh();
           return res;
         }}
       />
@@ -213,7 +209,6 @@ export function ChannelsSettings({
   counts: Record<string, ChannelVideoCounts>;
   openAdd: boolean;
 }) {
-  const router = useRouter();
   const [adding, setAdding] = React.useState(openAdd);
   const [notice, setNotice] = React.useState<Notice | null>(null);
 
@@ -253,7 +248,6 @@ export function ChannelsSettings({
         onSubmit={async (name, lang) => {
           const res = await createChannel(name, lang);
           setNotice(res);
-          router.refresh();
           return res;
         }}
       />

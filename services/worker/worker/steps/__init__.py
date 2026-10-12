@@ -10,15 +10,21 @@ from .ideate import IdeateStep
 from .import_channel import ImportChannelStep
 from .improve import ImproveStep
 from .instagram_publish import InstagramPublishStep
+from .long_make import LongMakeStep
+from .long_take import LongTakeStep
+from .long_write import LongWriteStep
 from .montage_preview import MontagePreviewStep
 from .paf_publish import PafPublishStep
 from .qa import QAStep
 from .render import RenderStep
+from .research import ResearchStep
+from .rewrite import RewriteStep
 from .script import ScriptStep
 from .seo import SeoStep
 from .storyboard import StoryboardStep
 from .strategy import StrategyStep
 from .sync import SyncCommentsStep, SyncMetricsStep, SyncRetentionStep
+from .sync_instagram import SyncInstagramStep
 from .sync_tiktok import SyncTikTokStep
 from .tiktok_publish import TikTokPublishStep
 from .tts import TTSStep
@@ -51,6 +57,12 @@ REGISTRY: dict[str, Step] = {
         InstagramPublishStep(),
         PafPublishStep(),
         SyncTikTokStep(),
+        SyncInstagramStep(),
+        RewriteStep(),
+        ResearchStep(),
+        LongWriteStep(),
+        LongMakeStep(),
+        LongTakeStep(),
     )
 }
 

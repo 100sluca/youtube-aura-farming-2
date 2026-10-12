@@ -60,6 +60,7 @@ MOODS: dict[str, tuple[str, str]] = {
     "voyage": ("Voyage", "évasion, nostalgie, solitude, grands espaces"),
     "decouverte": ("Découverte", "visite d'un lieu, émerveillement, luxe"),
     "joyeux": ("Joyeux", "léger, positif, entraînant"),
+    "drole": ("Drôle", "humour, situation absurde ou ridicule, karma comique, chute qui fait rire"),
     "pose": ("Posé", "récit calme, documentaire, neutre"),
 }
 # Ambiance sans piste pour ce format : ses voisines, dans l'ordre
@@ -73,6 +74,7 @@ RELATED: dict[str, tuple[str, ...]] = {
     "voyage": ("decouverte", "sentimental"),
     "decouverte": ("voyage", "pose"),
     "joyeux": ("decouverte", "pose"),
+    "drole": ("joyeux",),
     "pose": ("decouverte",),
 }
 # Mots des anciens prompts, des séries (series.music_moods) et de la bibliothèque ACE-Step, et variantes françaises
@@ -138,6 +140,22 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "fun": ("joyeux",),
     "joyeuse": ("joyeux",),
     "gai": ("joyeux",),
+    "funny": ("drole",),
+    "comedy": ("drole",),
+    "comedic": ("drole",),
+    "comic": ("drole",),
+    "humor": ("drole",),
+    "humour": ("drole",),
+    "humorous": ("drole",),
+    "quirky": ("drole",),
+    "silly": ("drole",),
+    "playful": ("drole", "joyeux"),
+    "comique": ("drole",),
+    "rigolo": ("drole",),
+    "rigolote": ("drole",),
+    "droles": ("drole",),
+    "absurde": ("drole",),
+    "burlesque": ("drole",),
     "calm": ("pose",),
     "neutral": ("pose",),
     "documentary": ("pose",),

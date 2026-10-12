@@ -33,6 +33,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .hooktitle import clean_hook, lint_hook_title
+from .image_text import clean_script
 from .models import LangMetadata, MapSpec, ScriptScene, ScriptV1, ShotList, StoryDraft
 from .numbers import to_digits
 from .storytelling import (
@@ -405,6 +406,7 @@ def build_script(
                 narration=narration,  # type: ignore[arg-type]
                 on_screen_text=on_screen,  # type: ignore[arg-type]
                 map=map_at.get(c.index),
+                image_text=shot.image_text if shot else None,
             )
         )
     metadata = dict(shots.metadata)
@@ -414,7 +416,7 @@ def build_script(
     loop_note = (
         shots.loop_note or ""
     ).strip() or f"La dernière phrase (« {draft.ending} ») renvoie à l'accroche ; le dernier plan reprend le premier."
-    return ScriptV1(
+    script = ScriptV1(
         scenes=scenes,
         loop_note=loop_note,
         metadata=metadata,  # type: ignore[arg-type]
@@ -423,6 +425,7 @@ def build_script(
         design_bible=(shots.design_bible or "").strip() or None,
         story=draft,
     )
+    return clean_script(script, lang)  # texte écrit dans l'image : 2 scènes au plus, 4 mots (docs/57 §5)
 
 
 def told_story(script: dict | None, lang: str = "fr") -> str:
@@ -582,6 +585,13 @@ MONTRENT ce que dit la narration à ce moment-là. Tu ne réécris pas la narrat
 Pour chaque scène (shots : une entrée par index reçu, dans l'ordre, sans en sauter) :
 - visual_prompt, en anglais : la PREMIÈRE image, décrite comme une photo de cinéma (sujet, action figée, lieu, époque,
   matières, lumière, valeur de plan, objectif), sans texte, sans visage reconnaissable ;
+- image_text (facultatif, 2 scènes au plus) : un texte écrit DANS le décor seulement quand il porte l'enjeu et que
+  l'image ne se comprendrait pas sans lui (« ZONE INTERDITE » sur la barrière d'une ville fantôme, « 852 » sur un
+  avis de recherche, une date gravée), de préférence sur la scène 1 (le hook visuel) : {"text": TOUT ce qui est écrit
+  sur le support, mot pour mot, dans la langue du récit, 4 mots au plus, nombres en chiffres, "on": le support en
+  anglais (« a rusted metal sign on the barbed-wire fence »)} ; visual_prompt décrit alors le support sans les mots
+  (le code les ajoute et vérifie leur orthographe) ; jamais la narration ni un titre : le montage les écrit ; sinon
+  absent ;
 - motion_prompt, en anglais : le seul mouvement de la scène à partir de cette image (caméra ou action), lent ;
 - on_screen_text (facultatif, souvent vide) : 5 mots au plus, un nombre en chiffres ou un mot-clé que la narration
   dit à ce moment ;

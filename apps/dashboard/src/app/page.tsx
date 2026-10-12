@@ -21,6 +21,7 @@ import { ChannelBadge } from "@/components/channel-badge";
 import { ExperimentsSection } from "@/components/experiments/experiments-section";
 import { FormatBadge } from "@/components/format-badge";
 import { KpiCard, type KpiDelta } from "@/components/kpi-card";
+import { NetworkCards } from "@/components/networks/network-cards";
 import { DailyViewsChart } from "@/components/overview/daily-views-chart";
 import { PageHeader } from "@/components/page-header";
 import { YouTubeMark } from "@/components/platform-marks";
@@ -46,6 +47,7 @@ import {
   formatTime,
   parisAddDays,
 } from "@/lib/format";
+import { getNetworkAccounts } from "@/lib/networks";
 import { getTikTokCalendar } from "@/lib/tiktok";
 
 export const metadata: Metadata = { title: "Vue d’ensemble" };
@@ -57,14 +59,16 @@ function trendOf(value: number | null | undefined): KpiDelta["trend"] {
 
 export default async function OverviewPage() {
   const { channels, selected } = await getChannelContext();
-  const [kpis, daily, schedule, productions, experiments, tiktok] = await Promise.all([
+  const [kpis, daily, schedule, productions, experiments, tiktok, networks] = await Promise.all([
     getOverviewKpis(selected?.slug),
     getDailyViews(28),
     getSchedule(now().toISOString(), 3),
     listProductions(),
     getExperimentSummary(),
     getTikTokCalendar(now().toISOString(), parisAddDays(now(), 4).toISOString()),
+    getNetworkAccounts(channels, selected), // docs/62 : chaque compte, réseau par réseau
   ]);
+  const networkViews7d = networks.filter((a) => a.connected && a.views_7d !== null).reduce((sum, a) => sum + (a.views_7d ?? 0), 0);
   // TikTok (docs/39) : publications du même créneau (±10 min) de la même chaîne
   const tiktokAt = (slug: string, at: string) => {
     const ch = channels.find((c) => c.slug === slug);
@@ -117,13 +121,17 @@ export default async function OverviewPage() {
             <Link href="/dashboard?plateforme=tiktok" className="hover:text-foreground underline underline-offset-2">
               TikTok
             </Link>
+            {" · "}
+            <Link href="/dashboard?plateforme=instagram" className="hover:text-foreground underline underline-offset-2">
+              Instagram
+            </Link>
           </span>
         }
       />
 
       <section aria-label="Indicateurs clés" className="grid gap-4 *:min-w-0 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard
-          title="Abonnés"
+          title="Abonnés YouTube"
           value={formatNumber(kpis.subscribers)}
           icon={Users}
           delta={
@@ -134,7 +142,7 @@ export default async function OverviewPage() {
           hint={selected ? "Total de la chaîne, relevé chaque heure" : "Cumul des chaînes, relevé chaque heure"}
         />
         <KpiCard
-          title="Vues 7 j"
+          title="Vues YouTube 7 j"
           value={formatCompact(kpis.views_7d)}
           icon={Eye}
           delta={
@@ -166,6 +174,25 @@ export default async function OverviewPage() {
           }}
         />
       </section>
+
+      {networks.length ? (
+        <section aria-labelledby="par-reseau" className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+            <div>
+              <h2 id="par-reseau" className="text-lg font-semibold tracking-tight">
+                Par réseau et par compte
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                Les mêmes vidéos sur YouTube, TikTok et Instagram, et « Paf, j’achète » à part. Clique un compte pour ouvrir ses stats dans le Dashboard.
+              </p>
+            </div>
+            <p className="text-sm">
+              Tous réseaux : <span className="font-semibold tabular-nums">{formatNumber(networkViews7d)}</span> vues sur 7 j
+            </p>
+          </div>
+          <NetworkCards accounts={networks} />
+        </section>
+      ) : null}
 
       <section aria-label="Fabrication" className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground mr-1 text-sm">Fabrication :</span>

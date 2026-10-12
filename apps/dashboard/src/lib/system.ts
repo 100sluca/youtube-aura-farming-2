@@ -6,11 +6,12 @@
  */
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { MemoryHog, RestartTarget, ServiceState, SystemStatus } from "@/lib/system-types";
+import type { DashboardUpdate, MemoryHog, RestartTarget, ServiceState, SystemStatus } from "@/lib/system-types";
 
 const YT2_HOME = process.env.YT2_HOME ?? "C:/YouTube2";
 const COMFY_URL = (process.env.COMFY_BASE_URL ?? "http://127.0.0.1:8188").replace(/\/+$/, "");
@@ -20,6 +21,50 @@ const BEAT_STALE_S = 120; // le worker écrit toutes les 30 s : 2 min sans nouve
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const gb = (n: number) => `${round1(n).toLocaleString("fr-FR")} Go`;
+
+// ---- version du dashboard servie par launcher/dashboard.ps1 (docs/56-dashboard-rapide.md) ---------------------------
+
+const DASHBOARD_MODE: "production" | "dev" = process.env.NODE_ENV === "production" ? "production" : "dev";
+const LIVE_DIST = process.env.YT2_DIST_DIR ?? null; // « .next-live/a » ou « .next-live/b » quand le superviseur sert
+const LIVE_STATUS = path.join(process.cwd(), ".next-live", "status.json");
+
+let servedVersion: Promise<string | null> | null = null;
+/** BUILD_ID de la version servie, lu une fois ; null en next dev. */
+function dashboardVersion(): Promise<string | null> {
+  servedVersion ??= DASHBOARD_MODE === "dev"
+    ? Promise.resolve(null)
+    : readFile(path.join(process.cwd(), LIVE_DIST ?? ".next", "BUILD_ID"), "utf8").then((id) => id.trim(), () => null);
+  return servedVersion;
+}
+
+/** État du superviseur, seulement s'il sert ce serveur-ci (même dossier de version, ou son repli next dev). */
+async function dashboardUpdate(): Promise<DashboardUpdate | null> {
+  let live: { mode?: string; slot?: string | null; builtAt?: string | null; building?: boolean; waiting?: string | null; error?: string | null; errorAt?: string | null };
+  try {
+    live = JSON.parse((await readFile(LIVE_STATUS, "utf8")).replace(/^﻿/, ""));
+  } catch {
+    return null;
+  }
+  const ours = DASHBOARD_MODE === "production" ? LIVE_DIST === `.next-live/${live.slot}` : live.mode === "dev";
+  if (!ours) return null;
+  return {
+    builtAt: live.builtAt ?? null,
+    building: Boolean(live.building),
+    waiting: live.waiting === "code" || live.waiting === "memoire" ? live.waiting : null,
+    error: live.error || null,
+    errorAt: live.errorAt ?? null,
+  };
+}
+
+/** Ligne la plus parlante d'un journal de construction ratée (« Error: … »), raccourcie. */
+function buildErrorLine(log: string): string {
+  const lines = log.split("\n").map((l) => l.trim()).filter(Boolean);
+  const line = lines.find((l) => /^(\w*Error|error)\b|failed/i.test(l) && !/^Import traces/i.test(l)) ?? lines.at(-1) ?? "";
+  return line.length > 140 ? `${line.slice(0, 137)}…` : line;
+}
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 async function comfyStatus(): Promise<{ state: ServiceState; queue: number | null }> {
   try {
@@ -43,11 +88,13 @@ type WorkerBeat = {
 
 export async function getSystemStatus(): Promise<SystemStatus> {
   const db = supabaseAdmin();
-  const [comfy, settings, gpu] = await Promise.all([
+  const [comfy, settings, gpu, version, update] = await Promise.all([
     comfyStatus(),
     db.from("app_settings").select("key, value, updated_at").in("key", ["worker_status", "worker_restart"]),
     db.from("jobs").select("type, progress_label, started_at").eq("status", "running").like("locked_by", "%/gpu")
       .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+    dashboardVersion(),
+    dashboardUpdate(),
   ]);
   const rows = settings.data ?? [];
   const beatRow = rows.find((r) => r.key === "worker_status");
@@ -77,7 +124,14 @@ export async function getSystemStatus(): Promise<SystemStatus> {
       workerId: beat?.worker_id ?? null,
     },
     gpuJob: gpu.data ? { type: gpu.data.type as string, label: (gpu.data.progress_label as string | null) ?? null, startedAt: (gpu.data.started_at as string | null) ?? null } : null,
-    dashboard: { rssGb: round1(process.memoryUsage().rss / GB), uptimeS: Math.round(process.uptime()), pid: process.pid },
+    dashboard: {
+      rssGb: round1(process.memoryUsage().rss / GB),
+      uptimeS: Math.round(process.uptime()),
+      pid: process.pid,
+      mode: DASHBOARD_MODE,
+      version,
+      update,
+    },
     warnings: [],
   };
   status.warnings = warningsFor(status);
@@ -94,6 +148,15 @@ function warningsFor(s: SystemStatus): string[] {
     w.push(`Mémoire presque pleine : ${gb(s.ram.freeGb)} libres sur ${gb(s.ram.totalGb)}. Un clip MiniMax H3 peut faire tomber ComfyUI.`);
   else if (s.ram.commitFreeGb !== null && s.ram.commitFreeGb < 6)
     w.push(`Mémoire réservable presque épuisée (${gb(s.ram.commitFreeGb)}) : ComfyUI risque de tomber au prochain gros modèle.`);
+  const up = s.dashboard.update;
+  if (up?.error)
+    w.push(
+      s.dashboard.mode === "dev"
+        ? `Le dashboard tourne en mode lent (développement) : sa version rapide ne se construit pas (${buildErrorLine(up.error)}).`
+        : `Dernière modification du dashboard pas encore en service, elle ne se construit pas (${buildErrorLine(up.error)}) : il tourne sur la version du ${up.builtAt ? shortDate(up.builtAt) : "…"}.`
+    );
+  else if (s.dashboard.mode === "dev")
+    w.push("Le dashboard tourne en mode développement, plusieurs fois plus lent : « Redémarrer le dashboard » le relance en version rapide.");
   if (s.dashboard.rssGb >= 3)
     w.push(`Le dashboard occupe ${gb(s.dashboard.rssGb)} (il grossit au fil des jours) : le redémarrer libère cette mémoire.`);
   return w;

@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# version de production servie par launcher/dashboard.ps1 (docs/56)
+/.next-live/
+/tsconfig.live.json

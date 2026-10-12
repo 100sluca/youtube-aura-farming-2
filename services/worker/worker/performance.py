@@ -570,6 +570,8 @@ RECIPES: dict[str, Recipe] = {
     "visite": "tour",
     "story": "story",
     "récit": "story",
+    "quote": "quote",
+    "citation": "quote",
 }
 
 

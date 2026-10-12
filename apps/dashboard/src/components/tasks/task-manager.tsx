@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   ArrowDown,
   ArrowRight,
@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Square,
   Trash2,
+  WandSparkles,
   X,
 } from "lucide-react";
 
@@ -30,7 +31,6 @@ import {
   cancelJob,
   dismissJob,
   fetchProductionCard,
-  fetchTaskBoard,
   focusProduction,
   pauseProductions,
   removeProduction,
@@ -38,9 +38,11 @@ import {
   resumeProduction,
   retryJob,
   stopProduction,
+  stopRetouch,
   unpauseProductions,
 } from "@/app/tasks/actions";
 import { ConfirmButton } from "@/components/confirm-button";
+import { ApiKeysPanel } from "@/components/tasks/api-keys-panel";
 import { ProductionSheet } from "@/components/production/production-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,8 +60,9 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatDate, formatRelative, formatTime, parisDayKey } from "@/lib/format";
-import { EMPTY_TASK_BOARD, type TaskBoard, type TaskJob, type TaskProduction } from "@/lib/task-types";
-import type { ProductionCard } from "@/lib/types";
+import { getJson } from "@/lib/get-json";
+import { EMPTY_TASK_BOARD, type TaskBoard, type TaskJob, type TaskProduction, type TaskRetouch } from "@/lib/task-types";
+import type { JobStatus, ProductionCard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Événement qui ouvre le panneau depuis n'importe quelle page (OpenTasksButton). */
@@ -232,6 +235,113 @@ function JobRow({ job, now, children }: { job: TaskJob; now: string; children?: 
   );
 }
 
+// ---- Retouches finies déjà vues (ouvertes ou masquées) : propres à ce navigateur ----------------------------------------
+
+const SEEN_KEY = "yt2:retouches-vues";
+const seenListeners = new Set<() => void>();
+let seenRaw: string | null = null;
+
+function seenSnapshot(): string {
+  if (seenRaw === null) {
+    try {
+      seenRaw = localStorage.getItem(SEEN_KEY) ?? "[]";
+    } catch {
+      seenRaw = "[]"; // stockage indisponible (navigation privée…) : en mémoire seulement
+    }
+  }
+  return seenRaw;
+}
+
+function seenIds(raw: string): string[] {
+  try {
+    const list: unknown = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function markRetouchSeen(id: string) {
+  const list = seenIds(seenSnapshot());
+  if (list.includes(id)) return;
+  seenRaw = JSON.stringify([...list, id].slice(-200));
+  try {
+    localStorage.setItem(SEEN_KEY, seenRaw);
+  } catch {
+    // ignoré : gardé en mémoire jusqu'au rechargement
+  }
+  seenListeners.forEach((listener) => listener());
+}
+
+function subscribeSeen(listener: () => void) {
+  seenListeners.add(listener);
+  return () => {
+    seenListeners.delete(listener);
+  };
+}
+
+const STEP_MARK: Record<JobStatus, string> = { done: "✓", running: "●", queued: "○", failed: "✕", cancelled: "–" };
+
+/** Une retouche lancée depuis la Bibliothèque : ce qui a été demandé, ses étapes, puis le résultat à aller voir. */
+function RetouchCard({ retouch: r, now, children }: { retouch: TaskRetouch; now: string; children?: React.ReactNode }) {
+  const live = r.status === "running" || r.status === "queued";
+  return (
+    <li
+      className={cn(
+        "flex gap-3 rounded-lg border p-3",
+        r.status === "failed" && "border-destructive/40",
+        r.status === "done" && "border-emerald-500/40 bg-emerald-500/5",
+      )}
+    >
+      <Cover assetId={r.cover_asset_id} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <p className="line-clamp-2 text-sm leading-snug font-medium">{r.title}</p>
+        <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
+          <WandSparkles className="mt-px size-3.5 shrink-0" />
+          {r.what}
+        </p>
+        <p className="flex items-center gap-1.5 text-xs font-medium">
+          {r.status === "running" ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-violet-500" /> : null}
+          {r.status === "done" ? <CircleCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
+          {r.status === "failed" ? <CircleX className="text-destructive size-3.5 shrink-0" /> : null}
+          {r.stage}
+        </p>
+        {live ? <Progress value={r.progress_pct} className="h-1.5" aria-label={`Avancement ${r.progress_pct} %`} /> : null}
+        {r.steps.length > 1 ? (
+          <p className="text-muted-foreground flex flex-wrap gap-x-2.5 text-[11px]">
+            {r.steps.map((s, i) => (
+              <span
+                key={`${s.label}-${i}`}
+                className={cn(
+                  s.status === "done" && "text-emerald-600 dark:text-emerald-400",
+                  s.status === "running" && "text-foreground font-medium",
+                  s.status === "failed" && "text-destructive",
+                )}
+              >
+                {STEP_MARK[s.status]} {s.label}
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {live && (r.step_started_at || r.eta_at) ? (
+          <p className="text-muted-foreground text-[11px] tabular-nums">
+            {r.step_started_at ? `Étape commencée ${formatRelative(r.step_started_at, new Date(now))}` : null}
+            {r.step_started_at && r.eta_at ? " · " : null}
+            {r.eta_at ? `finie ${etaLabel(r.eta_at, now)} (estimation)` : null}
+          </p>
+        ) : null}
+        {r.result_hint ? <p className="text-xs text-emerald-700 dark:text-emerald-400">{r.result_hint}</p> : null}
+        {r.error ? (
+          <p className={cn("line-clamp-3 text-xs", r.status === "failed" ? "text-destructive" : "text-amber-600 dark:text-amber-400")}>
+            {r.status === "failed" ? r.error : `Essai raté, refait tout seul : ${r.error}`}
+          </p>
+        ) : null}
+        {children ? <div className="flex flex-wrap gap-1.5 pt-0.5">{children}</div> : null}
+      </div>
+    </li>
+  );
+}
+
 function Section({
   title,
   count,
@@ -313,9 +423,12 @@ function WhenItems({ gpuTask, named, now, onPick }: { gpuTask: TaskProduction; n
   );
 }
 
+/** La file, par la route GET : en action serveur, cette lecture toutes les 3 s faisait attendre les clics (docs/56). */
+const fetchTaskBoard = () => getJson<TaskBoard>("/api/tasks/board");
+
 /** Bouton « Tâches » de l'en-tête et panneau de droite : ce qui se fabrique, dans l'ordre, et les gestes de pause et d'arrêt. */
 export function TaskManager() {
-  const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const [board, setBoard] = React.useState<TaskBoard>(EMPTY_TASK_BOARD);
   const [notice, setNotice] = React.useState<Notice | null>(null);
@@ -361,10 +474,21 @@ export function TaskManager() {
       } catch {
         // ignoré : le prochain rafraîchissement rattrapera
       }
-      router.refresh();
+      // pas de router.refresh() : l'action appelle revalidatePath, sa réponse apporte déjà la page recalculée (docs/56)
     });
 
   const showDetails = (id: string) => startTransition(async () => setDetail(await fetchProductionCard(id)));
+
+  // Retouches : une retouche finie reste jusqu’à ce qu’on l’ouvre ou la masque (12 h au plus) ; en échec, idem
+  const seenRawValue = React.useSyncExternalStore(subscribeSeen, seenSnapshot, () => "[]");
+  const seen = React.useMemo(() => new Set(seenIds(seenRawValue)), [seenRawValue]);
+  // Déjà sous les yeux : la page Retoucher de cette vidéo est ouverte quand elle finit
+  React.useEffect(() => {
+    for (const r of board.retouches) if (r.status === "done" && pathname.endsWith("/retouche") && r.href.startsWith(pathname)) markRetouchSeen(r.id);
+  }, [board.retouches, pathname]);
+  const retouches = board.retouches.filter((r) => !((r.status === "done" || r.status === "failed") && seen.has(r.id)));
+  const retouchesLive = retouches.filter((r) => r.status === "running" || r.status === "queued").length;
+  const retouchesToSee = retouches.filter((r) => r.status === "done").length;
 
   const { counts } = board;
   const now = board.generated_at;
@@ -377,7 +501,8 @@ export function TaskManager() {
       board.failed.length +
       board.stopped.length +
       board.other_jobs.length +
-      board.failed_jobs.length ===
+      board.failed_jobs.length +
+      retouches.length ===
     0;
   // La vidéo dont un clip, des images ou la voix tournent sur la carte graphique (celle qu'une pause « tout de suite » coupe)
   const gpuTask = board.running.find((t) => t.gpu_step && !t.paused) ?? null;
@@ -499,15 +624,15 @@ export function TaskManager() {
   return (
     <>
       <Button variant="outline" size="sm" className="relative gap-2" onClick={() => setOpen(true)} aria-label="Gestionnaire de tâches">
-        {board.running.length > 0 ? <LoaderCircle className="size-4 animate-spin" /> : <ListChecks className="size-4" />}
+        {board.running.length > 0 || retouches.some((r) => r.status === "running") ? <LoaderCircle className="size-4 animate-spin" /> : <ListChecks className="size-4" />}
         <span className="hidden sm:inline">Tâches</span>
         {counts.active > 0 ? (
           <span className="bg-primary text-primary-foreground rounded-full px-1.5 text-[11px] leading-5 font-semibold tabular-nums">{counts.active}</span>
         ) : null}
-        {counts.failures > 0 || counts.attention > 0 ? (
+        {counts.failures > 0 || counts.attention > 0 || retouchesToSee > 0 ? (
           <span
             className={cn("absolute -top-1 -right-1 size-2.5 rounded-full ring-2 ring-background", counts.failures > 0 ? "bg-red-500" : "bg-amber-500")}
-            aria-label={counts.failures > 0 ? "Des tâches ont échoué" : "Des vidéos attendent ton avis"}
+            aria-label={counts.failures > 0 ? "Des tâches ont échoué" : retouchesToSee > 0 ? "Une retouche est finie : à regarder" : "Des vidéos attendent ton avis"}
           />
         ) : null}
       </Button>
@@ -519,7 +644,10 @@ export function TaskManager() {
             <SheetDescription>
               {inFlight > 0
                 ? `${inFlight} vidéo${inFlight > 1 ? "s" : ""} en fabrication${board.queue_end_at ? ` · file terminée ${etaLabel(board.queue_end_at, now)} (estimation)` : ""}`
-                : "Rien ne se fabrique en ce moment."}
+                : retouchesLive > 0
+                  ? "Aucune nouvelle vidéo en fabrication."
+                  : "Rien ne se fabrique en ce moment."}
+              {retouchesLive > 0 ? ` · ${retouchesLive} retouche${retouchesLive > 1 ? "s" : ""} en cours` : ""}
               {board.paused.length > 0 ? ` · ${board.paused.length} en pause` : ""}
             </SheetDescription>
             {pausable.length + resumable.length > 0 ? (
@@ -657,6 +785,77 @@ export function TaskManager() {
                         </>,
                       )}
                     </TaskCard>
+                  ))}
+                </Section>
+              ) : null}
+
+              {retouches.length > 0 ? (
+                <Section
+                  title="Retouches"
+                  count={retouches.length}
+                  hint="Lancées depuis Bibliothèque → Retoucher : elles continuent pendant que tu fais autre chose, et passent avant les clips en file."
+                >
+                  {retouches.map((r) => (
+                    <RetouchCard key={r.id} retouch={r} now={now}>
+                      {r.status === "done" ? (
+                        <>
+                          <Button
+                            size="sm"
+                            asChild
+                            onClick={() => {
+                              markRetouchSeen(r.id);
+                              setOpen(false);
+                            }}
+                          >
+                            <Link href={r.href}>
+                              Voir <ArrowRight />
+                            </Link>
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => markRetouchSeen(r.id)} title="Retirer du panneau">
+                            <EyeOff />
+                            Masquer
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          {r.status === "failed" && r.failed_job_id ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={pending}
+                              onClick={() => run(() => retryJob(r.failed_job_id ?? ""), "Retouche relancée : elle reprend là où elle s’était arrêtée")}
+                            >
+                              <RefreshCw />
+                              Relancer
+                            </Button>
+                          ) : null}
+                          <Button size="sm" variant="outline" asChild onClick={() => setOpen(false)}>
+                            <Link href={r.href}>
+                              <WandSparkles />
+                              Ouvrir
+                            </Link>
+                          </Button>
+                          {r.status === "failed" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={pending}
+                              onClick={() =>
+                                r.failed_job_id ? run(() => stopRetouch(r.job_ids), "Masquée : la vidéo garde sa version d’avant") : markRetouchSeen(r.id)
+                              }
+                            >
+                              <EyeOff />
+                              Masquer
+                            </Button>
+                          ) : (
+                            <ConfirmButton size="sm" variant="ghost" disabled={pending} onConfirm={() => run(() => stopRetouch(r.job_ids))} confirmLabel="Confirmer l’arrêt">
+                              <Square />
+                              Arrêter
+                            </ConfirmButton>
+                          )}
+                        </>
+                      )}
+                    </RetouchCard>
                   ))}
                 </Section>
               ) : null}
@@ -840,6 +1039,9 @@ export function TaskManager() {
                   ))}
                 </Section>
               ) : null}
+
+              {/* clé en service et clés tombées aujourd'hui (docs/49 §9) */}
+              <ApiKeysPanel open={open} />
 
               {nothing ? (
                 <div className="text-muted-foreground flex flex-col items-center gap-3 rounded-xl border border-dashed p-8 text-center text-sm">

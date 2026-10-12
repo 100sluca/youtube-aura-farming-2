@@ -289,13 +289,15 @@ def _json(value: dict[str, float] | None) -> Jsonb | None:
     return Jsonb(value) if value else None
 
 
-def record_launch_marks(db: Db, account_id: str) -> None:
+def record_launch_marks(db: Db, account_id: str, platform: str = "tiktok") -> None:
     """Vues 24 h et 7 jours après la sortie, calculées une fois le cap passé, d'après les relevés horaires (mêmes règles
-    que YouTube, steps/sync.py) ; restent vides si le worker ne tournait pas à ce moment-là."""
+    que YouTube, steps/sync.py) ; restent vides si le worker ne tournait pas à ce moment-là. `platform` : tables
+    tiktok_* ou instagram_* (docs/62)."""
+    posts, snaps_table = f"{platform}_posts", f"{platform}_post_snapshots"
     rows = db.fetch_all(
-        """select id, published_at, views_24h, views_7d from tiktok_posts
+        f"""select id, published_at, views_24h, views_7d from {posts}
            where account_id = %s and published_at is not null and published_at > now() - make_interval(days => %s)
-             and (views_24h is null or views_7d is null)""",
+             and (views_24h is null or views_7d is null)""",  # noqa: S608 — nom de table fixe
         (account_id, MARKS_WINDOW_DAYS),
     )
     now = datetime.now(UTC)
@@ -305,29 +307,31 @@ def record_launch_marks(db: Db, account_id: str) -> None:
             if r[col] is not None or at > now:
                 continue
             snaps = db.fetch_all(
-                """select taken_at, views from tiktok_post_snapshots where post_id = %s and taken_at between %s and %s
-                   order by taken_at""",
+                f"""select taken_at, views from {snaps_table} where post_id = %s and taken_at between %s and %s
+                   order by taken_at""",  # noqa: S608 — nom de table fixe
                 (r["id"], at - gap, at + gap),
             )
             value = views_at([(s["taken_at"], s["views"]) for s in snaps], r["published_at"], at, gap)
             if value is not None:
-                db.execute(f"update tiktok_posts set {col} = %s where id = %s", (value, r["id"]))  # noqa: S608
+                db.execute(f"update {posts} set {col} = %s where id = %s", (value, r["id"]))  # noqa: S608
 
 
-def prune_snapshots(db: Db, account_id: str) -> None:
-    """Au-delà de HOURLY_KEEP_DAYS jours, on ne garde que le dernier relevé de chaque jour (heure de Paris)."""
+def prune_snapshots(db: Db, account_id: str, platform: str = "tiktok") -> None:
+    """Au-delà de HOURLY_KEEP_DAYS jours, on ne garde que le dernier relevé de chaque jour (heure de Paris). `platform` :
+    tables tiktok_* ou instagram_* (docs/62)."""
     same_day = "(t.taken_at at time zone 'Europe/Paris')::date = (s.taken_at at time zone 'Europe/Paris')::date"
+    posts, snaps, account_snaps = f"{platform}_posts", f"{platform}_post_snapshots", f"{platform}_account_snapshots"
     db.execute(
-        f"""delete from tiktok_post_snapshots s using tiktok_posts p
+        f"""delete from {snaps} s using {posts} p
             where p.id = s.post_id and p.account_id = %s and s.taken_at < now() - make_interval(days => %s)
-              and exists (select 1 from tiktok_post_snapshots t where t.post_id = s.post_id and t.taken_at > s.taken_at
+              and exists (select 1 from {snaps} t where t.post_id = s.post_id and t.taken_at > s.taken_at
                           and {same_day})""",  # noqa: S608 — texte fixe
         (account_id, HOURLY_KEEP_DAYS),
     )
     db.execute(
-        f"""delete from tiktok_account_snapshots s
+        f"""delete from {account_snaps} s
             where s.account_id = %s and s.taken_at < now() - make_interval(days => %s)
-              and exists (select 1 from tiktok_account_snapshots t where t.account_id = s.account_id
+              and exists (select 1 from {account_snaps} t where t.account_id = s.account_id
                           and t.taken_at > s.taken_at and {same_day})""",  # noqa: S608 — texte fixe
         (account_id, HOURLY_KEEP_DAYS),
     )

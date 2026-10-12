@@ -35,6 +35,7 @@
     yt2 hook preview "TEXTE" [--image photo.png]          titre d'accroche façon MJClipIt (formats visuels, docs/15)
     yt2 sfx list | generate [--tags excavator,whoosh]     bibliothèque de bruitages (Stable Audio Open)
     yt2 music list | generate --mood luxury               bibliothèque de musique (ACE-Step 1.5)
+    yt2 quotes music | carousel [--count 5] [--draft]     citations : musiques TikTok, carrousel photo (docs/58)
 
 Les identifiants (concept, production, vidéo) acceptent un préfixe (8 premiers caractères).
 """
@@ -78,7 +79,7 @@ def _db() -> Any:
 
 
 def _full_id(db: Any, table: str, prefix: str) -> str:
-    assert table in {"concepts", "productions", "videos"}
+    assert table in {"concepts", "productions", "videos", "story_arcs"}
     rows = db.fetch_all(f"select id from {table} where id::text like %s", (f"{prefix}%",))  # noqa: S608
     if len(rows) != 1:
         sys.exit(f"{table} : {len(rows)} correspondance(s) pour « {prefix} »")
@@ -879,9 +880,11 @@ def main(argv: list[str] | None = None) -> None:
     vs.add_argument("--online", action="store_true", help="autoriser le moteur à télécharger ses modèles (premier essai)")
     vs.set_defaults(fn=voice_say)
 
+    from .cli_arcs import register as register_arcs  # arc list|show|adopt|launch|tick|settings : mini-séries (docs/52)
     from .cli_formats import register  # hook, sfx, music : formats visuels (docs/15)
     from .cli_gemini import register as register_gemini  # gemini open|status|check|clip|send (docs/17)
     from .cli_instagram import register as register_instagram  # instagram accounts|link|status|post (docs/48)
+    from .cli_quotes import register as register_quotes  # quotes music|carousel : citations (docs/58)
     from .cli_tiktok import register as register_tiktok  # tiktok key|link|post… (docs/36), stats|backlog (docs/39)
     from .cli_variant import register as register_variant  # variant make : variante d'accroche (docs/49)
 
@@ -889,7 +892,9 @@ def main(argv: list[str] | None = None) -> None:
     register_gemini(sub)
     register_tiktok(sub)
     register_instagram(sub)
+    register_quotes(sub)
     register_variant(sub)
+    register_arcs(sub)
 
     args = p.parse_args(argv)
     if getattr(args, "title", None) == "":

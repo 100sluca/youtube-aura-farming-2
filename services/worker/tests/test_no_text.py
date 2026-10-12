@@ -40,7 +40,7 @@ def _script() -> ScriptV1:
 
 def test_the_line_is_heard_never_written_on_screen():
     p = drama.clip_prompt(_script(), 0, "fr", "pixar_fruit")
-    assert '"Mais… je suis ta mère."' in p  # H3 doit toujours savoir quoi dire
+    assert '"Mais, je suis ta mère."' in p  # H3 doit toujours savoir quoi dire
     assert p.endswith("The words are only heard, never written on screen: no subtitles, no captions.")
 
 

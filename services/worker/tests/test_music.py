@@ -97,6 +97,18 @@ def test_choose_track_follows_format_and_mood_and_is_stable():
     assert mood == "decouverte" and track and "tour" in track.formats
 
 
+def test_funny_story_gets_the_funny_track():
+    """music_10 (03/10, « Drôle ») ne sort que sur une histoire drôle ; une histoire joyeuse ne la prend pas."""
+    lib = [*LIBRARY, _t("music_10", "drole", "story")]
+    assert mood_ids("funny") == ["drole"] and mood_ids("Drôle") == ["drole"] and mood_ids("comique") == ["drole"]
+    track, mood = choose_track(lib, "story", "drole", "p")
+    assert track and track.id == "music_10" and mood == "drole"
+    assert choose_track(lib, "story", "joyeux", "p")[0].id != "music_10"  # type: ignore[union-attr]
+    assert "- drole (drôle) : humour" in mood_brief(lib, "story") and "drole" not in mood_brief(lib, "timelapse")
+    # sans piste drôle pour ce format : la voisine « joyeux »
+    assert choose_track(LIBRARY, "timelapse", "funny", "p") == (LIBRARY[4], "joyeux")
+
+
 def test_choose_track_draws_by_preference():
     """music_7 (préférence 2) sort environ deux fois plus que music_1 (1) et quatre fois plus que music_2 (0,5)."""
     picks = Counter(choose_track(LIBRARY, "story", "pose", f"prod-{i}")[0].id for i in range(4000))  # type: ignore[union-attr]

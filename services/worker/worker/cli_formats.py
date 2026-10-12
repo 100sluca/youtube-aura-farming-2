@@ -113,6 +113,44 @@ def sfx_generate(args: argparse.Namespace) -> None:
             print(f"{tag} : {path}")
 
 
+def sfx_pick(args: argparse.Namespace) -> None:
+    """Bruitages d'un drame plan par plan (le bruiteur, prompt sfx_pick), enregistrés dans le script de sa production ;
+    --remount refait le montage avec eux (SQL retouch_video, sans toucher aux voix)."""
+    from psycopg.types.json import Jsonb
+
+    from .cli import _full_id
+    from .db import Db
+    from .models import ScriptV1
+    from .prompts import prompt_text
+    from .providers.llm import get_llm
+    from .sfx import pick_sfx as library_file
+    from .sfx_pick import PICK_PROMPT, pick_sfx, with_sfx
+
+    settings = _settings()
+    db = Db(settings.database_url, max_size=1)
+    vid = _full_id(db, "videos", args.video)
+    v = db.fetch_one(
+        "select v.lang, v.production_id, p.script from videos v join productions p on p.id = v.production_id where v.id = %s",
+        (vid,),
+    )
+    script = ScriptV1.model_validate(v["script"])
+    picks = pick_sfx(get_llm(settings, db), script, v["lang"], prompt_text(db, "sfx_pick", PICK_PROMPT))
+    db.execute(
+        "update productions set script = %s where id = %s",
+        (Jsonb(with_sfx(script, picks).model_dump(mode="json")), v["production_id"]),
+    )
+    root = settings.effective_sfx_dir
+    for pos, s in enumerate(script.scenes, start=1):
+        tags = picks.get(s.index, "")
+        absent = [t.strip() for t in tags.split(",") if t.strip() and not library_file(root, t.strip(), "x")]
+        print(f"  plan {pos:>2} : {tags or '—'}" + (f"   (absents de la bibliothèque : {', '.join(absent)})" if absent else ""))
+    if args.remount:
+        db.execute(
+            "select retouch_video(%s, coalesce((select retouch from videos where id = %s), '{}'::jsonb), null)", (vid, vid)
+        )
+        print("montage → contrôle en file ; la vidéo revient à valider")
+
+
 def music_list(_: argparse.Namespace) -> None:
     """Bibliothèque de Luca (mesure les pistes nouvelles ou remplacées), puis l'ancienne bibliothèque générée."""
     from .db import Db
@@ -167,6 +205,10 @@ def register(sub: Any) -> None:
     sg.add_argument("--count", type=int, default=2, help="fichiers visés par étiquette")
     sg.add_argument("--all", action="store_true", help="générer --count fichiers même si la bibliothèque en a déjà")
     sg.set_defaults(fn=sfx_generate)
+    sp = sx.add_parser("pick", help="le bruiteur choisit les bruitages d'un drame, plan par plan (docs/49 §10)")
+    sp.add_argument("video", help="id de la vidéo (début suffit)")
+    sp.add_argument("--remount", action="store_true", help="refaire le montage ensuite (la vidéo revient à valider)")
+    sp.set_defaults(fn=sfx_pick)
 
     mu = sub.add_parser("music", help="bibliothèque de musique").add_subparsers(dest="cmd", required=True)
     mu.add_parser("list").set_defaults(fn=music_list)

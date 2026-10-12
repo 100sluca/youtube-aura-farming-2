@@ -120,6 +120,14 @@ les retouches : une voix Pocket choisie dans Réglages aurait eu le même refus.
 
 Après un échec, « Refaire la vidéo » reste possible sans rien changer (il relance le montage avec la retouche enregistrée).
 
+**Fichier verrouillé (01/10).** Le remontage de « Bunker sombre en loft lumineux » a échoué 4 fois sur « Accès refusé »
+en remplaçant final.mp4 par final.niveau.mp4 : le dashboard gardait final.mp4 ouvert depuis des heures. Chrome lit une
+vidéo par une requête « bytes=0- » qu'il cesse de lire une fois sa mémoire tampon pleine (vidéo en pause), et
+/api/media servait le fichier en flux : le flux restait ouvert tant que la page Retoucher était affichée, et Windows
+refuse de remplacer un fichier ouvert. Désormais `lib/file-response.ts` (pour /api/media, /api/demos, /api/music,
+/api/paf/video) lit la plage demandée en mémoire, par morceaux de 4 Mo, et referme le fichier avant de répondre ; côté
+worker, `media.replace_file` réessaie 5 s puis recopie par-dessus le fichier ouvert.
+
 ## 6. Fichiers
 
 | Où | Quoi |
@@ -128,7 +136,9 @@ Après un échec, « Refaire la vidéo » reste possible sans rien changer (il r
 | services/worker/worker/retouch.py | `Retouch`, `load_retouch`, `retime`, `display_tokens`, `forced_music` |
 | services/worker/worker/steps/assemble.py | `prepare_video` (sous-titres retouchés, textes automatiques), `choose_music(forced=)`, niveaux et titre dans `AssembleStep`, `fix_level` (niveau du final, §5) |
 | services/worker/worker/steps/tts.py | voix imposée par le payload (`voice`) |
-| services/worker/tests/test_retouch.py | recalage des mots, nombres collés, musique et niveaux imposés, montage, voix |
+| services/worker/worker/media.py | `replace_file` (remplacer un final ouvert ailleurs, §5) |
+| apps/dashboard/src/lib/file-response.ts | fichiers servis par plages, refermés avant la réponse (§5) |
+| services/worker/tests/test_retouch.py | recalage des mots, nombres collés, musique et niveaux imposés, montage, voix, final ouvert ailleurs |
 | services/worker/tests/test_hook_ephemeral.py | durée du titre retouchée (prime sur le modèle), boucle et fondu, vrai rendu FFmpeg |
 | apps/dashboard/src/app/library/[id]/retouche/page.tsx | la page |
 | apps/dashboard/src/components/library/retouch-editor.tsx | l'écran (onglets, écoute, avancement) |

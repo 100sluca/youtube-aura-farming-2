@@ -195,6 +195,31 @@ function Save-CleGemini([string]$Cle) {
     Save-Config
 }
 
+# ---- Lanceurs .bat --------------------------------------------------------------------------------------------------
+
+# Fins de ligne CRLF et page de codes de la console (un dossier « Jérôme » reste lisible pour cmd.exe)
+function Write-Bat([string]$Chemin, [string[]]$Lignes) {
+    $oem = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
+    [IO.File]::WriteAllText($Chemin, ($Lignes -join "`r`n") + "`r`n", $oem)
+}
+
+# Tableau de bord en version rapide, reconstruite toute seule quand le code change (launcher\dashboard.ps1, docs/56).
+# $LignePath : « set "PATH=…" » qui rend node.exe visible (installation sans droits d'administrateur).
+function Write-LanceurDashboard([string]$LignePath) {
+    $lignes = @(
+        "@echo off",
+        "title Dashboard - YouTube Aura Farming",
+        "rem Cree par INSTALLER.bat : le tableau de bord, $UrlAppli, en version rapide (launcher\dashboard.ps1)"
+    )
+    if ($LignePath) { $lignes += $LignePath }
+    $lignes += @(
+        "cd /d `"$Racine`"",
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"launcher\dashboard.ps1`" -Port $PortAppli",
+        "pause"
+    )
+    Write-Bat $LanceurDashboard $lignes
+}
+
 # ---- Docker et base de données (Supabase en local) ------------------------------------------------------------------
 
 function Test-DockerPret {

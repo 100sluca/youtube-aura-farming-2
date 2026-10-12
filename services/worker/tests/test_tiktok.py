@@ -225,11 +225,35 @@ def _video(state: dict) -> dict:
 
 
 def test_step_waits_until_the_scheduled_time(monkeypatch):
-    slot = datetime.now(UTC) + timedelta(hours=5)
+    slot = datetime.now(UTC) + timedelta(hours=2)
     video = _video({"status": "scheduled", "post_id": "p1", "scheduled_for": slot.isoformat(), "round": 1})
     with pytest.raises(Postpone) as later:
         _run(monkeypatch, video, {"_id": "p1", "status": "scheduled", "platforms": [{"platform": "tiktok", "status": "pending"}]})
-    assert 5 * 3600 < later.value.delay_s < 5 * 3600 + 400 and "programmée" in later.value.label
+    assert 2 * 3600 < later.value.delay_s < 2 * 3600 + 400 and "programmée" in later.value.label
+
+
+def test_step_comes_back_every_3_hours_before_a_far_slot(monkeypatch):
+    # docs/55 : une publication supprimée chez Zernio entre-temps doit libérer son créneau avant l'heure
+    slot = datetime.now(UTC) + timedelta(hours=40)
+    video = _video({"status": "scheduled", "post_id": "p1", "scheduled_for": slot.isoformat(), "round": 1})
+    with pytest.raises(Postpone) as later:
+        _run(monkeypatch, video, {"_id": "p1", "status": "scheduled", "platforms": [{"platform": "tiktok", "status": "pending"}]})
+    assert later.value.delay_s == step_mod.RECHECK.total_seconds()
+
+
+class _GoneClient(_FakeClient):
+    def get_post(self, post_id):
+        raise ZernioError("Zernio publication : 404 Post not found", status=404)
+
+
+def test_step_frees_the_slot_of_a_post_deleted_at_zernio(monkeypatch):
+    monkeypatch.setattr(step_mod, "zernio_key", lambda s, d: "sk_test")
+    monkeypatch.setattr(step_mod, "ZernioClient", lambda key: _GoneClient({}))
+    slot = datetime.now(UTC) + timedelta(hours=20)
+    db = _FakeDb(_video({"status": "scheduled", "post_id": "p1", "scheduled_for": slot.isoformat(), "round": 1}))
+    job = Job(id=uuid4(), type="tiktok_publish", status="running", priority=30, video_id=uuid4(), created_at=NOW)
+    result = REGISTRY["tiktok_publish"].run(step_mod.Context(job=job, db=db, settings=SimpleNamespace()))
+    assert result["status"] == "cancelled" and db.saved[-1]["status"] == "cancelled"
 
 
 def test_step_records_the_tiktok_link_once_published(monkeypatch):

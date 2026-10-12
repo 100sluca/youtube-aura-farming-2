@@ -6,8 +6,26 @@ import os
 import random
 import time
 from datetime import UTC, date, datetime, timedelta
+from datetime import time as clock
 
-from worker.paf import PARIS, PafConfig, due, parse_config, pick_caption, pick_video, post_body, publish_time, upcoming_slot
+from worker.paf import (
+    PARIS,
+    PafConfig,
+    date_label,
+    due,
+    hour_label,
+    late_limit,
+    main_clash,
+    moved,
+    parse_config,
+    pick_caption,
+    pick_video,
+    post_body,
+    publish_time,
+    render_caption,
+    slot_of,
+    upcoming_slot,
+)
 
 
 def paris(*args: int) -> datetime:
@@ -85,3 +103,79 @@ def test_pick_caption_random_but_not_last_week():
     assert drawn == {"B", "C", "D", "E"}  # toutes sortent, jamais celle du vendredi d'avant
     assert pick_caption(("A",), "A") == "A"  # une seule : on la garde
     assert pick_caption((), None) == ""
+
+
+def test_main_clash_same_instagram_on_both_zernio_accounts():
+    main = [
+        {"platform": "tiktok", "username": "arzakparker", "platformUserId": "t1"},
+        {"platform": "instagram", "username": "arzakparker", "platformUserId": "28831063366579885"},
+    ]
+    # Instagram ouvert sur @arzakparker au moment de brancher le second compte Zernio : même compte, autre _id
+    assert main_clash({"_id": "b", "username": "arzakparker", "platformUserId": "28831063366579885"}, main) == "arzakparker"
+    assert main_clash({"_id": "b", "username": "ArzakParker", "platformUserId": ""}, main) == "arzakparker"
+    assert main_clash({"_id": "c", "username": "paf.jachete", "platformUserId": "999"}, main) is None
+    assert main_clash({"_id": "c", "username": "paf.jachete", "platformUserId": "999"}, []) is None
+
+
+def test_hour_setting():
+    assert parse_config({}).hour == clock(7, 0)
+    assert parse_config({"hour": "09:00"}).hour == clock(9, 0)
+    assert parse_config({"hour": "9:30"}).hour == clock(9, 30)
+    assert parse_config({"hour": "25:00"}).hour == clock(7, 0)  # illisible : 7 h
+    assert hour_label(clock(9, 0)) == "9 h" and hour_label(clock(9, 5)) == "9 h 05"
+
+
+def test_upcoming_slot_at_chosen_hour():
+    slot = upcoming_slot(paris(2026, 10, 12, 12), clock(9, 0))  # lundi 12/10 → vendredi 16/10 à 9 h
+    assert slot.date() == date(2026, 10, 16) and (slot.hour, slot.minute) == (9, 0)
+    # 9 h : vendredi raté encore publié jusqu'à 21 h
+    assert upcoming_slot(paris(2026, 10, 16, 20, 59), clock(9, 0)).date() == date(2026, 10, 16)
+    assert upcoming_slot(paris(2026, 10, 16, 21, 1), clock(9, 0)).date() == date(2026, 10, 23)
+    # 18 h : jamais après minuit, pas le samedi matin
+    late = slot_of(date(2026, 10, 16), clock(18, 0))
+    assert late_limit(late) == datetime(2026, 10, 17, 0, 0, tzinfo=PARIS)
+    assert upcoming_slot(paris(2026, 10, 17, 0, 30), clock(18, 0)).date() == date(2026, 10, 23)
+
+
+def test_due_uses_chosen_hour():
+    cfg = PafConfig(enabled=True, account_id="acc", hour=clock(9, 0))
+    assert due(cfg, paris(2026, 10, 14, 8, 30)) is None  # mercredi 8 h 30 : plus de 48 h avant 9 h
+    assert due(cfg, paris(2026, 10, 14, 9, 30)) == slot_of(date(2026, 10, 16), clock(9, 0))
+
+
+def test_date_label():
+    assert date_label(date(2026, 10, 16)) == "vendredi 16 octobre"
+    assert date_label(date(2027, 1, 1)) == "vendredi 1er janvier"
+
+
+def test_render_caption_with_date():
+    friday = date(2026, 10, 16)
+    cap = "Bonjour, c'est vendredi. 🕺\n#actions #vendredi"
+    assert render_caption(cap, friday) == cap
+    assert render_caption(cap, friday, "start") == "Vendredi 16 octobre\n" + cap
+    assert render_caption(cap, friday, "end") == "Bonjour, c'est vendredi. 🕺\nVendredi 16 octobre\n#actions #vendredi"
+    assert render_caption("Sans hashtag", friday, "end") == "Sans hashtag\nVendredi 16 octobre"
+    assert render_caption(cap, friday, "only") == "Vendredi 16 octobre"
+    assert render_caption("", friday, "start") == "Vendredi 16 octobre"
+    # {date} dans la légende : la date à cet endroit, pas en double
+    assert render_caption("Bonjour, on est {date} !", friday, "start") == "Bonjour, on est vendredi 16 octobre !"
+    assert render_caption("Bonjour, on est {date} !", friday) == "Bonjour, on est vendredi 16 octobre !"
+
+
+def test_pick_caption_recognises_last_week_with_its_date():
+    caps = ("A\n#x", "B\n#x")
+    sent = render_caption("A\n#x", date(2026, 10, 9), "start")
+    rng = random.Random(3)
+    assert {pick_caption(caps, sent, rng, previous_friday=date(2026, 10, 9)) for _ in range(50)} == {"B\n#x"}
+
+
+def test_moved_when_hour_changes_after_scheduling():
+    friday = date(2026, 10, 16)
+    old = slot_of(friday, clock(7, 0))
+    wed = paris(2026, 10, 14, 10)
+    cfg = PafConfig(enabled=True, account_id="acc", hour=clock(9, 0))
+    assert moved(cfg, friday, old, wed) == slot_of(friday, clock(9, 0))
+    assert moved(PafConfig(enabled=True, account_id="acc"), friday, old, wed) is None  # même heure
+    assert moved(cfg, friday, old, old - timedelta(minutes=3)) is None  # sort dans 3 min : on n'y touche plus
+    assert moved(cfg, friday, wed - timedelta(minutes=1), wed) is None  # publié tout de suite
+    assert moved(PafConfig(enabled=False, account_id="acc", hour=clock(9, 0)), friday, old, wed) is None

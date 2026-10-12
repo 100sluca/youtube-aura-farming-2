@@ -129,7 +129,8 @@ IMAGE_RULES = """RÈGLES DE L'IMAGE (une image de départ, puis quelques seconde
 - Lieu réel : une scène carte le situe (vue de l'espace, zoom, tracé) ; elle est rendue par le code.
 - Personnes réelles : jamais de visage reconnaissable (de dos, de trois quarts dans l'ombre, les mains, une
   silhouette), toujours la même tenue d'une scène à l'autre.
-- Cadrage vertical pour un téléphone : sujet centré, fort contraste, sans texte dans l'image.
+- Cadrage vertical pour un téléphone : sujet centré, fort contraste, sans texte dans l'image (sauf image_text : un
+  mot ou un nombre écrit dans le décor qui porte l'enjeu, 2 scènes au plus, vérifié par le code).
 - Texte à l'écran seulement pour un chiffre ou un mot-clé que dit la narration, 5 mots au plus."""
 
 BANNED_OPENERS = {

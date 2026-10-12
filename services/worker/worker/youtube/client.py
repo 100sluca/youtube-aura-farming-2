@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -45,14 +46,15 @@ class YouTubeClient:
         publish_at: datetime,
         lang: str,
         on_progress: Callable[[float], None],
-        synthetic: bool = True,
+        synthetic: bool = False,
+        category: str = CATEGORY_HOWTO,
     ) -> str:
         body = {
             "snippet": {
                 "title": title[:100],
                 "description": description[:5000],
                 "tags": tags[:30],
-                "categoryId": CATEGORY_HOWTO,
+                "categoryId": category,
                 "defaultLanguage": lang,
                 "defaultAudioLanguage": lang,
             },
@@ -72,8 +74,41 @@ class YouTubeClient:
                 on_progress(status.progress())
         return resp["id"]
 
+    def set_thumbnail(self, video_id: str, path: Path) -> tuple[bool, str]:
+        """Miniature personnalisée (vidéos longues, docs/63) : JPEG 1280 × 720 de moins de 2 Mo, 50 unités de quota. Refus
+        de YouTube (chaîne non validée par téléphone, quota) : (False, raison), sans exception."""
+        try:
+            media = MediaFileUpload(str(path), mimetype="image/jpeg")
+            self.api.thumbnails().set(videoId=video_id, media_body=media).execute()
+            return True, "miniature posée"
+        except Exception as exc:  # noqa: BLE001
+            if "permissions to upload and set custom video thumbnails" in str(exc):
+                return False, (
+                    "la chaîne n'a pas encore le droit aux miniatures personnalisées : la valider par téléphone sur "
+                    "youtube.com/verify (connecté à la chaîne), attendre que Studio le confirme, puis « Reposer la miniature »"
+                )
+            return False, f"{type(exc).__name__}: {exc}"[:400]
+
+    def unschedule(self, video_id: str) -> dict[str, Any]:
+        """Déprogramme une vidéo pas encore sortie : privée, sans date de publication (rien n'est supprimé ; elle se
+        republie ou se supprime dans YouTube Studio). Le reste du statut (enfants, contenu synthétique) est renvoyé tel
+        quel, l'API remplaçant toute la partie status. 51 unités de quota. Refus si elle est déjà publique."""
+        items = self.api.videos().list(part="status", id=video_id).execute().get("items", [])
+        if not items:
+            raise RuntimeError(f"vidéo YouTube {video_id} introuvable")
+        status = dict(items[0]["status"])
+        if status.get("privacyStatus") != "private":
+            raise RuntimeError(f"vidéo YouTube {video_id} déjà {status.get('privacyStatus')} : à retirer dans YouTube Studio")
+        keep = ("privacyStatus", "embeddable", "license", "publicStatsViewable", "selfDeclaredMadeForKids")
+        body = {k: v for k, v in status.items() if k in keep} | {"privacyStatus": "private"}
+        if "containsSyntheticMedia" in status:
+            body["containsSyntheticMedia"] = status["containsSyntheticMedia"]
+        return self.api.videos().update(part="status", body={"id": video_id, "status": body}).execute()["status"]
+
     def videos_list(self, ids: list[str]) -> list[dict[str, Any]]:
-        r = self.api.videos().list(part="statistics,status,snippet", id=",".join(ids)).execute()
+        """Compteurs, statut et fiche de ≤ 50 vidéos (1 unité, quelles que soient les parties) ; contentDetails dit les
+        pays bloqués par un ayant droit (worker/copyright.py, docs/58 §6)."""
+        r = self.api.videos().list(part="statistics,status,snippet,contentDetails", id=",".join(ids)).execute()
         return r.get("items", [])
 
     def videos_details(self, ids: list[str]) -> list[dict[str, Any]]:

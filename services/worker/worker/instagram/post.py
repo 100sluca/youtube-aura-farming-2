@@ -34,10 +34,22 @@ def build_caption(title: str | None, description: str | None) -> str:
     return re.sub(r"[ \t]{2,}", " ", re.sub(r"[ \t]+\n", "\n", caption)).strip()
 
 
-def post_body(*, caption: str, media_url: str, account_id: str, cfg: InstagramConfig, when: datetime | None) -> dict[str, Any]:
+def post_body(
+    *,
+    caption: str,
+    media_url: str,
+    account_id: str,
+    cfg: InstagramConfig,
+    when: datetime | None,
+    audio_id: str | None = None,
+) -> dict[str, Any]:
+    """`audio_id` : une musique du catalogue d'Instagram à la place du son de la vidéo (worker/platform_music.py), pour
+    un compte connecté par Facebook Login."""
     specific: dict[str, Any] = {"shareToFeed": cfg.share_to_feed}
     if cfg.ai_label:
         specific["isAiGenerated"] = True
+    if audio_id:
+        specific["audioConfiguration"] = {"audioId": audio_id, "audioVolume": 100, "videoVolume": 0}
     body: dict[str, Any] = {
         "content": caption,
         "mediaItems": [{"type": "video", "url": media_url}],

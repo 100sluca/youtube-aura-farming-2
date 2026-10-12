@@ -92,6 +92,13 @@ if ($workers.Count) {
 # ---- 4. Tableau de bord ---------------------------------------------------------------------------------------------
 
 Write-Etape "4/4  Tableau de bord"
+# Lanceur d'une version d'avant le 02/10 (« npm run dev », lent) : remplacé par la version rapide, en gardant son PATH.
+# Un tableau de bord déjà lancé à l'ancienne passe à la version rapide à son prochain redémarrage.
+if ((Test-Path -LiteralPath $Marqueur) -and (Select-String -LiteralPath $LanceurDashboard -Pattern 'npm run dev' -Quiet)) {
+    $lignePath = Get-Content -LiteralPath $LanceurDashboard | Where-Object { $_ -match '^set "PATH=' } | Select-Object -First 1
+    Write-LanceurDashboard $lignePath
+    Write-Ok "Tableau de bord passé en version rapide (la première ouverture le construit : une minute environ)"
+}
 if (Test-Port $PortAppli) {
     # Le serveur du tableau de bord est un node.exe ; sa page peut mettre plus d'une minute à répondre s'il est occupé
     $occupant = Get-ProprietairePort $PortAppli
@@ -102,7 +109,7 @@ if (Test-Port $PortAppli) {
     Write-Ok "Tableau de bord déjà lancé"
 } else {
     Start-Process -FilePath $LanceurDashboard -WorkingDirectory $YT2 -WindowStyle Minimized
-    Write-Info "Démarrage du tableau de bord (jusqu'à une minute)…"
+    Write-Info "Démarrage du tableau de bord (jusqu'à deux minutes la première fois, le temps de le construire)…"
     $fin = (Get-Date).AddMinutes(3)
     while ((Get-Date) -lt $fin -and -not (Test-Port $PortAppli)) { Start-Sleep -Seconds 2; Write-Host "." -NoNewline }
     Write-Host ""

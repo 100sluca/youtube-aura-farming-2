@@ -297,6 +297,7 @@ export async function productionCards(ids?: string[]): Promise<ProductionCard[]>
             visual_prompt: s.visual_prompt,
             narration: (lang ? s.narration?.[lang] : Object.values(s.narration ?? {})[0]) || null,
             speaker: who ? ((script.cast ?? []).find((m) => m.key === who)?.name ?? who) : null,
+            image_text: s.image_text?.text ?? null,
             continues_previous: Boolean(s.continues_previous),
             clip_mode: s.clip_mode ?? "i2v",
             passage: Boolean(s.passage),

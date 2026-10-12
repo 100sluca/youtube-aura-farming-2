@@ -1,0 +1,11 @@
+{
+  "name": "Aura",
+  "short_name": "Aura",
+  "description": "Les stats et la fabrication de YouTube 2.0, depuis n'importe où.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e0d0c",
+  "theme_color": "#0e0d0c",
+  "lang": "fr",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

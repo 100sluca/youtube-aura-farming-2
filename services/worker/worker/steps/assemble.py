@@ -18,18 +18,21 @@ images intermédiaires calculées pour une caméra fluide (minterpolate), bruita
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import shutil
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from ..drama import build_dialogue_track, dialogue_timeline, is_drama
+from .. import quotes
+from ..drama import PACE, build_dialogue_track, dialogue_heads, dialogue_timeline, is_drama, isolate_voices, line_text
+from ..drama import _has_audio as has_audio
 from ..hooktitle import build_png, fade_filter, overlay_filter, shown_for
 from ..lipsync import ALIGNER as LIPSYNC
 from ..lipsync import last_sync, sync_drama, tts_timeline
-from ..media import measure_loudness, pick_music, run, video_encode_args
+from ..media import measure_loudness, pick_music, replace_file, run, video_encode_args
 from ..models import NarrationTimeline, ScriptV1, WordTiming
 from ..montage import AudioLayer, MontageTemplate, font_registry, hook_text, load_template
 from ..music import (
@@ -72,6 +75,7 @@ class RenderPlan:
     clip_durations: list[float | None]  # durée native de chaque clip (None = inconnue)
     scene_durations: list[float]  # durées effectives sur la vidéo
     clip_offsets: list[float] = field(default_factory=list)  # début coupé de chaque clip (drame calé sur la bouche) ; vide = 0
+    clip_speed: float = 1.0  # drame en voix des clips : clips joués plus vite, image et voix ensemble (drama.PACE, docs/70)
     words_by_scene: list[list[WordTiming]] = field(default_factory=list)
     titles: list[tuple[float, float, str]] = field(default_factory=list)
     narration: Path | None = None
@@ -91,6 +95,7 @@ class RenderPlan:
     hook_png: Path | None = None
     hook_filter: str = "overlay=(W-w)/2:150"
     hook_s: float | None = None  # titre d'accroche éphémère : secondes d'affichage, fondu compris (None = toute la vidéo)
+    hook_fade_in: bool = False  # citation (docs/58) : le calque du texte apparaît en fondu au lieu de s'effacer à la fin
     sfx: list[SfxCue] = field(default_factory=list)
     max_speedup: float = MAX_SPEEDUP  # accélération maximale d'un clip « speed » (recette)
     trails: bool = False  # traînées des silhouettes sur les clips accélérés (chantier)
@@ -162,14 +167,19 @@ def _clip_chain(
     max_speedup: float = MAX_SPEEDUP,
     trails: bool = False,
     offset: float = 0.0,
+    speed: float = 1.0,
 ) -> str:
-    """Filtre d'un clip : début coupé (`offset`, drame calé sur la bouche : worker/lipsync.py), cadrage 9:16, calage sur
-    la durée de la scène (ralenti, accéléré ou image tenue) ; un clip accéléré d'au moins ×1,5 reçoit les traînées du
-    time-lapse si la recette le demande."""
+    """Filtre d'un clip : début coupé (`offset`, drame calé sur la bouche : worker/lipsync.py), vitesse de lecture
+    (`speed`, drame en voix des clips : drama.PACE), cadrage 9:16, calage sur la durée de la scène (ralenti, accéléré ou
+    image tenue) ; un clip accéléré d'au moins ×1,5 reçoit les traînées du time-lapse si la recette le demande."""
     timing, held = "", 0.0
     head = f"trim=start={offset:.3f},setpts=PTS-STARTPTS" if offset > 0.001 else ""
     if head and native:
         native = max(0.1, native - offset)
+    if abs(speed - 1.0) > 1e-3:
+        head = ",".join(s for s in (head, f"setpts=PTS/{speed:.4f}") if s)
+        if native:
+            native = native / speed
     if native and fit in ("speed", "fill") and native > d + 0.02:
         # « fill » (clip Gemini en ligne de 4 à 10 s, docs/17) : accéléré en entier pour finir sur l'image suivante,
         # au-delà de max_speedup ; « speed » : plafonné, la fin peut être coupée
@@ -228,7 +238,18 @@ def _voice_music_inputs(plan: RenderPlan, k: int) -> tuple[list[str], int | None
 
 
 def _sfx_inputs(plan: RenderPlan) -> list[str]:
-    return [a for cue in plan.sfx for a in ([*(["-stream_loop", "-1"] if cue.loop else []), "-i", str(cue.path)])]
+    return [
+        a
+        for cue in plan.sfx
+        for a in (
+            [
+                *(["-stream_loop", "-1"] if cue.loop else []),
+                *(["-ss", f"{cue.offset:.3f}"] if cue.offset else []),
+                "-i",
+                str(cue.path),
+            ]
+        )
+    ]
 
 
 def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subtitles_filter: str | None) -> list[str]:
@@ -260,6 +281,7 @@ def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subt
             plan.max_speedup,
             plan.trails,
             offsets[i] if i < len(offsets) else 0.0,
+            plan.clip_speed,
         )
         for i, (d, native) in enumerate(zip(plan.scene_durations, plan.clip_durations, strict=True))
     ]
@@ -284,7 +306,8 @@ def build_command(plan: RenderPlan, out: Path, encoder_args: Sequence[str], subt
             parts.append(f"[vcat]{subtitles_filter}[vsub]")
             cur = "vsub"
         if plan.hook_s:
-            parts.append(f"{hook_in}{fade_filter(plan.hook_s)}[hook]")
+            fade = quotes.overlay_fade() if plan.hook_fade_in else fade_filter(plan.hook_s)
+            parts.append(f"{hook_in}{fade}[hook]")
             hook_in = "[hook]"
         parts.append(f"[{cur}]{hook_in}{plan.hook_filter}[vout]")
 
@@ -421,7 +444,7 @@ def fix_level(final: Path) -> float:
                 str(fixed),
             ]
         )
-        fixed.replace(final)
+        replace_file(fixed, final)
     return gain
 
 
@@ -520,6 +543,125 @@ def apply_recipe(plan: RenderPlan, script: ScriptV1, lang: str, recipe: str, *, 
     return report
 
 
+AMBIENCE_VOLUME = 0.9  # son d'un clip sous un plan sans réplique (avant le niveau des bruitages du modèle de montage)
+
+
+def drama_sound(
+    plan: RenderPlan,
+    script: ScriptV1,
+    lang: str,
+    clips: Sequence[dict[str, Any]],
+    *,
+    sfx_dir: Path,
+    key: str,
+    ambience: bool = True,
+    bruitages: bool = False,
+    muted: Collection[int] = (),
+) -> dict[str, Any]:
+    """Drame en voix constantes (docs/49 §10, demande de Luca le 01/10 : « la cantine, des chuchotements, des
+    couverts ») : sous chaque plan sans réplique, le son de son clip (l'ambiance faite par le modèle vidéo, depuis le
+    début gardé par le calage) ; puis, si `bruitages` (case « Bruitages » de Retoucher ; aucun par défaut sur un drame,
+    le son des clips a les siens), ceux des étiquettes sfx de chaque plan (sac qu'on ouvre, couverts…).
+    Les plans parlés gardent la seule voix de synthèse : le son du clip y porterait l'autre voix du modèle. Voix des
+    clips (format B, `ambience=False`) : le son des clips est déjà la piste de voix, seuls les bruitages s'ajoutent.
+    `muted` (positions, Retoucher → Plans) : plans au son coupé, ni ambiance ni bruitage."""
+    starts, durations = plan.starts, plan.scene_durations
+    heads = plan.clip_offsets or [0.0] * len(clips)
+    cues: list[SfxCue] = []
+    under: list[int] = []
+    for i, (sc, c) in enumerate(zip(script.scenes, clips, strict=True)):
+        path = Path(str(c.get("local_path") or ""))
+        if not ambience or i in muted or line_text(sc) or not path.is_file() or not has_audio(path):
+            continue
+        head = heads[i] if i < len(heads) else 0.0
+        cues.append(SfxCue(path, starts[i], durations[i], AMBIENCE_VOLUME, False, 0.15, round(head, 3)))
+        under.append(sc.index)
+    tags = [parse_tags(s.sfx) if bruitages and i not in muted else [] for i, s in enumerate(script.scenes)]
+    tagged = plan_cues(
+        tags, starts, durations, [("cut", 0.0)] * len(script.scenes), lambda t, k: pick_sfx(sfx_dir, t, k), key=key
+    )
+    plan.sfx = [*cues, *tagged]
+    wanted = {t for ts in tags for t in ts}
+    report: dict[str, Any] = {"ambiance_des_clips": under, "bruitages": sorted(wanted) if bruitages else "aucun"}
+    if missing := sorted(t for t in wanted if not pick_sfx(sfx_dir, t, key)):
+        report["sfx_manquants"] = missing
+    return report
+
+
+def muted_voices(
+    settings: Any, script: ScriptV1, clips: Sequence[dict[str, Any]], muted: Collection[int], heads: Sequence[float]
+) -> tuple[dict[int, tuple[Path, float]], set[int]]:
+    """Voix des clips, plans au son coupé (Retoucher → Plans) qui ont une réplique : la voix seule du clip (Demucs,
+    drama.isolate_voices) prend la place de son son, réplique gardée, ambiance et bruits retirés →
+    ({position : (voix seule, départ : le début coupé du clip)}, positions où la séparation a échoué)."""
+    spoken = [k for k in sorted(muted) if line_text(script.scenes[k])]
+    if not spoken:
+        return {}, set()
+    paths = {k: Path(str(clips[k]["local_path"])) for k in spoken}
+    try:
+        voices = isolate_voices(settings, list(paths.values()))
+    except Exception:  # noqa: BLE001 — le plan garde son son (signalé dans le résultat du montage)
+        voices = {}
+    got = {k: (voices[p], -(heads[k] if k < len(heads) else 0.0)) for k, p in paths.items() if p in voices}
+    return got, {k for k in spoken if k not in got}
+
+
+def replaced_lines(
+    db: Any, vid: Any, script: ScriptV1, timeline: NarrationTimeline, heads: Sequence[float]
+) -> dict[int, tuple[Path, float]]:
+    """Drame en voix des clips : les répliques remplacées par une prise de synthèse validée (videos.retouch.lines =
+    {plan : identifiant de la prise}, worker/takes.py) → {position de la scène : (fichier, départ dans la scène)}. La
+    prise part là où le clip disait sa réplique (dialogue_timeline), sinon après une courte entrée ; une voix convertie
+    (le son du clip entier) part du début gardé du clip (`heads`)."""
+    row = db.fetch_one("select retouch -> 'lines' as lines from videos where id = %s", (vid,))
+    lines = (row or {}).get("lines") or {}
+    if not lines:
+        return {}
+    rows = db.fetch_all(
+        "select id, local_path, meta->>'source' as source from assets where id::text = any(%s)", (list(map(str, lines.values())),)
+    )
+    files = {str(r["id"]): Path(r["local_path"]) for r in rows}
+    # voix convertie (worker/takes.py, source « vc », docs/49 §12) : le son entier du clip, réplique comprise, dès 0 s
+    whole = {str(r["id"]) for r in rows if r.get("source") == "vc"}
+    out: dict[int, tuple[Path, float]] = {}
+    for k, (sc, st) in enumerate(zip(script.scenes, timeline.scenes, strict=True)):
+        path = files.get(str(lines.get(str(sc.index)) or ""))
+        if path is None or not path.is_file():
+            continue
+        head = heads[k] if k < len(heads) else 0.0
+        said = st.speech_start - st.start if st.speech_start is not None else 0.2
+        out[k] = (path, -head if str(lines.get(str(sc.index))) in whole else round(said, 3))
+    return out
+
+
+def pick_drama_sfx(ctx: Context, vid: Any, pid: Any) -> None:
+    """Drame sans aucun bruitage : le bruiteur les choisit plan par plan (worker/sfx_pick.py, prompt
+    sfx_pick) avant le montage, une fois pour toutes (ils restent dans le script de la production). Seulement quand la
+    retouche demande des bruitages (aucun par défaut sur un drame). Un échec ne bloque pas le montage."""
+    row = ctx.db.fetch_one(
+        "select v.format, v.lang, p.script from videos v join productions p on p.id = v.production_id where v.id = %s", (vid,)
+    )
+    if not row or ctx.settings.dry_run or not load_retouch(ctx.db, vid).bruitages(drama=True):
+        return
+    script = ScriptV1.model_validate(row["script"])
+    if not is_drama(recipe_for_production(ctx.db, pid)) or any(parse_tags(s.sfx) for s in script.scenes):
+        return
+    from ..prompts import prompt_text
+    from ..providers.llm import get_llm
+    from ..sfx_pick import PICK_PROMPT, pick_sfx, with_sfx
+
+    try:
+        picks = pick_sfx(get_llm(ctx.settings, ctx.db), script, row["lang"], prompt_text(ctx.db, "sfx_pick", PICK_PROMPT))
+    except Exception as exc:  # noqa: BLE001 — sans bruitages plutôt que sans montage
+        ctx.log("assemble.bruiteur_indisponible", level="warn", error=str(exc)[:300])
+        return
+    if picks:
+        ctx.db.execute(
+            "update productions set script = %s where id = %s", (Jsonb(with_sfx(script, picks).model_dump(mode="json")), pid)
+        )
+        ctx.log("assemble.bruitages_choisis", plans={str(k): v for k, v in picks.items()})
+
+
 @dataclass
 class VideoMontage:
     """Ce que le montage d'une vidéo réunit avant l'habillage et le son : partagé par le montage et par l'essai du son de
@@ -535,6 +677,7 @@ class VideoMontage:
     retouch: Retouch = field(default_factory=Retouch)  # corrections à la main de cette vidéo (docs/34-retouche.md)
     auto_subtitles: dict[str, str] = field(default_factory=dict)  # texte affiché de chaque scène, sans retouche
     lipsync: dict[str, Any] | None = None  # drame en voix constantes : voix calées sur la bouche des clips (docs/38)
+    clip_voices: bool = False  # drame en voix des clips : plan.narration est le son des clips (docs/49 §11)
 
 
 def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool = False) -> VideoMontage:
@@ -557,20 +700,41 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool
     )
     assert len(clips) == len(script.scenes), f"{len(clips)} clips pour {len(script.scenes)} scènes"
     recipe = recipe_for_production(db, pid)
+    # Retouche (docs/34) : corrections à la main de cette vidéo, dont les plans au son coupé (Retoucher → Plans)
+    retouch = load_retouch(db, vid)
+    wanted_mute = set(retouch.muted)
+    muted = {k for k, s in enumerate(script.scenes) if s.index in wanted_mute}  # positions
+    sound: dict[str, Any] = {"son_coupe": sorted(wanted_mute)} if wanted_mute else {}
     dialogue_track: Path | None = None
+    heads: list[float] = []  # début coupé de chaque clip (drame) ; vide = aucun
+    speed = 1.0  # vitesse de lecture des clips (drame en voix des clips : PACE)
     # Drame en voix des clips (série en format B, docs/35) : les répliques dites par les clips font la timeline et la
     # piste de voix ; en voix constantes (format A), c'est la narration de l'étape voix, comme un récit
     if is_drama(recipe) and v["format"] == "B_visual":
-        timeline = dialogue_timeline(script, v["lang"], [{"duration": c["duration_s"], "dialogue": c["dialogue"]} for c in clips])
+        heard = [{"duration": c["duration_s"], "dialogue": c["dialogue"]} for c in clips]
+        speed = PACE  # H3 parle lentement : clips joués un peu plus vite, image et voix ensemble (docs/70)
+        timeline = dialogue_timeline(script, v["lang"], heard, pace=speed)
+        heads = dialogue_heads(script, heard)  # silence avant la réplique : début du clip coupé
         dialogue_track = settings.data_dir / "videos" / str(vid) / "dialogue.wav"
         if not settings.dry_run:
-            build_dialogue_track([Path(c["local_path"]) for c in clips], [s.duration for s in timeline.scenes], dialogue_track)
+            takes = replaced_lines(db, vid, script, timeline, heads)
+            voices, kept = muted_voices(settings, script, clips, muted - set(takes), heads)
+            if kept:  # voix seule impossible : le plan garde son son plutôt que de perdre sa réplique
+                sound["voix_seule_impossible"] = sorted(script.scenes[k].index for k in kept)
+            build_dialogue_track(
+                [Path(c["local_path"]) for c in clips],
+                [s.duration for s in timeline.scenes],
+                dialogue_track,
+                {**takes, **voices},
+                heads,
+                mute=muted - kept,
+                pace=speed,
+            )
         db.execute("update videos set timeline = %s where id = %s", (Jsonb(timeline.model_dump()), vid))
     else:
         timeline = NarrationTimeline.model_validate(v["timeline"]) if v["timeline"] else None
     # Drame en voix constantes (format A) : chaque réplique calée sur la bouche de son clip (worker/lipsync.py, docs/38) ;
     # impossible (Whisper absent, voix pas faite) : la narration telle quelle, comme avant
-    heads: list[float] = []
     lipsync: dict[str, Any] | None = None
     if is_drama(recipe) and v["format"] == "A_voiceover" and not settings.dry_run:
         synced = None
@@ -586,9 +750,8 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool
             if sync_lips:
                 db.execute("update videos set timeline = %s where id = %s", (Jsonb(timeline.model_dump()), vid))
     durations, words, titles = plan_from(script, v["lang"], timeline)
-    # Retouche (docs/34) : sous-titres corrigés à la main pour cette vidéo, recalés sur les temps de la voix ; le texte
-    # automatique de chaque scène reste connu de l'écran de retouche (résultat du job)
-    retouch = load_retouch(db, vid)
+    # Retouche : sous-titres corrigés à la main pour cette vidéo, recalés sur les temps de la voix ; le texte automatique
+    # de chaque scène reste connu de l'écran de retouche (résultat du job)
     auto_subtitles = {str(s.index): " ".join(w.text for w in ws) for s, ws in zip(script.scenes, words, strict=False) if ws}
     words = retouch.subtitle_words(words, [s.index for s in script.scenes])
     plan = RenderPlan(
@@ -596,19 +759,40 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool
         clip_durations=[float(c["duration_s"]) if c["duration_s"] else None for c in clips],
         scene_durations=durations,
         clip_offsets=heads,
+        clip_speed=speed,
         words_by_scene=words,
         titles=titles,
         narration=dialogue_track
         or (settings.data_dir / "videos" / str(vid) / "narration.wav" if v["format"] == "A_voiceover" else None),
     )
     extras: dict[str, Any] = {}
+    if is_drama(recipe) and not settings.dry_run:
+        # en voix constantes, le son des clips n'est plus la piste de voix : sous les plans sans réplique, l'ambiance que
+        # le modèle vidéo a faite (docs/49 §10) ; bruitages plan par plan seulement si la retouche les demande
+        extras = drama_sound(
+            plan,
+            script,
+            v["lang"],
+            clips,
+            sfx_dir=settings.effective_sfx_dir,
+            key=str(vid),
+            ambience=v["format"] == "A_voiceover",
+            bruitages=retouch.bruitages(drama=True),
+            muted=muted,
+        )
     if is_visual(recipe):
         extras = apply_recipe(plan, script, v["lang"], recipe, sfx_dir=settings.effective_sfx_dir, key=str(vid))
+        if not retouch.bruitages(drama=False):  # « Bruitages » décoché dans Retoucher
+            plan.sfx = []
         # Gemini en ligne rend 10 s pour une étape de 1,5 s : sans plafond, sinon la fin (l'image suivante) est coupée
         plan.fit = [
             "fill" if f == "speed" and c.get("provider") == "gemini_web" else f for f, c in zip(plan.fit, clips, strict=False)
         ]
-    return VideoMontage(plan, script, v["lang"], recipe, timeline, v["music_track"], extras, retouch, auto_subtitles, lipsync)
+    clip_voices = is_drama(recipe) and v["format"] == "B_visual"
+    extras.update(sound)
+    return VideoMontage(
+        plan, script, v["lang"], recipe, timeline, v["music_track"], extras, retouch, auto_subtitles, lipsync, clip_voices
+    )
 
 
 def choose_music(
@@ -629,6 +813,24 @@ def choose_music(
         chosen = forced_music(sync_library(db, settings.effective_music_library_dir, measure=not settings.dry_run), forced)
         if chosen is not None:
             return chosen
+    if recipe == quotes.RECIPE:  # citation : bibliothèque générée seulement, sans droits d'auteur tiers (docs/58)
+        path = quotes.pick_track(settings.effective_music_dir, script.music_mood, str(pid))
+        if not path:
+            return None, {"reason": "aucune musique générée pour les citations (yt2 music generate --mood citation_triste)"}
+        loud = measure_loudness(path) if not settings.dry_run else None
+        # le passage le plus présent de la piste, à la durée de la citation : sa sonie règle le gain (pas celle du fichier)
+        window = quotes.music_window(quotes.short_term_loudness(path), script.duration_s) if not settings.dry_run else None
+        generated = Track(
+            id=f"{path.parent.name}/{path.stem}",
+            file=path.name,
+            title=f"{path.parent.name} · {path.stem}",
+            formats=(recipe,),
+            path=path,
+            lufs=window[1] if window else loud.lufs if loud else None,
+            duration_s=loud.duration_s if loud else None,
+            start_s=window[0] if window else 0.0,
+        )
+        return generated, {"mood": script.music_mood, "reason": "bibliothèque générée des citations (ACE-Step)"}
     if not template.plays_music(recipe):
         return None, {"reason": "pas de musique sur ce format (modèle de montage)"}
     tracks = sync_library(db, settings.effective_music_library_dir, measure=not settings.dry_run)
@@ -657,6 +859,16 @@ def choose_music(
     return old, {"reason": "ancienne bibliothèque générée (DATA_DIR/music)"}
 
 
+def quote_background(db: Any, pid: Any) -> Path | None:
+    """Image retenue de la scène unique d'une citation : le fond du texte (clarté, voile) et de l'affiche."""
+    row = db.fetch_one(
+        """select local_path from assets where production_id = %s and kind = 'storyboard' and selected
+           order by scene_index, created_at desc limit 1""",
+        (pid,),
+    )
+    return Path(row["local_path"]) if row and row["local_path"] else None
+
+
 def narration_loudness(plan: RenderPlan, dry_run: bool = False) -> float | None:
     if plan.narration and plan.narration.is_file() and not dry_run:
         return measure_loudness(plan.narration).lufs
@@ -667,8 +879,17 @@ class AssembleStep(Step):
     type = "assemble"
     lane = "io"  # CPU / NVENC ; passer en "gpu" si upscale Real-ESRGAN sur GPU
 
+    @staticmethod
+    def _dress_quote(ctx: Context, plan: RenderPlan, text: str, pid: Any, vdir: Path) -> dict[str, Any]:
+        """Citation (worker/quotes.py) : style du texte tiré parmi ceux de la série (stable par production), calque réglé
+        sur la clarté de l'image retenue, affiche avec la citation."""
+        opts = quotes.production_options(ctx.db, pid)
+        style = quotes.text_style_for(str(pid), opts["text_styles"])
+        return quotes.dress(plan, text, style, quotes.font_dirs(ctx.settings), quote_background(ctx.db, pid), vdir)
+
     def run(self, ctx: Context) -> dict[str, Any]:
         vid, pid = ctx.job.video_id, ctx.job.production_id
+        pick_drama_sfx(ctx, vid, pid)
         m = prepare_video(ctx.db, ctx.settings, vid, pid, sync_lips=True)
         plan, script, recipe, timeline, extras = m.plan, m.script, m.recipe, m.timeline, m.extras
         ctx.db.set_status("videos", vid, "rendering")
@@ -692,6 +913,15 @@ class AssembleStep(Step):
                 duration_s=timeline.duration_s if timeline else None,
                 meta={"provider": "lipsync", **m.lipsync},
             )
+        # voix des clips : leur son mis bout à bout est la voix de la vidéo, écoutée sous la musique dans Retoucher
+        if m.clip_voices and plan.narration and not ctx.settings.dry_run:
+            ctx.db.add_asset(
+                video_id=vid,
+                kind="narration",
+                local_path=str(plan.narration),
+                duration_s=timeline.duration_s if timeline else None,
+                meta={"provider": "clips"},
+            )
         # Son (onglet Montage → Son) : piste de la bibliothèque, voix et musique ramenées au même niveau puis réglées
         fmt = montage_format(recipe)  # un drame se monte comme un récit (onglet Montage : récit, chantier, visite)
         track, why = choose_music(ctx.db, ctx.settings, template, fmt, script, pid, m.music_track, forced=retouch.music)
@@ -711,13 +941,20 @@ class AssembleStep(Step):
         }
         if not track and retouch.music is None:  # aussi pour les récits : une ambiance sans piste se voit dans le journal
             ctx.log("assemble.sans_musique", level="warn", mood=script.music_mood, **why)
-        auto_hook = hook_text(script, m.lang)
+        # citation (docs/58) : le « titre » de la vidéo est la citation, retouchable comme un titre d'accroche
+        quote = recipe == quotes.RECIPE
+        auto_hook = quotes.quote_text(script, m.lang) if quote else hook_text(script, m.lang)
         dressing = apply_template(
             plan, template, fmt, hook=retouch.hook(auto_hook), workdir=vdir, fonts=fonts, hook_display=retouch.hook_display
         )
         if dressing:
             ctx.log("assemble.habillage_incomplet", level="warn", template=template_name, **dressing)
         extras.update(dressing)
+        quote_card: Path | None = None
+        if quote and not ctx.settings.dry_run:
+            dressed = self._dress_quote(ctx, plan, retouch.hook(auto_hook), pid, vdir)
+            quote_card = Path(dressed["quote_card"]) if dressed.get("quote_card") else None
+            extras.update(dressed)
 
         if ctx.settings.dry_run:
             for p in (final, preview, poster):
@@ -762,6 +999,8 @@ class AssembleStep(Step):
                 ]
             )
             run(["ffmpeg", "-y", "-v", "error", "-ss", "0.5", "-i", str(final), "-frames:v", "1", "-q:v", "3", str(poster)])
+            if quote_card is not None and quote_card.is_file():  # citation : l'affiche porte le texte en entier
+                shutil.copyfile(quote_card, poster)
 
         ctx.progress(85, "Envoi de l'aperçu")
         preview_path = upload_preview(ctx.settings, preview, f"{vid}/preview.mp4", "video/mp4")

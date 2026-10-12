@@ -14,24 +14,44 @@ Formats visuels : chaque clip est contrôlé par un modèle de vision (CLIP_QC, 
 CLIP_QC_RETRIES fois s'il fait apparaître une personne, un appareil de tournage ou un objet étranger ; le verdict est
 gardé dans assets.meta.qc. Drames (docs/35) : même contrôle, pour un texte écrit à l'image par le modèle vidéo (la
 réplique en sous-titre, vu le 29/09).
+
+Texte voulu dans l'image (scene.image_text, docs/57 §5) : le prompt le garde immobile, trois images du clip sont relues
+lettre à lettre (worker/image_text.py), toujours, et le clip est refait s'il le déforme ; s'il le déforme encore, le plan
+devient un plan fixe en lente avancée sur l'image vérifiée du storyboard (le plan n'a pas de réplique à perdre).
 """
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
-from ..drama import DIALOGUE_RETRIES, HEARD_MIN, clip_prompt, heard_ratio, is_drama, line_text, transcribe, video_lang
+from .. import quotes
+from ..drama import (
+    CLIP_STYLE,
+    DIALOGUE_RETRIES,
+    HEARD_MIN,
+    clip_prompt,
+    heard_ratio,
+    is_drama,
+    line_text,
+    transcribe,
+    video_lang,
+)
+from ..image_text import check_clip as check_clip_text
+from ..image_text import merge, motion_clause, still_clip
 from ..keyframe_qc import CLIP_SYSTEM, KeyframeVerdict, check_clip
 from ..media import last_frame
 from ..models import ScriptScene, ScriptV1
 from ..prompts import prompt_text
 from ..providers.llm import get_llm, get_vision_llm
-from ..providers.video import first_last_variant, get_video_provider, quality_variant, text_to_video_fallback
-from ..recipes import is_visual, motion_prompt, recipe_for_production, spec
+from ..providers.video import ClipInfo, first_last_variant, get_video_provider, quality_variant, text_to_video_fallback
+from ..recipes import chain_next, is_visual, motion_prompt, recipe_for_production, spec, video_negative
 from ..settings_store import load_generation_config
 from ..speaker import director_note, locate, shot_members
 from .base import Context, Step
+
+QUOTE = quotes.RECIPE
 
 
 class GenerateClipStep(Step):
@@ -60,6 +80,10 @@ class GenerateClipStep(Step):
             done = self._map_clip(ctx, pid, script, scene)
             if done:
                 return done
+        # Citation (docs/58) : série en « zoom » (défaut), zoom lent sur l'image retenue, rendu par le code ; en « clip »,
+        # le modèle vidéo l'anime (suite du step), puis _fit_quote le ralentit pour tenir la durée du texte
+        if recipe == QUOTE and quotes.production_options(ctx.db, pid)["motion"] == "zoom":
+            return self._quote_zoom(ctx, pid, scene)
 
         provider = get_video_provider(
             ctx.settings, prod["video_provider"] or load_generation_config(ctx.settings, ctx.db).video_provider, db=ctx.db
@@ -112,11 +136,12 @@ class GenerateClipStep(Step):
         end_image: Path | None = None
         if is_visual(recipe) and image is not None:
             prompt = motion_prompt(script, pos, recipe)
-            if scene.clip_mode == "flf" and pos + 1 < len(script.scenes):
+            end_pos = chain_next(script, pos)  # le plan large suivant de la même vue (lieu insolite : pas un gros plan)
+            if scene.clip_mode == "flf" and end_pos is not None:
                 nxt = ctx.db.fetch_one(
                     """select local_path from assets where production_id = %s and kind = 'storyboard'
                        and scene_index = %s and selected order by created_at desc limit 1""",
-                    (pid, script.scenes[pos + 1].index),
+                    (pid, script.scenes[end_pos].index),
                 )
                 # Gemini en ligne reçoit lui-même les deux images (au mieux : rien ne garantit qu'il finisse exactement
                 # sur la seconde, docs/17) ; ComfyUI passe par la variante flf2v du modèle
@@ -135,9 +160,16 @@ class GenerateClipStep(Step):
         style = prod["style_preset"]
         if is_drama(recipe) and image is not None:
             where, note = self._direction(ctx, script, scene, image)
-            prompt, style = clip_prompt(script, pos, video_lang(script), prod["style_preset"], where, note), "animation_motion"
+            prompt = clip_prompt(script, pos, video_lang(script), prod["style_preset"], where, note)
+            style = CLIP_STYLE.get(prod["style_preset"] or "", "animation_motion")  # prise de vue réelle (docs/59)
 
-        extra_negative = spec(recipe).video_negative if is_visual(recipe) else ""
+        # Texte voulu dans l'image de départ (docs/57 §5) : il ne bouge pas, ne change pas ; rien d'autre ne s'écrit
+        it = scene.image_text if image is not None and not continues else None
+        if it is not None:
+            prompt = f"{prompt.rstrip(' .')}. {motion_clause(it)}"
+        text_kw: dict[str, Any] = {"allowed_text": it.text} if it is not None else {}
+
+        extra_negative = video_negative(script, pos, recipe)
         if extra_negative and isinstance(getattr(provider, "negative", None), str):  # n'agit qu'avec CFG > 1 (mélange, 20 passes)
             provider.negative = f"{provider.negative}, {extra_negative}"
         out = clips_dir / f"scene_{idx:02d}.mp4"
@@ -162,10 +194,14 @@ class GenerateClipStep(Step):
             if (is_visual(recipe) or is_drama(recipe)) and image is not None and ctx.settings.clip_qc and not ctx.settings.dry_run
             else None
         )
+        # le texte voulu est relu même quand le contrôle des clips est coupé : un texte déformé ne part jamais
+        text_qc = (qc or self._vision(ctx)) if it is not None and not ctx.settings.dry_run else None
         verdict: KeyframeVerdict | None = None
+        text_ok = True
+        still = False
         # Gemini en ligne (durée imposée, asynchrone) : verdict noté, jamais de nouvel essai. Le job repart du début après
         # chaque attente (Postpone) : une reprise ici redemanderait une vidéo à chaque passage, sans fin, sur le quota
-        retries = 0 if fixed else max(0, ctx.settings.clip_qc_retries)
+        retries = 0 if fixed else max(0, ctx.settings.clip_qc_retries, 1 if it is not None else 0)
 
         def render() -> Any:
             return provider.generate(
@@ -177,23 +213,47 @@ class GenerateClipStep(Step):
                 dry_run=ctx.settings.dry_run,
                 image_path=image,
                 end_image_path=end_image,
+                **text_kw,
             )
 
-        for attempt in range(1 + (retries if qc else 0)):
-            info = render()
-            if not qc or image is None:
-                break
-            try:
-                verdict = check_clip(
-                    qc, out, image, script, pos, recipe, clips_dir / "qc", system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM)
-                )  # onglet Agents du dashboard
-            except Exception as exc:  # noqa: BLE001  le contrôle est un filet, pas une étape bloquante
-                ctx.log("clip.controle_indisponible", level="warn", scene=idx, erreur=str(exc)[:300])
+        if it is not None and image is not None and text_qc is None and not ctx.settings.dry_run:
+            # personne pour relire le texte : pas de clip d'IA qui pourrait le déformer, le plan fixe sur l'image vérifiée
+            ctx.log("clip.texte_sans_relecture", level="warn", scene=idx, texte=it.text)
+            dur, w, h = still_clip(image, out, scene.duration_s)
+            info, still, text_ok = ClipInfo(dur, w, h), True, True
+        else:
+            for attempt in range(1 + (retries if (qc or text_qc) else 0)):
+                info = render()
+                if image is None or not (qc or text_qc):
+                    break
                 verdict = None
-                break
-            if verdict.ok:
-                break
-            ctx.log("clip.refuse", level="warn", scene=idx, essai=attempt + 1, problemes=verdict.problems)
+                if qc and (is_visual(recipe) or is_drama(recipe)):
+                    try:
+                        verdict = check_clip(
+                            qc,
+                            out,
+                            image,
+                            script,
+                            pos,
+                            recipe,
+                            clips_dir / "qc",
+                            system=prompt_text(ctx.db, "clip_qc", CLIP_SYSTEM),
+                        )  # onglet Agents du dashboard
+                    except Exception as exc:  # noqa: BLE001  le contrôle est un filet, pas une étape bloquante
+                        ctx.log("clip.controle_indisponible", level="warn", scene=idx, erreur=str(exc)[:300])
+                        if it is None:
+                            break
+                if it is not None and text_qc is not None:
+                    reading = self._read_clip_text(ctx, text_qc, out, clips_dir / "qc", it, idx)
+                    text_ok = reading.ok
+                    verdict = merge(verdict, reading)
+                if verdict is None or verdict.ok:
+                    break
+                ctx.log("clip.refuse", level="warn", scene=idx, essai=attempt + 1, problemes=verdict.problems)
+            if it is not None and image is not None and not text_ok and not ctx.settings.dry_run:
+                ctx.log("clip.texte_plan_fixe", level="warn", scene=idx, texte=it.text)
+                dur, w, h = still_clip(image, out, scene.duration_s)
+                info, still = ClipInfo(dur, w, h), True
         # Drame : ce que dit le clip (Whisper : mots et passages parlés) ; une réplique qui n'est pas dite fait refaire le
         # clip (DIALOGUE_RETRIES). Voix des clips (format B) : sous-titres et piste de voix ; voix constantes (format A) :
         # la voix du personnage est calée sur la bouche du clip au montage (worker/lipsync.py, 29/09).
@@ -222,6 +282,8 @@ class GenerateClipStep(Step):
                 except Exception as exc:  # noqa: BLE001
                     ctx.log("clip.controle_indisponible", level="warn", scene=idx, erreur=str(exc)[:300])
             dialogue = self._dialogue(ctx, out, scene, script)
+        if recipe == QUOTE and not ctx.settings.dry_run:  # citation animée : ralentie pour tenir la durée du texte
+            info = self._fit_quote(ctx, out, scene.duration_s, info)
         asset_id = ctx.db.add_asset(
             production_id=pid,
             kind="clip",
@@ -239,6 +301,8 @@ class GenerateClipStep(Step):
                 "end_image": str(end_image) if end_image else None,
                 **({"qc": verdict.model_dump()} if verdict else {}),
                 **({"dialogue": dialogue} if dialogue else {}),
+                **({"image_text": it.text, "text_ok": text_ok} if it is not None else {}),
+                **({"fallback": "still"} if still else {}),
             },
         )
         return {
@@ -250,6 +314,23 @@ class GenerateClipStep(Step):
             **({"qc": verdict.model_dump()} if verdict else {}),
             **({"dialogue": {k: dialogue[k] for k in ("expected", "heard", "ratio")}} if dialogue else {}),
         }
+
+    @staticmethod
+    def _vision(ctx: Context) -> Any:
+        try:
+            return get_vision_llm(ctx.settings, ctx.db)
+        except Exception as exc:  # noqa: BLE001
+            ctx.log("clip.relecteur_indisponible", level="warn", erreur=str(exc)[:300])
+            return None
+
+    @staticmethod
+    def _read_clip_text(ctx: Context, llm: Any, clip: Path, workdir: Path, it: Any, idx: int) -> KeyframeVerdict:
+        """Relecture du texte voulu sur trois images du clip ; une relecture impossible compte comme un échec."""
+        try:
+            return check_clip_text(llm, clip, workdir, it)
+        except Exception as exc:  # noqa: BLE001
+            ctx.log("clip.relecture_impossible", level="warn", scene=idx, erreur=str(exc)[:300])
+            return KeyframeVerdict(ok=False, problems=["relecture du texte impossible"])
 
     @staticmethod
     def _direction(ctx: Context, script: ScriptV1, scene: ScriptScene, image: Path) -> tuple[dict[str, str], str]:
@@ -294,6 +375,55 @@ class GenerateClipStep(Step):
             "speech": heard[0].get("speech") or [],
             "ratio": heard_ratio(expected, heard[0]["text"]),
         }
+
+    @staticmethod
+    def _quote_zoom(ctx: Context, pid: Any, scene: ScriptScene) -> dict[str, Any]:
+        """Clip d'une citation en « zoom » (worker/quotes.py) : l'image retenue, zoom ou glissement très lent rendu image
+        par image sur le processeur, sans modèle vidéo (≈ 10 s de calcul)."""
+        row = ctx.db.fetch_one(
+            """select local_path from assets where production_id = %s and kind = 'storyboard'
+               and scene_index = %s and selected order by created_at desc limit 1""",
+            (pid, scene.index),
+        )
+        if not row:
+            raise RuntimeError("citation : aucune image retenue au storyboard")
+        image = Path(row["local_path"])
+        out = ctx.production_dir(pid) / "clips" / f"scene_{scene.index:02d}.mp4"
+        move = quotes.move_for(str(pid))
+        ctx.progress(5, f"Citation · zoom lent ({move})")
+        if ctx.settings.dry_run:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"")
+            duration = scene.duration_s
+        else:
+            duration = quotes.render_still_clip(image, out, scene.duration_s, move=move)
+        asset_id = ctx.db.add_asset(
+            production_id=pid,
+            kind="clip",
+            scene_index=scene.index,
+            local_path=str(out),
+            duration_s=duration,
+            width=quotes.W,
+            height=quotes.H,
+            meta={"provider": "quote_zoom", "move": move, "image": str(image), "prompt": f"Zoom lent ({move})"},
+        )
+        return {"asset_id": str(asset_id), "provider": "quote_zoom", "from_image": True, "continues": False, "first_last": False}
+
+    @staticmethod
+    def _fit_quote(ctx: Context, out: Path, duration_s: float, info: ClipInfo) -> ClipInfo:
+        """Citation animée : le clip du modèle vidéo (≈ 5 s) ralenti, au besoin en aller-retour, jusqu'à la durée du texte."""
+        cmd = quotes.fit_command(out, out.with_name(f"{out.stem}_fit.mp4"), duration_s, float(info.duration_s or 0))
+        if not cmd:
+            return info
+        fitted = Path(cmd[-1])
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as exc:  # le montage tiendra la dernière image : moins beau, pas bloquant
+            ctx.log("clip.citation_ralenti_rate", level="warn", erreur=(exc.stderr or b"")[-300:].decode(errors="replace"))
+            return info
+        fitted.replace(out)
+        ctx.log("clip.citation_ralentie", natif=info.duration_s, duree=duration_s)
+        return ClipInfo(duration_s=duration_s, width=info.width, height=info.height, seed=info.seed)
 
     @staticmethod
     def _map_storyboard(ctx: Context, pid: Any, idx: int) -> bool:

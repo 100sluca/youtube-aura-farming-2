@@ -25,6 +25,7 @@ from typing import Any
 from uuid import UUID
 
 from .drama import REWRITE_HINT as DRAMA_HINT
+from .image_text import clean_script
 from .models import SceneDraft, SceneRewrite, ScriptScene, ScriptV1
 from .prompts import code_prompts, prompt_text
 from .providers.llm import LLM
@@ -79,6 +80,9 @@ plan, sa première image, son mouvement, sa narration et son texte à l'écran. 
    rapport aux scènes voisines (large, moyen, gros plan).
 5. Une image qu'un modèle d'image réussit : une photo réaliste, un sujet clair, sans texte, sans visage
    reconnaissable ; un seul mouvement lent, possible depuis cette image : rien n'apparaît, rien ne se transforme.
+   Seule exception au « sans texte » : image_text, un mot ou un nombre écrit dans le décor quand il porte l'enjeu
+   ({"text": 4 mots au plus, "on": le support en anglais}, sur un plan sans réplique) ; garde celui de l'ancienne
+   scène s'il sert encore, sinon laisse-le absent.
 6. Si la scène suivante prolonge celle-ci, elle partira de la dernière image de ton clip : ton plan doit pouvoir
    s'enchaîner avec elle.
 Les champs suivent les consignes du scénariste que tu reçois (visual_prompt et motion_prompt en anglais, narration et
@@ -263,8 +267,10 @@ def apply_rewrite(script: ScriptV1, pos: int, draft: SceneDraft, recipe: str) ->
     if recipe == "drama":  # personnages et réplique réécrits (la narration en est recopiée par drama.normalize)
         update["characters"] = draft.characters or old.characters
         update["lines"] = draft.lines
+    update["image_text"] = draft.image_text  # texte écrit dans l'image (docs/57 §5), revu par clean_script
     s.scenes[pos] = old.model_copy(update=update)
-    return normalize_script(s, recipe) if has_prompt(recipe) else normalize_story(s)
+    out = normalize_script(s, recipe) if has_prompt(recipe) else normalize_story(s)
+    return clean_script(out)
 
 
 def _words(text: str) -> set[str]:

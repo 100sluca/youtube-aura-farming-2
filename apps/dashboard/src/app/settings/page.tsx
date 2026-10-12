@@ -9,12 +9,14 @@ import { GeminiSettingsCard } from "@/components/settings/gemini-settings";
 import { GenerationSettingsCard } from "@/components/settings/generation-settings";
 import { LlmSettingsCard } from "@/components/settings/llm-settings";
 import { NotificationsSettingsCard } from "@/components/settings/notifications-settings";
+import { QuotasCard } from "@/components/settings/quotas-card";
 import { InstagramSettingsCard } from "@/components/settings/instagram-settings";
 import { TikTokSettingsCard } from "@/components/settings/tiktok-settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { getPromptStates } from "@/lib/agents";
+import { getKeyBoard } from "@/lib/api-keys";
 import { getChannels } from "@/lib/data";
 import { clampPct, formatNumber, formatPercent } from "@/lib/format";
 import { getGeminiBrowserInfo, getGeminiSettings, getGeminiStatus } from "@/lib/gemini";
@@ -49,6 +51,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     getTikTokBacklog(),
     getInstagramSettings(),
   ]);
+  const keyBoard = await getKeyBoard(); // suivi des clés API (docs/49 §9)
   const connected = typeof params.connected === "string" ? params.connected : null;
   const oauthError = typeof params.oauth_error === "string" ? params.oauth_error : null;
   const counts = await getChannelVideoCounts(channels.map((c) => c.id));
@@ -84,6 +87,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <GeminiSettingsCard initial={gemini} status={geminiStatus} browser={geminiBrowser} />
 
       <LlmSettingsCard initial={llm} hints={hints} presets={PRESET_MODELS} />
+
+      <QuotasCard board={keyBoard} />
 
       <NotificationsSettingsCard initial={notifications} status={notifyStatus} />
 

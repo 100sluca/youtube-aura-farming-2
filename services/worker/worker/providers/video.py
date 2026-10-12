@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import json
 import random
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -25,6 +26,7 @@ import httpx
 
 from .. import cancel
 from ..config import Settings
+from ..image_text import only_text
 from ..system import ensure_comfy
 
 
@@ -51,6 +53,7 @@ class VideoProvider(Protocol):
         dry_run: bool = False,
         image_path: Path | None = None,
         end_image_path: Path | None = None,
+        allowed_text: str | None = None,  # seul texte voulu de l'image de départ (docs/57 §5)
     ) -> ClipInfo: ...
 
 
@@ -89,6 +92,16 @@ STYLE_PRESETS: dict[str, str] = {
     "cinematic golden-hour lighting, rich colors, highly detailed",
     # Clip d'un drame : l'image de départ porte déjà le style, le prompt du clip dit le film (drama.clip_prompt)
     "animation_motion": "smooth expressive character animation, cinematic lighting",
+    # Scénarios de Luca (worker/scenario.py, docs/59) : prise de vue réelle, de vrais gens et de vrais animaux chez eux
+    "cinematic_real": "photorealistic cinematic film still, real people and real animals, natural soft daylight in a "
+    "lived-in home, 35mm lens, shallow depth of field, true-to-life skin, fur and fabric textures, natural colors, "
+    "highly detailed",
+    "realistic_motion": "natural realistic motion, live-action footage, cinematic lighting",
+    # Citations (worker/quotes.py, docs/58) : le médium (peinture, photo) est dans le prompt ; la composition laisse le
+    # haut de l'image calme pour le texte ajouté au montage
+    "quote_art": "evocative fine-art image, emotional and contemplative atmosphere, soft cinematic light, rich textures, "
+    "vertical composition with a large calm uncluttered area in the upper half, small subject in the lower third, "
+    "no signature, no lettering",
 }
 # Styles de film d'animation : le négatif commun (« cartoon », « people faces ») les contredirait
 ANIMATED_STYLES = frozenset({"pixar_fruit", "pixar_human", "dreamworks_animal", "animation_motion"})
@@ -96,9 +109,22 @@ ANIMATED_NEGATIVE = (
     "photo, photorealistic, live action, text, watermark, logo, subtitles, blurry, low quality, JPEG artifacts, "
     "deformed hands, extra fingers, extra limbs, cluttered background"
 )
+# Prise de vue réelle avec des personnages (docs/59) : le négatif commun exclut les visages
+REAL_STYLES = frozenset({"cinematic_real", "realistic_motion"})
+REAL_NEGATIVE = (
+    "cartoon, anime, 3D render, painting, illustration, text, watermark, logo, subtitles, blurry, low quality, JPEG "
+    "artifacts, deformed hands, extra fingers, extra limbs, distorted face, cluttered background"
+)
 NEGATIVE = (
     "text, watermark, logo, subtitles, blurry, low quality, JPEG artifacts, deformed, cartoon, painting, "
     "static frame, still image, people faces, extra fingers, cluttered background"
+)
+# Citations : peinture ou photo selon le prompt (le négatif commun exclut « painting ») ; une peinture se signe, d'où
+# « signature »
+QUOTE_STYLES = frozenset({"quote_art"})
+QUOTE_NEGATIVE = (
+    "text, letters, words, signature, watermark, logo, subtitles, caption, blurry, low quality, JPEG artifacts, deformed "
+    "hands, extra fingers, distorted face, cluttered composition, busy sky"
 )
 # Négatif officiel des modèles Wan (celui de leur script generate.py et des gabarits ComfyUI) : le modèle a été
 # entraîné avec, il pèse plus qu'une liste anglaise. Traduction : couleurs criardes, surexposé, statique, détails
@@ -158,10 +184,23 @@ def says_no_text(wf: dict[str, Any]) -> bool:
     return ignores_negative(wf) and bool(encoders & LLM_TEXT_ENCODERS)
 
 
-def full_prompt(prompt: str, style_preset: str | None, no_text: bool) -> str:
-    """Prompt envoyé au modèle : la scène, son style, puis l'interdiction du texte écrit si le négatif ne la porte pas."""
+def full_prompt(prompt: str, style_preset: str | None, no_text: bool, allowed_text: str | None = None) -> str:
+    """Prompt envoyé au modèle : la scène, son style, puis l'interdiction du texte écrit si le négatif ne la porte pas.
+    `allowed_text` : le seul texte voulu du plan (scene.image_text, docs/57 §5), déjà décrit dans la scène ; l'interdiction
+    devient « rien d'autre que lui »."""
     text = styled(prompt, style_preset)
-    return f"{text.rstrip(' .')}. {NO_TEXT}" if no_text else text
+    if not no_text:
+        return text
+    return f"{text.rstrip(' .')}. {only_text(allowed_text) if allowed_text else NO_TEXT}"
+
+
+_TEXT_WORD = re.compile(r"(^|,)\s*text\s*(?=,|$)")
+
+
+def negative_allowing_text(negative: str) -> str:
+    """Le négatif d'un plan qui porte un texte voulu : sans « text » (il combattrait ce texte), sous-titres, logos et
+    filigranes restent interdits."""
+    return _TEXT_WORD.sub(lambda m: m.group(1), negative).strip(" ,")
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +484,7 @@ class ComfyVideo:
         dry_run=False,
         image_path=None,  # noqa: ANN001
         end_image_path=None,
+        allowed_text=None,
     ) -> ClipInfo:
         seed = random.randint(0, 2**31)
         # Première + dernière image : toujours la longueur complète (le clip doit atteindre l'image finale,
@@ -459,8 +499,8 @@ class ComfyVideo:
         end_name = self.client.upload_image(end_image_path) if (self.first_last and end_image_path) else None
         wf = patch_workflow(
             self.wf,
-            prompt=full_prompt(prompt, style_preset, self.no_text),
-            negative=self.negative,
+            prompt=full_prompt(prompt, style_preset, self.no_text, allowed_text),
+            negative=negative_allowing_text(self.negative) if allowed_text else self.negative,
             seed=seed,
             width=self.width,
             height=self.height,
@@ -497,16 +537,28 @@ class ComfyImage:
         seed: int,
         dry_run: bool = False,
         refs: list[Path] | None = None,
+        allowed_text: str | None = None,
     ) -> Path:
         """`refs` : images de référence (fiches des personnages), citées <image1>… dans le prompt ; ignorées par un
-        workflow qui n'en accepte pas (l'appelant décrit alors les personnages dans le prompt, self.references)."""
+        workflow qui n'en accepte pas (l'appelant décrit alors les personnages dans le prompt, self.references).
+        `allowed_text` : le seul texte voulu du plan, décrit dans `prompt` (image_text.with_image_text, docs/57 §5)."""
         if dry_run:
             out_path.write_bytes(b"")
             return out_path
-        negative = ANIMATED_NEGATIVE if style_preset in ANIMATED_STYLES else self.negative
+        negative = (
+            ANIMATED_NEGATIVE
+            if style_preset in ANIMATED_STYLES
+            else REAL_NEGATIVE
+            if style_preset in REAL_STYLES
+            else QUOTE_NEGATIVE
+            if style_preset in QUOTE_STYLES
+            else self.negative
+        )
+        if allowed_text:
+            negative = negative_allowing_text(negative)
         wf = patch_workflow(
             self.wf,
-            prompt=full_prompt(prompt, style_preset, self.no_text),
+            prompt=full_prompt(prompt, style_preset, self.no_text, allowed_text),
             negative=negative,
             seed=seed,
             width=self.width,
@@ -605,6 +657,7 @@ class CloudVideo:
         dry_run=False,
         image_path=None,  # noqa: ANN001
         end_image_path=None,
+        allowed_text=None,
     ) -> ClipInfo:
         if dry_run:
             out_path.write_bytes(b"")

@@ -12,8 +12,6 @@ import type { ActionResult } from "@/app/production/actions";
 import { getProductionCard } from "@/lib/data";
 import { deleteProduction } from "@/lib/deletion";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getTaskBoard } from "@/lib/tasks";
-import type { TaskBoard } from "@/lib/task-types";
 import type { ProductionCard } from "@/lib/types";
 
 function fail(error: unknown): ActionResult {
@@ -22,10 +20,6 @@ function fail(error: unknown): ActionResult {
 
 function refresh() {
   revalidatePath("/", "layout");
-}
-
-export async function fetchTaskBoard(): Promise<TaskBoard> {
-  return getTaskBoard();
 }
 
 export async function fetchProductionCard(productionId: string): Promise<ProductionCard | null> {
@@ -133,6 +127,35 @@ export async function retryJob(jobId: string): Promise<ActionResult> {
   if (error) return fail(error);
   refresh();
   return { ok: true, message: "Tâche remise en file" };
+}
+
+/**
+ * Arrêter une retouche en cours, ou masquer une retouche en échec (Bibliothèque → Retoucher) : toutes les tâches du lot
+ * passent « annulées ». La vidéo, qui attendait d'être refaite (« rendering »), redevient « à valider » avec son fichier
+ * d'avant : sinon elle resterait bloquée, sans pouvoir être retouchée de nouveau.
+ */
+export async function stopRetouch(jobIds: string[]): Promise<ActionResult> {
+  const list = ids(jobIds);
+  if (!list.length) return { ok: false, message: "Rien à arrêter" };
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("jobs").select("id, video_id").in("id", list);
+  if (error) return fail(error);
+  const videos = [...new Set((data ?? []).map((j) => j.video_id as string | null).filter(Boolean))];
+  if (videos.length !== 1) return { ok: false, message: "Retouche introuvable" };
+  const stamp = new Date().toISOString();
+  const stop = await db.from("jobs").update({ status: "cancelled", finished_at: stamp, error: "Arrêtée par l'utilisateur" }).in("id", list).in("status", ["queued", "running"]);
+  if (stop.error) return fail(stop.error);
+  const hide = await db.from("jobs").update({ status: "cancelled" }).in("id", list).eq("status", "failed");
+  if (hide.error) return fail(hide.error);
+  const busy = await db
+    .from("jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("video_id", videos[0])
+    .in("status", ["queued", "running"])
+    .in("type", ["generate_clip", "tts", "assemble", "qa"]);
+  if (!busy.error && !busy.count) await db.from("videos").update({ status: "review", error: null }).eq("id", videos[0]).eq("status", "rendering");
+  refresh();
+  return { ok: true, message: "Retouche arrêtée : la vidéo garde sa version d’avant" };
 }
 
 /** Masquer une tâche en échec (elle passe « annulée » et quitte le panneau). */

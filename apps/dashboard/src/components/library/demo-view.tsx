@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { CircleCheck, CircleX, ExternalLink, Film, FlaskConical, FolderOpen, HardDrive, MonitorPlay, Trash2 } from "lucide-react";
 
 import { deleteDemo } from "@/app/library/actions";
@@ -64,7 +63,6 @@ function DemoCard({ demo, onOpen }: { demo: DemoFolder; onOpen: () => void }) {
 
 /** Fiche d'un dossier : ses vidéos finies, ses clips à la demande, son emplacement et la suppression du dossier. */
 function DemoSheet({ demo, onClose, onDone }: { demo: DemoFolder | null; onClose: () => void; onDone: (res: Notice) => void }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const [showClips, setShowClips] = React.useState(false);
@@ -160,7 +158,6 @@ function DemoSheet({ demo, onClose, onDone }: { demo: DemoFolder | null; onClose
                           }
                           onDone(res);
                           onClose();
-                          router.refresh();
                         })
                       }
                     >

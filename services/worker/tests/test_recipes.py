@@ -295,3 +295,76 @@ def test_room_renovation_uses_interior_framing_scale_and_evening():
     assert lint_recipe_script(s, "timelapse", ["fr"], 18) == []
     assert any("TERMINÉE" in r for r in requirements(s, n - 2, "timelapse"))
     assert any("taille humaine" in r for r in clip_requirements(s, 1, "timelapse"))
+
+
+def _insolite() -> ScriptV1:
+    """Lieu insolite (docs/51) : 8 plans larges dehors, 11 dedans, 5 gros plans des mains intercalés."""
+    layout = (
+        ["out"] * 3
+        + ["ins"]
+        + ["out"] * 3
+        + ["ins"]
+        + ["out"] * 2
+        + ["in"] * 3
+        + ["ins"]
+        + ["in"] * 3
+        + ["ins"]
+        + ["in"] * 3
+        + ["ins"]
+        + ["in"] * 2
+    )
+    s = _script(len(layout))
+    for i, (sc, kind) in enumerate(zip(s.scenes, layout, strict=True)):
+        sc.shot = "insert" if kind == "ins" else "wide"
+        sc.interior = kind == "in" or (kind == "ins" and i > 10)
+        sc.duration_s = 2.7
+        sc.on_screen_text = {"fr": f"Jour {1 + i}"}
+        sc.edit_prompt = f"Remove what is not built yet at stage {i}"
+    s.scenes[0].visual_prompt = "An untouched lawn in a backyard with a pile of old tyres"
+    s.scenes[9].visual_prompt = FINISHED  # le fini du dehors
+    s.scenes[-2].visual_prompt = FINISHED.replace("farmhouse", "underground room")  # le fini du dedans
+    return s
+
+
+def test_insolite_builds_each_view_backwards_and_keeps_inserts_out_of_the_chain():
+    from worker.recipes import chain_next, segments, stage_role
+
+    s = normalize_script(_insolite(), "timelapse")
+    n = len(s.scenes)
+    assert [len(seg) for seg in segments(s)] == [8, 11]
+    roles = [stage_role(s, p) for p in range(n)]
+    assert roles.count("done") == 2 and roles[-1] == "dusk" and roles[0] == "start"
+    out_done, in_done = (p for p, r in enumerate(roles) if r == "done")
+    assert (out_done, in_done) == (9, n - 2)
+    # une étape retouche le plan large suivant de SA vue, jamais un gros plan
+    assert s.scenes[2].edit_from == 4 and chain_next(s, 2) == 4
+    assert s.scenes[out_done].edit_prompt is None and s.scenes[out_done].clip_mode == "i2v"  # pas de clip vers dedans
+    assert s.scenes[in_done].clip_mode == "flf" and s.scenes[-1].edit_from == in_done
+    first_inside = segments(s)[1][0]
+    assert stage_role(s, first_inside) == "start" and s.scenes[first_inside].edit_from == s.scenes[first_inside + 1].index
+    inserts = [p for p, r in enumerate(roles) if r == "insert"]
+    assert all(s.scenes[p].edit_prompt is None and s.scenes[p].clip_mode == "i2v" for p in inserts)
+    order = keyframe_order(s)
+    assert order.index(out_done) < order.index(0) and order.index(in_done) < order.index(first_inside)
+    assert 55 <= s.duration_s <= 75
+
+
+def test_insolite_prompts_lint_and_negative():
+    from worker.recipes import INSERT_MOTION, INSERT_SHOT, ONE_WORKER, prompt_key, video_negative
+
+    s = normalize_script(_insolite(), "timelapse")
+    assert INSERT_SHOT in image_prompt(s, 3, "timelapse")
+    assert ONE_WORKER in edit_instruction(s, 2, "timelapse")
+    assert motion_prompt(s, 3, "timelapse").endswith(INSERT_MOTION)
+    assert "hand" not in video_negative(s, 3, "timelapse") and "hand" in video_negative(s, 2, "timelapse")
+    issues = lint_recipe_script(s, "timelapse", ["fr"])
+    assert not [i for i in issues if "vues" in i or "gros plan" in i or "scènes :" in i], issues
+    assert prompt_key("timelapse", "insolite") == "timelapse_insolite"
+    assert prompt_key("timelapse", "inconnue") == "timelapse" and prompt_key("drama") == "drama"
+    # deux gros plans de suite, vue dedans avant dehors : signalés
+    bad = _insolite()
+    bad.scenes[4].shot = "insert"
+    for sc in bad.scenes[:10]:
+        sc.interior = not sc.interior if sc.shot == "wide" else sc.interior
+    issues = lint_recipe_script(normalize_script(bad, "timelapse"), "timelapse", ["fr"])
+    assert any("deux gros plans de suite" in i for i in issues)

@@ -42,6 +42,9 @@ function Get-Proc($All, [int]$Id) { $All | Where-Object { $_.ProcessId -eq $Id }
 function Get-WindowRoot($All, $Proc) {
     $cur = $Proc
     for ($i = 0; $i -lt 12; $i++) {
+        # deja une fenetre (cmd /k d'un lanceur, ou cmd de dashboard.bat) : on s'arrete la, sans remonter au lanceur
+        # qui l'a ouverte (son arbre contient aussi les deux autres programmes)
+        if ($cur.Name -eq "cmd.exe" -and $cur.CommandLine -notmatch '/d /s /c') { return $cur }
         $parent = Get-Proc $All $cur.ParentProcessId
         if (-not $parent -or $parent.Name -notin @("cmd.exe", "node.exe", "python.exe", "uv.exe", "worker.exe")) { return $cur }
         $cur = $parent
@@ -101,8 +104,10 @@ switch ($Target) {
     "dashboard" {
         if (-not $DryRun) { Start-Sleep -Seconds 3 }
         $all = Get-Procs
-        $found = @($all | Where-Object { $_.Name -eq "cmd.exe" -and ($_.CommandLine -match 'dashboard\.bat' -or
-            ($_.CommandLine -match 'npm run dev' -and $_.CommandLine -match "--port $DashboardPort")) })
+        # superviseur launcher\dashboard.ps1 (version de production, docs/56) ou ancien "npm run dev"
+        $found = @($all | Where-Object { ($_.Name -eq "cmd.exe" -and ($_.CommandLine -match 'dashboard\.bat' -or
+            ($_.CommandLine -match 'npm run dev' -and $_.CommandLine -match "--port $DashboardPort"))) -or
+            ($_.Name -eq "powershell.exe" -and $_.CommandLine -match 'launcher\\dashboard\.ps1') })
         $listen = Get-NetTCPConnection -LocalPort $DashboardPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($listen) {
             $server = Get-Proc $all $listen.OwningProcess

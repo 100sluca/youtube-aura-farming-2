@@ -5,6 +5,7 @@
  * Serveur uniquement (clé service role).
  */
 import { promises as fs } from "node:fs";
+import path from "node:path";
 
 import { readDefaults } from "@/lib/font-files";
 import { getGenerationCatalog, getGenerationSettings } from "@/lib/generation-data";
@@ -23,6 +24,7 @@ import {
   type RetouchPlan,
   type RetouchScene,
   type RetouchState,
+  type VoiceTake,
 } from "@/lib/retouch-types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { VideoStatus } from "@/lib/types";
@@ -61,8 +63,8 @@ type TimelineScene = {
   words?: { text: string; start: number; end: number }[];
 };
 type ScriptJson = {
-  scenes?: { index: number; narration?: Json; lines?: { who?: string; text?: string }[]; characters?: string[]; duration_s?: number }[];
-  cast?: { key?: string; name?: string }[];
+  scenes?: { index: number; narration?: Json; lines?: { who?: string; text?: string; tone?: string }[]; characters?: string[]; duration_s?: number }[];
+  cast?: { key?: string; name?: string; voice?: string }[];
   hook_title?: Json;
   metadata?: Record<string, { title?: string }>;
   music_mood?: string | null;
@@ -109,6 +111,8 @@ function retouchOf(value: unknown): RetouchData {
   }
   if (typeof value.voice === "string") out.voice = value.voice;
   if (typeof value.acting === "string") out.acting = value.acting;
+  if (typeof value.sfx === "boolean") out.sfx = value.sfx;
+  if (Array.isArray(value.muted)) out.muted = value.muted.filter((i): i is number => Number.isInteger(i));
   if (isObject(value.plans)) {
     out.plans = Object.fromEntries(
       Object.entries(value.plans).map(([k, list]) => [
@@ -119,7 +123,91 @@ function retouchOf(value: unknown): RetouchData {
       ]),
     );
   }
+  if (isObject(value.drafts)) {
+    out.drafts = Object.fromEntries(Object.entries(value.drafts).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].trim() !== ""));
+  }
+  if (isObject(value.lines)) {
+    out.lines = Object.fromEntries(Object.entries(value.lines).filter((e): e is [string, string] => typeof e[1] === "string"));
+  }
+  if (isObject(value.takes)) {
+    out.takes = Object.fromEntries(
+      Object.entries(value.takes)
+        .filter((e): e is [string, Json] => isObject(e[1]) && typeof e[1].asset_id === "string")
+        .map(([k, t]): [string, VoiceTake] => [
+          k,
+          {
+            asset_id: String(t.asset_id),
+            note: typeof t.note === "string" ? t.note : "",
+            said: typeof t.said === "string" ? t.said : "",
+            heard: typeof t.heard === "string" ? t.heard : null,
+            ratio: typeof t.ratio === "number" ? t.ratio : null,
+            keep: typeof t.keep === "boolean" ? t.keep : null,
+            at: String(t.at ?? ""),
+            direction: str(t.direction),
+            engine: str(t.engine),
+            source: t.source === "clip" ? "clip" : null,
+          },
+        ]),
+    );
+  }
   return out;
+}
+
+/** Lettres et chiffres d'un texte, sans accents ni casse (worker/drama.py : heard_ratio). */
+const letters = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+
+/** Mots d'un texte, sans accents ni casse, coupés aussi aux apostrophes (« t'aimer » → t, aimer). */
+const wordsOf = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/** Ressemblance (0 à 1) entre la réplique écrite et ce que Whisper entend : la plus faible de la ressemblance lettre à
+ * lettre (2 × plus longue sous-suite commune ÷ longueurs) et de la part des mots écrits retrouvés. Lettre à lettre seule,
+ * une réplique dite en anglais passait (« Attention, the ego has arrived » pour « Attention ! L'égout est arrivé ») :
+ * worker/takes.py said_ratio. */
+export function heardRatio(expected: string, heard: string): number {
+  const a = letters(expected);
+  const b = letters(heard);
+  if (!a) return 1;
+  if (!b) return 0;
+  let prev = new Array<number>(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    const row = new Array<number>(b.length + 1).fill(0);
+    for (let j = 1; j <= b.length; j++) row[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], row[j - 1]);
+    prev = row;
+  }
+  const lettersRatio = (2 * prev[b.length]) / (a.length + b.length);
+  const want = wordsOf(expected);
+  const left = wordsOf(heard);
+  let found = 0;
+  for (const w of want) {
+    const k = left.indexOf(w);
+    if (k >= 0) {
+      found++;
+      left.splice(k, 1);
+    }
+  }
+  return Math.round(Math.min(lettersRatio, want.length ? found / want.length : 1) * 1000) / 1000;
+}
+
+/** Ce que Whisper a entendu de chaque réplique au dernier calage sur les lèvres (<vidéo>/lines/lines.json, worker/lipsync.py). */
+async function heardLines(finalPath: string | null): Promise<Map<string, string>> {
+  if (!finalPath) return new Map();
+  try {
+    const cache = JSON.parse(await fs.readFile(path.join(path.dirname(finalPath), "lines", "lines.json"), "utf8")) as { heard?: Record<string, { text?: string }> };
+    return new Map(Object.entries(cache.heard ?? {}).map(([k, h]) => [k, String(h?.text ?? "")]));
+  } catch {
+    return new Map();
+  }
 }
 
 /** Voix, montage et contrôle de la dernière retouche (ou du dernier « Refaire le montage ») : les jobs créés ensemble
@@ -198,7 +286,7 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
   const pid = (v.production_id as string | null) ?? null;
   const lang: VoiceLang = v.lang === "en" ? "en" : "fr";
 
-  const [prod, saved, lastMontage, defaults, catalog, library, constants, state, clipRows, generation] = await Promise.all([
+  const [prod, saved, lastMontage, defaults, catalog, library, constants, state, clipRows, generation, finalRow] = await Promise.all([
     pid ? db.from("productions").select("script, series(recipe, music_moods)").eq("id", pid).maybeSingle() : Promise.resolve({ data: null }),
     db.from("montage_templates").select("name, template").eq("is_default", true).maybeSingle(),
     db.from("jobs").select("result").eq("video_id", videoId).eq("type", "assemble").eq("status", "done").order("finished_at", { ascending: false }).limit(1).maybeSingle(),
@@ -208,17 +296,26 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
     audioConstants(),
     getRetouchState(videoId),
     pid
-      ? db.from("assets").select("id, scene_index, created_at").eq("production_id", pid).eq("kind", "clip").order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] as { id: string; scene_index: number | null; created_at: string }[] }),
+      ? db
+          .from("assets")
+          .select("id, scene_index, created_at, heard:meta->dialogue->>heard")
+          .eq("production_id", pid)
+          .eq("kind", "clip")
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as { id: string; scene_index: number | null; created_at: string; heard: string | null }[] }),
     getGenerationSettings(),
+    v.final_asset_id ? db.from("assets").select("local_path").eq("id", v.final_asset_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  const heard = await heardLines((finalRow.data?.local_path as string | undefined) ?? null);
 
   const script = (prod.data?.script ?? {}) as ScriptJson;
   const series = one(prod.data?.series as { recipe: string | null; music_moods: string[] | null } | { recipe: string | null; music_moods: string[] | null }[] | null);
   const format: MontageFormat = MONTAGE_FORMATS.includes(series?.recipe as MontageFormat) ? (series?.recipe as MontageFormat) : "story";
   const origin = completeTemplate(defaults.template as MontageTemplate, defaults.template);
   const template = saved.data ? completeTemplate(origin, saved.data.template) : origin;
-  const voiced = v.format === "A_voiceover";
+  const clipVoices = v.format === "B_visual" && series?.recipe === "drama";
+  // voix des clips : leur son fait la voix (sous-titres, musique sous la voix, écoute du mixage avec les répliques)
+  const voiced = v.format === "A_voiceover" || clipVoices;
   const retouch = retouchOf(v.retouch);
 
   // Textes du dernier montage sans retouche (résultat du job assemble, docs/34) ; montage plus ancien : la voix
@@ -245,9 +342,13 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
 
   // Tous les plans (repère « Plan N » sur la vidéo, onglet Plans des drames) : où ils sont, qui parle, leur dernier clip
   const names = new Map((script.cast ?? []).map((c) => [c.key ?? "", c.name ?? c.key ?? ""]));
+  const voices = new Map((script.cast ?? []).map((c) => [c.key ?? "", (c.voice ?? "").trim()]));
   const clipOf = new Map<number, string>();
-  for (const row of (clipRows.data ?? []) as { id: string; scene_index: number | null }[]) {
-    if (row.scene_index !== null && !clipOf.has(row.scene_index)) clipOf.set(row.scene_index, row.id);
+  const clipHeard = new Map<number, string>(); // voix des clips : ce que Whisper a entendu dans le clip (assets.meta.dialogue)
+  for (const row of (clipRows.data ?? []) as { id: string; scene_index: number | null; heard: string | null }[]) {
+    if (row.scene_index === null || clipOf.has(row.scene_index)) continue;
+    clipOf.set(row.scene_index, row.id);
+    if (row.heard) clipHeard.set(row.scene_index, row.heard);
   }
   const timed = new Map(timeline.map((s) => [s.index, s]));
   let clock = 0;
@@ -257,16 +358,24 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
     const end = start + (tl && typeof tl.duration === "number" ? tl.duration : Number(s.duration_s ?? 0));
     clock = end;
     const line = (s.lines ?? [])[0];
+    const text = (s.lines ?? []).map((l) => l.text ?? "").join(" ").trim();
+    const replaced = clipVoices && Boolean(retouch.lines?.[String(s.index)]);
+    const said = clipVoices ? (replaced ? undefined : clipHeard.get(s.index)) : heard.get(String(s.index));
     return {
       index: s.index,
       position: pos,
       start,
       end,
       speaker: line?.who ? (names.get(line.who) ?? line.who) : null,
-      line: (s.lines ?? []).map((l) => l.text ?? "").join(" ").trim(),
+      line: text,
+      direction: text ? { voice: voices.get(line?.who ?? "") ?? "", tone: (line?.tone ?? "").trim() } : null,
       characters: (s.characters ?? []).map((k) => names.get(k) ?? k),
       clipAssetId: clipOf.get(s.index) ?? null,
       corrections: retouch.plans?.[String(s.index)] ?? [],
+      draft: retouch.drafts?.[String(s.index)] ?? "",
+      take: retouch.takes?.[String(s.index)] ?? null,
+      heard: text && said !== undefined ? { text: said, ratio: heardRatio(text, said) } : null,
+      replaced,
     };
   });
 
@@ -301,7 +410,10 @@ export async function getRetouchPage(videoId: string): Promise<RetouchPageData |
       lang,
       format,
       recipe: series?.recipe ?? null,
+      clipVoices,
       voiced,
+      sfx: series?.recipe === "drama" || !voiced,
+      sfxDefault: series?.recipe !== "drama",
       channelName: one(v.channels as { name: string } | { name: string }[] | null)?.name ?? null,
       youtubeVideoId: (v.youtube_video_id as string | null) ?? null,
       published: v.status === "published" && Boolean(v.youtube_video_id),

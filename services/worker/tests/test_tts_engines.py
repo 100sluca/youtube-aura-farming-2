@@ -169,7 +169,8 @@ def test_gemini_retakes_a_line_too_long_for_the_mouth(monkeypatch):
     monkeypatch.setitem(gemini_tts.STATE, "speed", 1.0)
     audio, rate = gemini_tts.synthesize({}, "Je l'ai rendue ! À vous !", "desperate, crying", 3.2)
     assert len(audio) / rate == pytest.approx(3.4)
-    assert styles[0] == "desperate, crying" and "faster" in styles[1] and "3.2 seconds" in styles[1]
+    assert styles[0].endswith("; desperate, crying") and "faster" in styles[1] and "3.2 seconds" in styles[1]
+    assert all("Speak French" in st for st in styles)  # la langue de la vidéo en tête du style (docs/49 §5)
     assert len(styles) == 2  # ×0,94 : dans la bouche, pas de 3e prise
 
 

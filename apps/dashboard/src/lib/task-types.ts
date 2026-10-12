@@ -54,6 +54,38 @@ export interface TaskJob {
   error: string | null;
 }
 
+/** Une retouche d'une vidéo déjà montée (Bibliothèque → Retoucher, docs/34, 38, 49, 53) : les tâches créées ensemble
+ * (voix, clip d'un plan, montage, contrôle, réécriture), suivies jusqu'au résultat à regarder. */
+export interface TaskRetouch {
+  /** Premier job du lot : clé stable de la carte (et de « déjà vue » dans le navigateur). */
+  id: string;
+  video_id: string;
+  title: string;
+  channel_name: string | null;
+  /** Ce qui a été demandé : « Nouvelles prises de voix · 3 plans », « Plan 4 : clip refait »… */
+  what: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  /** Étape lisible : « Prises de voix · Réécoute des prises (Whisper) », « En file · montage », « En échec · voix »… */
+  stage: string;
+  progress_pct: number;
+  /** Les étapes du lot, dans l'ordre, avec leur état. */
+  steps: { label: string; status: JobStatus }[];
+  step_started_at: string | null;
+  /** Fin estimée (ISO), d'après la file de la carte graphique et les durées mesurées ; null si rien n'attend. */
+  eta_at: string | null;
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  /** Ce qu'il y a à faire une fois fini (ou ce qui a été sauté) : « Prises prêtes : à écouter… ». */
+  result_hint: string | null;
+  /** Tous les jobs du lot (Arrêter) et celui à relancer après un échec. */
+  job_ids: string[];
+  failed_job_id: string | null;
+  cover_asset_id: string | null;
+  /** Page à ouvrir : Retoucher (onglet Récit pour une réécriture). */
+  href: string;
+}
+
 export interface TaskBoard {
   generated_at: string;
   running: TaskProduction[];
@@ -71,6 +103,8 @@ export interface TaskBoard {
   stopped: TaskProduction[];
   other_jobs: TaskJob[];
   failed_jobs: TaskJob[];
+  /** Retouches en cours, en échec, ou finies depuis moins de 12 h (la plus récente de chaque vidéo). */
+  retouches: TaskRetouch[];
   /** Fin estimée de toute la file (ISO). */
   queue_end_at: string | null;
   counts: { active: number; attention: number; failures: number };
@@ -88,6 +122,7 @@ export const EMPTY_TASK_BOARD: TaskBoard = {
   stopped: [],
   other_jobs: [],
   failed_jobs: [],
+  retouches: [],
   queue_end_at: null,
   counts: { active: 0, attention: 0, failures: 0 },
 };

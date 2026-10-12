@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, CircleCheck, CircleStop, CircleX, Clapperboard, Hourglass, LoaderCircle, MessageCircle, RefreshCw, TriangleAlert, WandSparkles } from "lucide-react";
+import { ArrowRight, CircleCheck, CircleStop, CircleX, Clapperboard, Hourglass, LoaderCircle, MessageCircle, RefreshCw, TriangleAlert, Type, WandSparkles } from "lucide-react";
 
 import { approveStoryboard, pickStoryboard, redoStoryboard, reinventScene, stopRework } from "@/app/production/actions";
 import { GeminiSendButton } from "@/components/create/gemini-send-button";
@@ -113,6 +113,11 @@ export function StoryboardPanel({
                   <Badge variant="outline" title="Qui dit la réplique : son nom n’est ni dit ni écrit dans la vidéo">
                     <MessageCircle />
                     {scene.speaker}
+                  </Badge>
+                ) : null}
+                {scene.image_text ? (
+                  <Badge variant="outline" title="Écrit dans l’image par le générateur, relu lettre à lettre à l’image puis au clip (docs/57)">
+                    <Type />« {scene.image_text} »
                   </Badge>
                 ) : null}
                 {scene.continues_previous ? <Badge variant="secondary">continuité : part du clip précédent</Badge> : null}

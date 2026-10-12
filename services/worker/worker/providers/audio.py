@@ -77,6 +77,31 @@ MUSIC_MOODS: dict[str, MusicMood] = {
     "mysterious": MusicMood(
         f"Mysterious ambient soundtrack, airy pads, subtle bells, low drones, curious, {INSTRUMENTAL}", 85, "B minor"
     ),
+    # Citations (worker/quotes.py, docs/58) : piano seul ou presque, comme les sons des comptes de citations (« Andante
+    # in C Minor ») ; sans droits d'auteur tiers, ces pistes ne déclenchent pas de réclamation Content ID
+    "citation_triste": MusicMood(
+        "Melancholic solo piano andante, slow arpeggios in a minor key, soft felt piano, gentle reverb, intimate and "
+        f"nostalgic, sad but beautiful, {INSTRUMENTAL}",
+        66,
+        "C minor",
+    ),
+    "citation_tendre": MusicMood(
+        f"Tender emotional piano with soft cello and warm strings, slow, heartfelt, love and memories, {INSTRUMENTAL}",
+        70,
+        "A minor",
+    ),
+    "citation_reveuse": MusicMood(
+        "Dreamy ambient piano, sparse notes with long reverb tails, airy pads, floating and contemplative, calm night "
+        f"atmosphere, {INSTRUMENTAL}",
+        60,
+        "E minor",
+    ),
+    "citation_espoir": MusicMood(
+        "Hopeful cinematic piano, gentle rising melody, light strings joining slowly, quiet strength and resilience, "
+        f"warm and luminous, {INSTRUMENTAL}",
+        76,
+        "D major",
+    ),
 }
 
 

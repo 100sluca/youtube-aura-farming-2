@@ -48,8 +48,17 @@ def idempotency_key(video_id: object, round_: int, generation: int = 0) -> str:
 
 
 def post_body(
-    *, caption: str, media_url: str, account_id: str, cfg: TikTokConfig, when: datetime | None, draft: bool = False
+    *,
+    caption: str,
+    media_url: str,
+    account_id: str,
+    cfg: TikTokConfig,
+    when: datetime | None,
+    draft: bool = False,
+    music: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """`music` : champs musicSoundInfo et videoOriginalSoundVolume d'une musique de TikTok (worker/platform_music.py) ;
+    ignorés par TikTok pour un brouillon, donc pas envoyés."""
     settings: dict[str, Any] = {
         # explicite : le 29/09, une publication programmée sans ce champ s'est retrouvée en « photo » chez Zernio
         # douze minutes après sa création, avec risque de refus à l'heure prévue (corrigée par PUT /posts/{id})
@@ -67,6 +76,8 @@ def post_body(
         settings["video_made_with_ai"] = True
     if draft:
         settings["draft"] = True  # boîte de réception TikTok : Luca termine la publication dans l'appli
+    elif music:
+        settings.update(music)
     body: dict[str, Any] = {
         "content": caption,
         "mediaItems": [{"type": "video", "url": media_url}],

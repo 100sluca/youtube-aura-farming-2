@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-signal: var(--signal);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-youtube: var(--youtube);
+  --color-tiktok: var(--tiktok);
+  --color-instagram: var(--instagram);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Thème unique, sombre : encre chaude, papier, orange « signal », une couleur par réseau. */
+:root {
+  --radius: 0.625rem;
+  --background: #0e0d0c;
+  --foreground: #f2ece2;
+  --card: #151311;
+  --card-foreground: #f2ece2;
+  --popover: #151311;
+  --popover-foreground: #f2ece2;
+  --primary: #f2ece2;
+  --primary-foreground: #0e0d0c;
+  --secondary: #1f1c19;
+  --secondary-foreground: #f2ece2;
+  --muted: #1f1c19;
+  --muted-foreground: #a69d90;
+  --accent: #26221e;
+  --accent-foreground: #f2ece2;
+  --destructive: #ff6f61;
+  --border: rgb(242 236 226 / 10%);
+  --input: rgb(242 236 226 / 15%);
+  --ring: #ff5a2e;
+  --signal: #ff5a2e;
+  --success: #8fdc8a;
+  --warning: #f3b648;
+  --youtube: #ff4f4a;
+  --tiktok: #3ae2da;
+  --instagram: #e66ad6;
+  --chart-1: var(--youtube);
+  --chart-2: var(--tiktok);
+  --chart-3: var(--instagram);
+  --chart-4: var(--signal);
+  --chart-5: var(--success);
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

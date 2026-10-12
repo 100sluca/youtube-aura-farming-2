@@ -37,3 +37,6 @@ services/worker/bench/
 
 # vidéos de référence d'autres créateurs : gardées sur le PC, jamais dans le dépôt (public)
 examples/
+
+# musiques d'autres artistes (droits d'auteur) : sur le PC, jamais dans le dépôt public (docs/26 §2)
+music/music_10.mp3

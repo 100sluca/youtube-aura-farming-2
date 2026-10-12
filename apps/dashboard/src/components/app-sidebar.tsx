@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard } from "lucide-react";
+import { Clapperboard, LoaderCircle } from "lucide-react";
 
 import { NAV_ITEMS, isNavActive } from "@/components/nav-items";
 import { SystemPanel } from "@/components/system/system-panel";
@@ -22,6 +22,12 @@ export function SidebarBrand() {
       </span>
     </Link>
   );
+}
+
+/** Rond qui tourne sur le lien cliqué tant que la page n'est pas affichée (docs/56-dashboard-rapide.md). */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  return pending ? <LoaderCircle aria-hidden className="text-muted-foreground ml-auto size-3.5 shrink-0 animate-spin" /> : null;
 }
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
@@ -44,6 +50,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Icon className="size-4 shrink-0" />
             <span className="truncate">{item.label}</span>
+            <NavPending />
           </Link>
         );
       })}

@@ -73,8 +73,34 @@ function comboOptions(spec: unknown): string[] {
   return Array.isArray(options) ? options.filter((o): o is string => typeof o === "string") : [];
 }
 
-/** Fichiers de modèles que ComfyUI voit, d'après les listes des nœuds de chargement. null si ComfyUI est éteint. */
+// /object_info pèse 2 Mo et ComfyUI met près d'une seconde à le servir : la liste est gardée en mémoire et relue en
+// arrière-plan au plus une fois par minute. Réglages s'affiche tout de suite ; un modèle ajouté apparaît à la visite
+// suivante (docs/56-dashboard-rapide.md).
+const COMFY_FILES_TTL_MS = 60_000;
+let comfyCache: { at: number; files: Set<string> } | null = null;
+let comfyLoading: Promise<Set<string> | null> | null = null;
+
+function loadComfyFiles(): Promise<Set<string> | null> {
+  comfyLoading ??= readComfyFiles()
+    .then((files) => {
+      if (files) comfyCache = { at: Date.now(), files };
+      return files;
+    })
+    .finally(() => {
+      comfyLoading = null;
+    });
+  return comfyLoading;
+}
+
+/** Fichiers de modèles que ComfyUI voit (dernière lecture connue). null si ComfyUI est éteint et jamais lu. */
 async function comfyFiles(): Promise<Set<string> | null> {
+  if (!comfyCache) return loadComfyFiles();
+  if (Date.now() - comfyCache.at > COMFY_FILES_TTL_MS) void loadComfyFiles();
+  return comfyCache.files;
+}
+
+/** Fichiers de modèles que ComfyUI voit, d'après les listes des nœuds de chargement. null si ComfyUI est éteint. */
+async function readComfyFiles(): Promise<Set<string> | null> {
   try {
     const res = await fetch(`${COMFY_URL}/object_info`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;

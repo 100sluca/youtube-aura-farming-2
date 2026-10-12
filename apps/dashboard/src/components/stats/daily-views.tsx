@@ -21,9 +21,9 @@ const dayToDate = (day: unknown) => `${String(day)}T12:00:00Z`;
 
 /** Vues par jour : YouTube Analytics (plein), estimations d'après les relevés horaires (clair), jours inconnus (vides).
  * Onglet TikTok (docs/39) : pas d'équivalent d'Analytics, toutes les barres viennent des relevés horaires. */
-export function DailyViewsChart({ data, platform = "youtube" }: { data: DayViews[]; platform?: "youtube" | "tiktok" }) {
+export function DailyViewsChart({ data, platform = "youtube" }: { data: DayViews[]; platform?: "youtube" | "tiktok" | "instagram" }) {
   const points = data.map((d) => ({ ...d, value: d.views ?? 0 }));
-  const tiktok = platform === "tiktok";
+  const tiktok = platform !== "youtube"; // TikTok et Instagram (docs/62) : tout vient des relevés horaires
   if (!points.some((p) => p.value > 0)) {
     return (
       <div className="text-muted-foreground flex h-[240px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 text-center text-sm">

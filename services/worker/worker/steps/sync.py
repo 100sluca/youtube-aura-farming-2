@@ -18,8 +18,10 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
+from ..copyright import check_videos as check_copyright
 from ..db import Db
 from ..metrics import retention_summary, views_at
+from ..slots import follow_youtube
 from ..youtube.client import AnalyticsBadRequest, YouTubeClient
 from .base import Context, Step
 
@@ -87,8 +89,20 @@ def collect_counters(
             (cid, taken, stats["subscribers"], stats["views"], stats["videos"]),
         )
     public = 0
-    for chunk in _chunks(list(by_yt), 50):
+    # vidéos programmées (et retirées plus tôt) : ce que Luca y a changé dans YouTube Studio libère ou déplace leur
+    # créneau (docs/55, slots.follow_youtube)
+    watched = {
+        r["youtube_video_id"]
+        for r in ctx.db.fetch_all(
+            """select youtube_video_id from videos where channel_id = %s and youtube_video_id is not null
+               and origin = 'app' and status in ('scheduled', 'unpublished')""",
+            (cid,),
+        )
+    }
+    items: dict[str, dict[str, Any]] = {}
+    for chunk in _chunks(list(dict.fromkeys([*by_yt, *watched])), 50):
         for item in yt.videos_list(chunk):
+            items[item["id"]] = item
             vid = by_yt.get(item["id"])
             if vid is None:
                 continue
@@ -112,7 +126,7 @@ def collect_counters(
                     "on conflict do nothing",
                     (vid, taken, views, likes, comments),
                 )
-            elif privacy == "private" and item["status"].get("publishAt") is None and alert_private:
+            elif privacy == "private" and item["status"].get("publishAt") is None and alert_private and item["id"] not in watched:
                 ctx.db.alert(
                     "error",
                     "Vidéo restée privée après le créneau",
@@ -120,8 +134,13 @@ def collect_counters(
                     video_id=vid,
                 )
         ctx.db.record_quota(cid, "videos.list", 1)
+    schedule = follow_youtube(ctx.db, cid, items, alert_private=alert_private)
+    try:  # vidéos bloquées pour droits d'auteur (musique) : alerte qui nomme la piste (docs/58 §6)
+        schedule["copyright_blocked"] = check_copyright(ctx.db, items, by_yt)
+    except Exception as exc:  # noqa: BLE001 — un relevé en plus, jamais une raison de rater la synchro
+        ctx.log("sync.droits_illisibles", level="warn", error=str(exc)[:200])
     prune_snapshots(ctx.db, cid)
-    return {"subscribers": stats["subscribers"] if stats else None, "public": public}
+    return {"subscribers": stats["subscribers"] if stats else None, "public": public, **schedule}
 
 
 def prune_snapshots(db: Db, cid: UUID) -> None:

@@ -1,30 +1,31 @@
 import Link from "next/link";
 
-import { TikTokMark, YouTubeMark } from "@/components/platform-marks";
+import { InstagramMark, TikTokMark, YouTubeMark } from "@/components/platform-marks";
 import type { StatsPeriod } from "@/lib/stats-types";
 import { cn } from "@/lib/utils";
 
-export type StatsPlatform = "youtube" | "tiktok";
+export type StatsPlatform = "youtube" | "tiktok" | "instagram";
 
 export function isStatsPlatform(value: unknown): value is StatsPlatform {
-  return value === "youtube" || value === "tiktok";
+  return value === "youtube" || value === "tiktok" || value === "instagram";
 }
 
 /** Adresse du Dashboard pour une plateforme et une période (défauts : YouTube, 28 jours) ; `extra` garde le compte choisi. */
 export function dashboardHref(platform: StatsPlatform, period: StatsPeriod, extra: Record<string, string | null | undefined> = {}): string {
   const q = new URLSearchParams();
-  if (platform === "tiktok") q.set("plateforme", "tiktok");
+  if (platform !== "youtube") q.set("plateforme", platform);
   if (period !== "28") q.set("periode", period);
   for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
   const s = q.toString();
   return s ? `/dashboard?${s}` : "/dashboard";
 }
 
-/** Onglets YouTube | TikTok du Dashboard (docs/39) : la période choisie suit d'un onglet à l'autre. */
+/** Onglets YouTube | TikTok | Instagram du Dashboard (docs/39, docs/62) : la période choisie suit d'un onglet à l'autre. */
 export function PlatformTabs({ platform, period, counts }: { platform: StatsPlatform; period: StatsPeriod; counts?: Partial<Record<StatsPlatform, string>> }) {
   const tabs: { id: StatsPlatform; label: string; mark: React.ReactNode }[] = [
     { id: "youtube", label: "YouTube", mark: <YouTubeMark /> },
     { id: "tiktok", label: "TikTok", mark: <TikTokMark /> },
+    { id: "instagram", label: "Instagram", mark: <InstagramMark /> },
   ];
   return (
     <nav aria-label="Plateforme" className="bg-muted inline-flex w-fit rounded-lg p-[3px] text-sm">

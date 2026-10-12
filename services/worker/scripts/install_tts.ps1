@@ -74,7 +74,18 @@ foreach ($name in $Engine) {
                 Invoke-WebRequest -Uri "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx" -OutFile $speaker
             }
         }
-        default { throw "Moteur inconnu : $name (qwen3, pocket, supertonic, eval)" }
+        "vc" {
+            # Conversion de voix des drames (docs/49 §12) : Demucs separe la voix de l'ambiance d'un clip H3, Chatterbox VC
+            # (MIT) donne a la voix le timbre de reference du personnage en gardant son jeu. Python 3.11 (numpy < 1.26).
+            $dir = "$Root\tts\vc"
+            New-Item -ItemType Directory -Force "$dir\models" | Out-Null
+            $py = "$dir\venv\Scripts\python.exe"
+            if (-not (Test-Path $py)) { Invoke-Step "vc : environnement Python 3.11" { uv venv "$dir\venv" --python 3.11 --seed -q } }
+            Invoke-Step "vc : PyTorch CUDA 12.4" { uv pip install --python $py -q torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124 }
+            Invoke-Step "vc : chatterbox-tts, demucs" { uv pip install --python $py -q chatterbox-tts demucs soundfile "setuptools<81" }  # perth (filigrane de Chatterbox) importe pkg_resources
+            Invoke-Step "vc : modeles (Chatterbox VC, Demucs htdemucs)" { & $py -c "from chatterbox.vc import ChatterboxVC; ChatterboxVC.from_pretrained('cpu'); from demucs.pretrained import get_model; get_model('htdemucs')" }
+        }
+        default { throw "Moteur inconnu : $name (qwen3, pocket, supertonic, eval, vc)" }
     }
 }
 Write-Host "`nTermine. Voix Qwen a creer (voir l'en-tete du script), puis : yt2 voice list"

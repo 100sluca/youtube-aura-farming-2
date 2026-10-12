@@ -8,9 +8,10 @@ import { extname, join } from "node:path";
 import { IS_MOCK } from "@/lib/data";
 import { decryptSecret } from "@/lib/crypto";
 import { dataRoot } from "@/lib/files";
-import { now, parisAddDays, parisSlot, parisStartOfWeek } from "@/lib/format";
+import { now, parisAddDays, parisDayKey, parisSlot, parisStartOfWeek } from "@/lib/format";
 import {
   DEFAULT_PAF,
+  PAF_DEFAULT_HOUR,
   PAF_FOLDER,
   PAF_SECRET,
   PAF_SETTINGS_KEY,
@@ -22,14 +23,19 @@ import {
   type PafVideo,
 } from "@/lib/paf-types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { ZERNIO_API } from "@/lib/tiktok";
+import { ZERNIO_API, zernioKey } from "@/lib/tiktok";
 
-const LATE_MS = 12 * 3600_000; // vendredi raté : encore publié jusqu'à 19 h (worker/paf.py)
+const LATE_MS = 12 * 3600_000; // vendredi raté : encore publié 12 h après l'heure prévue, jamais après minuit (worker/paf.py)
 
-/** Le vendredi 7 h visé : celui de cette semaine tant qu'il n'a pas plus de 12 h de retard, sinon le suivant. */
-export function nextPafSlot(base: Date = now()): Date {
-  const slot = parisSlot(parisAddDays(parisStartOfWeek(base), 4), "07:00");
-  return slot.getTime() + LATE_MS < base.getTime() ? parisSlot(parisAddDays(slot, 7), "07:00") : slot;
+/** Fin du rattrapage d'un vendredi raté : 12 h après l'heure prévue, au plus tard minuit (heure de Paris). */
+function lateLimit(slot: Date): number {
+  return Math.min(slot.getTime() + LATE_MS, parisSlot(parisAddDays(slot, 1), "00:00").getTime());
+}
+
+/** Le vendredi visé, à l'heure choisie : celui de cette semaine tant qu'il n'est pas trop en retard, sinon le suivant. */
+export function nextPafSlot(base: Date = now(), hour: string = PAF_DEFAULT_HOUR): Date {
+  const slot = parisSlot(parisAddDays(parisStartOfWeek(base), 4), hour);
+  return lateLimit(slot) < base.getTime() ? parisSlot(parisAddDays(slot, 7), hour) : slot;
 }
 
 export async function getPafSettings(): Promise<PafSettings> {
@@ -69,8 +75,10 @@ export async function pafVideo(dir: string | null): Promise<(PafVideo & { path: 
 }
 
 export async function getPafOverview(): Promise<PafOverview> {
-  const nextSlot = nextPafSlot().toISOString();
-  if (IS_MOCK) return { settings: DEFAULT_PAF, keyHint: null, folder: null, video: null, nextSlot, posts: [], job: null };
+  if (IS_MOCK) {
+    const slot = nextPafSlot();
+    return { settings: DEFAULT_PAF, keyHint: null, folder: null, video: null, nextSlot: slot.toISOString(), nextFriday: parisDayKey(slot), posts: [], job: null };
+  }
   const db = supabaseAdmin();
   const [settings, secret, posts, jobs, folder] = await Promise.all([
     getPafSettings(),
@@ -81,23 +89,47 @@ export async function getPafOverview(): Promise<PafOverview> {
   ]);
   const video = await pafVideo(folder);
   const job = jobs.data?.[0];
+  const slot = nextPafSlot(now(), settings.hour);
   return {
     settings,
     keyHint: secret.data ? ((secret.data.hint as string | null) ?? "…") : null,
     folder,
     video: video ? { name: video.name, size: video.size, modified: video.modified } : null,
-    nextSlot,
+    nextSlot: slot.toISOString(),
+    nextFriday: parisDayKey(slot),
     posts: (posts.data ?? []) as PafPost[],
     job: job ? { status: job.status as string, label: (job.progress_label as string | null) ?? null, error: (job.error as string | null) ?? null } : null,
   };
 }
 
-/** Comptes Instagram du second compte Zernio. */
+/** Instagram du compte Zernio principal (clé de TikTok / @arzakparker) : identifiants et noms, pour les repérer. */
+async function mainInstagram(): Promise<{ ids: Set<string>; names: Set<string> }> {
+  const found = { ids: new Set<string>(), names: new Set<string>() };
+  const secret = await zernioKey().catch(() => null);
+  if (!secret) return found;
+  try {
+    const res = await fetch(`${ZERNIO_API}/accounts`, { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return found;
+    for (const a of ((await res.json()) as { accounts?: Record<string, unknown>[] }).accounts ?? []) {
+      if (a.platform !== "instagram") continue;
+      if (a.platformUserId) found.ids.add(String(a.platformUserId));
+      if (a.username) found.names.add(String(a.username).toLowerCase());
+    }
+  } catch {
+    // compte principal injoignable : rien à comparer
+  }
+  return found;
+}
+
+/** Comptes Instagram du second compte Zernio ; celui qui est aussi sur le compte principal est marqué `sameAsMain`. */
 export async function listPafAccounts(key?: string): Promise<{ ok: boolean; accounts: PafAccount[]; message: string }> {
   const secret = key ?? (await pafKey());
   if (!secret) return { ok: false, accounts: [], message: "Coller d’abord la clé Zernio de ce compte" };
   try {
-    const res = await fetch(`${ZERNIO_API}/accounts`, { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    const [res, main] = await Promise.all([
+      fetch(`${ZERNIO_API}/accounts`, { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) }),
+      mainInstagram(),
+    ]);
     if (!res.ok) return { ok: false, accounts: [], message: `Zernio répond ${res.status} : ${(await res.text()).slice(0, 200)}` };
     const body = (await res.json()) as { accounts?: Record<string, unknown>[] };
     const accounts = (body.accounts ?? [])
@@ -112,12 +144,19 @@ export async function listPafAccounts(key?: string): Promise<{ ok: boolean; acco
           avatar: typeof a.profilePicture === "string" ? a.profilePicture : null,
           active: a.isActive !== false && a.needsReconnection !== true,
           kind: typeof kind === "string" ? kind : null,
+          sameAsMain: main.ids.has(String(a.platformUserId ?? "")) || main.names.has(String(a.username ?? "").toLowerCase()),
         };
       });
+    const own = accounts.filter((a) => !a.sameAsMain);
+    const twin = accounts.find((a) => a.sameAsMain);
     return {
       ok: true,
       accounts,
-      message: accounts.length ? `${accounts.length} compte${accounts.length > 1 ? "s" : ""} Instagram sur ce compte Zernio` : "Aucun compte Instagram connecté à ce compte Zernio : zernio.com → Accounts → Instagram",
+      message: own.length
+        ? `${own.length} compte${own.length > 1 ? "s" : ""} Instagram sur ce compte Zernio`
+        : twin
+          ? `Ce compte Zernio n’a que @${twin.username}, le même Instagram que le compte principal : y brancher @paf.jachete`
+          : "Aucun compte Instagram connecté à ce compte Zernio : zernio.com → Accounts → Instagram",
     };
   } catch (error) {
     return { ok: false, accounts: [], message: `Zernio injoignable : ${error instanceof Error ? error.message : String(error)}` };

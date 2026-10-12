@@ -39,12 +39,15 @@ from .. import cancel
 from ..dag import continuity_plan, enqueue_render_dag
 from ..drama import CHARACTERS_MAX, is_drama, sheet_prompt, slug
 from ..drama import scene_prompt as drama_scene_prompt
+from ..image_text import TEXT_TRIES, check_image, merge, with_image_text, without_text
 from ..keyframe_qc import QC_SYSTEM, KeyframeVerdict, check_continuity, check_keyframe
 from ..media import contact_sheet
 from ..models import ScriptV1
 from ..prompts import prompt_text
 from ..providers.llm import get_llm, get_vision_llm
 from ..providers.video import ComfyImage, ComfyImageEdit
+from ..quotes import IMAGE_SIZE as QUOTE_IMAGE_SIZE
+from ..quotes import RECIPE as QUOTE
 from ..recipes import (
     edit_dependents,
     edit_instruction,
@@ -85,6 +88,8 @@ class StoryboardStep(Step):
         ctx.db.execute("update productions set image_workflow = coalesce(image_workflow, %s) where id = %s", (workflow, pid))
         image = ComfyImage(ctx.settings, workflow)
         recipe = recipe_for_production(ctx.db, pid)
+        if recipe == QUOTE:  # citation : l'image EST la vidéo (zoom lent), plus fine que les images clés habituelles
+            image.width, image.height = QUOTE_IMAGE_SIZE
         visual = is_visual(recipe)
         autopilot = bool(prod.get("autopilot"))
         # « Réinventer » : le scénariste réécrit d'abord les scènes demandées ; relancé après une panne des images, le job
@@ -121,6 +126,10 @@ class StoryboardStep(Step):
         order = keyframe_order(script) if visual else list(range(len(script.scenes)))
         verdicts: dict[int, KeyframeVerdict | None] = {}
         made = 0
+        # Texte écrit dans l'image (scene.image_text, docs/57 §5) : relu lettre à lettre à chaque essai, même hors pilote
+        # automatique ; un plan dont le texte rate TEXT_TRIES fois est refait sans, et le script est enregistré sans lui
+        text_qc: Any = qc
+        dropped: list[int] = []
         for step_no, pos in enumerate(order):
             scene = script.scenes[pos]
             if only and scene.index not in only:
@@ -156,9 +165,24 @@ class StoryboardStep(Step):
                 if self._map_image(ctx, pid, script, scene, sdir):
                     made += 1
                     continue
-            for k in range(n):
+            it = scene.image_text if source is None else None
+            if it is not None and text_qc is None and not ctx.settings.dry_run:
+                text_qc = self._vision(ctx)
+            if it is not None and text_qc is None and not ctx.settings.dry_run:  # sans relecture possible : pas de texte
+                ctx.log("storyboard.texte_sans_relecture", level="warn", scene=scene.index, texte=it.text)
+                script, it = without_text(script, pos), None
+                dropped.append(scene.index)
+            scene_tries = max(tries, TEXT_TRIES + 1) if it else tries
+            text_failed = 0
+            for k in range(1 if it else n):  # un plan à texte : une image, vérifiée
                 chosen: Any = None
-                for attempt in range(tries):
+                for attempt in range(scene_tries):
+                    use_text = it is not None and text_failed < TEXT_TRIES
+                    if it is not None and not use_text:
+                        ctx.log("storyboard.texte_abandonne", level="warn", scene=scene.index, texte=it.text, essais=text_failed)
+                        script, it = without_text(script, pos), None
+                        dropped.append(scene.index)
+                    text_kw: dict[str, Any] = {"allowed_text": it.text} if it is not None and use_text else {}
                     label = f"Scène {shot} · image {k + 1}/{n}" + (f" · essai {attempt + 1}" if attempt else "")
                     ctx.progress(5 + int(85 * step_no / len(order)), label)
                     seed = random.randint(0, 2**31)
@@ -193,7 +217,7 @@ class StoryboardStep(Step):
                         size = (editor.width, editor.height)
                     elif sheets:  # drame : les fiches des personnages à l'image, citées <image1>… (docs/31 §8)
                         keys = [c for c in scene.characters if c in sheets][:CHARACTERS_MAX] if image.references else []
-                        prompt = drama_scene_prompt(script, pos, keys)
+                        prompt = with_image_text(drama_scene_prompt(script, pos, keys), it if text_kw else None)
                         image.generate(
                             prompt=prompt,
                             style_preset=prod["style_preset"],
@@ -201,17 +225,20 @@ class StoryboardStep(Step):
                             seed=seed,
                             dry_run=ctx.settings.dry_run,
                             refs=[sheets[c] for c in keys],
+                            **text_kw,
                         )
                         meta = {"candidate": k, "seed": seed, "prompt": prompt, "provider": image.name, "refs": keys}
                         size = (image.width, image.height)
                     else:
                         prompt = image_prompt(script, pos, recipe) if visual else scene.visual_prompt
+                        prompt = with_image_text(prompt, it if text_kw else None)
                         image.generate(
                             prompt=prompt,
                             style_preset=prod["style_preset"],
                             out_path=out,
                             seed=seed,
                             dry_run=ctx.settings.dry_run,
+                            **text_kw,
                         )
                         meta = {"candidate": k, "seed": seed, "prompt": prompt, "provider": image.name}
                         size = (image.width, image.height)
@@ -221,6 +248,11 @@ class StoryboardStep(Step):
                         verdict = self._check(ctx, qc, out, script, pos, recipe, source)
                     else:
                         verdict = self._check_continuity(ctx, qc, out, script, pos, pid)
+                    if text_kw and it is not None:  # le texte relu lettre à lettre, sans que le lecteur le connaisse
+                        reading = self._read_text(ctx, text_qc, out, it, scene.index)
+                        text_failed += 0 if reading.ok else 1
+                        verdict = merge(verdict, reading)
+                        meta["image_text"] = {"text": it.text, "ok": reading.ok, "problems": reading.problems}
                     if verdict is not None:
                         meta["qc"] = verdict.model_dump()
                     meta["gen_s"] = round(time.monotonic() - t0, 1)
@@ -245,6 +277,9 @@ class StoryboardStep(Step):
                 if k == 0 and chosen is not None:  # retenue : l'image acceptée, sinon le dernier essai
                     self._select(ctx, pid, scene.index, chosen, stoppable=bool(only))
 
+        if dropped:  # plans refaits sans leur texte : le clip et le montage ne doivent plus l'attendre
+            ctx.db.execute("update productions set script = %s where id = %s", (Jsonb(script.model_dump()), pid))
+            ctx.log("storyboard.textes_retires", scenes=sorted(set(dropped)))
         if editor and not ctx.settings.dry_run:  # les clips (Wan 14B) partiront d'une mémoire vide
             editor.client.free()
         sheet = self._sheet(ctx, pid, script, sdir)
@@ -353,7 +388,7 @@ class StoryboardStep(Step):
             ctx.progress(2 + int(3 * k / max(1, len(script.cast))), f"Fiche de {member.name}")
             seed = random.randint(0, 2**31)
             path = sdir / f"character_{member.key}_{seed}.png"
-            prompt = sheet_prompt(member)
+            prompt = sheet_prompt(member, style_preset)
             image.generate(prompt=prompt, style_preset=style_preset, out_path=path, seed=seed, dry_run=ctx.settings.dry_run)
             asset = ctx.db.add_asset(
                 production_id=pid,
@@ -395,6 +430,28 @@ class StoryboardStep(Step):
             (asset_id, pid, scene_index, ctx.job.id),
         ):
             raise cancel.JobCancelled("Refaire arrêté depuis Création : les images retenues restent")
+
+    @staticmethod
+    def _vision(ctx: Context) -> Any:
+        """Le modèle de vision qui relit les textes écrits dans l'image ; None s'il n'y en a pas."""
+        try:
+            return get_vision_llm(ctx.settings, ctx.db)
+        except Exception as exc:  # noqa: BLE001
+            ctx.log("storyboard.relecteur_indisponible", level="warn", erreur=str(exc)[:300])
+            return None
+
+    @staticmethod
+    def _read_text(ctx: Context, llm: Any, out: Path, it: Any, scene_index: int) -> KeyframeVerdict:
+        """Relecture du texte écrit dans l'image (image_text.check_image) ; une relecture impossible compte comme un
+        échec : un texte qu'on n'a pas pu relire ne part pas dans une vidéo."""
+        try:
+            verdict = check_image(llm, out, it)
+        except Exception as exc:  # noqa: BLE001
+            ctx.log("storyboard.relecture_impossible", level="warn", scene=scene_index, erreur=str(exc)[:300])
+            return KeyframeVerdict(ok=False, problems=["relecture du texte impossible"])
+        if not verdict.ok:
+            ctx.log("storyboard.texte_refuse", level="warn", scene=scene_index, texte=it.text, problemes=verdict.problems)
+        return verdict
 
     @staticmethod
     def _check(

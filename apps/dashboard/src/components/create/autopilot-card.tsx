@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { Bot, CircleCheck, CircleX, LoaderCircle, Square } from "lucide-react";
 
 import { startAutopilot, stopAutopilot } from "@/app/create/actions";
@@ -41,7 +40,6 @@ export function AutopilotCard({
   defaultSeries: string | null;
   status: AutopilotStatus;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [seriesSlug, setSeriesSlug] = React.useState(status.series ?? defaultSeries ?? "");
   const [target, setTarget] = React.useState(status.target || 3);
@@ -52,8 +50,7 @@ export function AutopilotCard({
 
   const run = (fn: () => Promise<{ ok: boolean; message: string }>) =>
     startTransition(async () => {
-      setNotice(await fn());
-      router.refresh();
+      setNotice(await fn()); // pas de router.refresh() : l'action appelle revalidatePath, sa réponse apporte déjà la page recalculée (docs/56)
     });
 
   return (

@@ -335,8 +335,7 @@ export function MontageEditor({ data }: { data: MontagePageData }) {
   const run = (fn: () => Promise<Notice>) =>
     startTransition(async () => {
       const res = await fn();
-      setNotice(res);
-      if (res?.ok) router.refresh();
+      setNotice(res); // pas de router.refresh() : l'action appelle revalidatePath, sa réponse apporte déjà la page recalculée (docs/56)
     });
 
   const save = () => {
@@ -370,7 +369,6 @@ export function MontageEditor({ data }: { data: MontagePageData }) {
       setCreated(res.id);
       setCurrentId(res.id);
       setNotice(res);
-      router.refresh();
     }
     return res;
   };
@@ -843,7 +841,6 @@ export function MontageEditor({ data }: { data: MontagePageData }) {
           onSubmit={async (name) => {
             const res = await renameMontageTemplate(current.id, name);
             setNotice(res);
-            if (res.ok) router.refresh();
             return res;
           }}
         />

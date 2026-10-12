@@ -14,25 +14,32 @@ import { z } from "zod";
 import type { ActionResult } from "@/app/production/actions";
 import { getGenerationCatalog } from "@/lib/generation-data";
 import { normalizeVoiceId } from "@/lib/generation-types";
-import { getRetouchState } from "@/lib/retouch";
-import { LEVEL_BOUNDS, type RetouchData, type RetouchInput, type RetouchState } from "@/lib/retouch-types";
+import { CLIP_VOICES, LEVEL_BOUNDS, type RetouchData, type RetouchInput } from "@/lib/retouch-types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const level = (key: keyof typeof LEVEL_BOUNDS) => z.number().min(LEVEL_BOUNDS[key][0]).max(LEVEL_BOUNDS[key][1]).optional();
 
 const inputSchema = z.object({
-  hookTitle: z.string().max(140).nullable(),
+  hookTitle: z.string().max(320).nullable(), // titre d'accroche (140 dans l'éditeur) ou citation (docs/58)
   hookDisplay: z.object({ durationS: z.number().min(1).max(3600).nullable() }).nullable(),
   subtitles: z.record(z.string().regex(/^\d{1,3}$/), z.string().max(800)),
   music: z.object({ track: z.string().min(1).max(120).nullable(), startS: z.number().min(0).max(3600).nullable() }).nullable(),
   audio: z.object({ voice_db: level("voice_db"), music_db: level("music_db"), duck_db: level("duck_db"), solo_db: level("solo_db"), sfx_db: level("sfx_db") }),
   voice: z.string().max(120).nullable(),
   acting: z.string().max(40).nullable(),
+  sfx: z.boolean().nullable(),
 });
 
 /** Espaces normales regroupées ; l'espace insécable d'un nombre (« 1 350 ») reste. */
 const tidy = (text: string) => text.replace(/[ \t\r\n]+/g, " ").trim();
+// Citation (docs/58) : ses retours à la ligne comptent (dernière ligne « — Auteur »)
+const tidyLines = (text: string) =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
 
 export async function retouchVideo(videoId: string, input: RetouchInput): Promise<ActionResult> {
   if (!UUID.test(videoId)) return { ok: false, message: "Vidéo inconnue" };
@@ -40,11 +47,11 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
   if (!parsed.success) return { ok: false, message: `Retouche refusée : ${parsed.error.issues[0]?.message ?? "valeurs invalides"}` };
   const r = parsed.data;
   const db = supabaseAdmin();
-  const { data: v, error } = await db.from("videos").select("lang, tts_provider, tts_voice, retouch").eq("id", videoId).maybeSingle();
+  const { data: v, error } = await db.from("videos").select("lang, format, tts_provider, tts_voice, retouch").eq("id", videoId).maybeSingle();
   if (error || !v) return { ok: false, message: error?.message ?? "Vidéo introuvable" };
 
   const retouch: RetouchData = {};
-  const hook = tidy(r.hookTitle ?? "");
+  const hook = tidyLines(r.hookTitle ?? "");
   if (hook) retouch.hook_title = hook;
   // titre éphémère (secondes, fondu compris) ou toute la vidéo ; absent : la durée du modèle de montage
   if (r.hookDisplay) retouch.hook_display = { duration_s: r.hookDisplay.durationS === null ? null : Math.round(r.hookDisplay.durationS * 10) / 10 };
@@ -70,7 +77,8 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
   // Voix des personnages rejouées (docs/41 §8) : chaque personnage garde sa voix, un autre moteur la joue (Gemini) ;
   // le jeu reste noté pour la vidéo, une nouvelle prise d'une réplique le reprend
   let actingRedo: string | null = null;
-  if (r.acting) {
+  const clipsWanted = r.acting === CLIP_VOICES; // drame : revenir aux voix des clips (docs/49 §11)
+  if (r.acting && !clipsWanted) {
     const entry = (await getGenerationCatalog()).acting.find((a) => a.id === r.acting);
     if (!entry) return { ok: false, message: "Jeu des voix inconnu du catalogue" };
     if (entry.missing.length) return { ok: false, message: `${entry.label} n’est pas installé (${entry.missing.join(", ")})` };
@@ -82,16 +90,36 @@ export async function retouchVideo(videoId: string, input: RetouchInput): Promis
   // consignes données plan par plan (onglet Plans, SQL redo_plan) : l'historique reste
   const plans = (v.retouch as { plans?: unknown } | null)?.plans;
   if (plans && typeof plans === "object" && !Array.isArray(plans)) retouch.plans = plans as RetouchData["plans"];
+  // consignes en cours d'écriture et prises de voix à juger (onglet Plans, docs/49 §7) : elles restent
+  for (const key of ["drafts", "takes", "lines"] as const) {
+    const kept = (v.retouch as Record<string, unknown> | null)?.[key];
+    if (kept && typeof kept === "object" && !Array.isArray(kept)) (retouch as Record<string, unknown>)[key] = kept;
+  }
+  // bruitages (case « Bruitages ») : null = ceux du format ; plans au son coupé (onglet Plans) : ils restent
+  if (r.sfx !== null) retouch.sfx = r.sfx;
+  const muted = (v.retouch as { muted?: unknown } | null)?.muted;
+  if (Array.isArray(muted) && muted.length) retouch.muted = muted.filter((i): i is number => Number.isInteger(i));
 
   // « acting:gemini » : l'étape voix refait les voix des personnages avec ce jeu (même voix par personnage)
   const voiceJob = actingRedo ? `acting:${actingRedo}` : redo;
-  const { error: rpcError } = await db.rpc("retouch_video", { p_video: videoId, p_retouch: retouch, p_voice: voiceJob });
-  if (rpcError) return { ok: false, message: rpcError.message };
+  // Drame : passer des voix des clips aux voix de synthèse, ou l'inverse, change le format de la vidéo (SQL set_drama_voices)
+  const toClips = clipsWanted && v.format !== "B_visual";
+  const toSynth = Boolean(actingRedo) && v.format === "B_visual";
+  const { error: rpcError } =
+    toClips || toSynth
+      ? await db.rpc("set_drama_voices", { p_video: videoId, p_clips: toClips, p_voice: toSynth ? voiceJob : null, p_retouch: retouch })
+      : await db.rpc("retouch_video", { p_video: videoId, p_retouch: retouch, p_voice: clipsWanted ? null : voiceJob });
+  if (rpcError) {
+    const missing = /set_drama_voices/.test(rpcError.message) && /(does not exist|could not find)/i.test(rpcError.message);
+    return { ok: false, message: missing ? "Migration 0045 à appliquer (supabase/migrations/0045_drames_voix_des_clips.sql)" : rpcError.message };
+  }
   revalidatePath("/library");
   revalidatePath(`/library/${videoId}/retouche`);
   return {
     ok: true,
-    message: actingRedo
+    message: toClips
+      ? "Retour aux voix des clips (MiniMax H3), puis montage et contrôle : une minute environ"
+      : actingRedo
       ? "Voix refaites (chaque personnage garde la sienne), puis montage calé sur les lèvres et contrôle : quelques minutes"
       : redo
         ? "Nouvelle voix, puis montage et contrôle : quelques minutes (la voix passe sur la carte graphique après la tâche en cours)"
@@ -130,9 +158,100 @@ export async function redoPlan(videoId: string, input: { scene: number; clip: bo
   };
 }
 
-export async function fetchRetouchState(videoId: string): Promise<RetouchState | null> {
-  if (!UUID.test(videoId)) return null;
-  return getRetouchState(videoId);
+const missing0038 = (message: string) =>
+  /(save_plan_note|keep_take|retake_voices|apply_takes)/.test(message) && /(does not exist|could not find)/i.test(message)
+    ? "Migration 0038 à appliquer (supabase/migrations/0038_prises_de_voix_par_lot.sql)"
+    : message;
+
+/** Consigne d'un plan, enregistrée pendant qu'elle s'écrit (Retoucher → Plans, docs/49 §7). */
+export async function savePlanNote(videoId: string, scene: number, note: string): Promise<ActionResult> {
+  if (!UUID.test(videoId) || !Number.isInteger(scene) || scene < 0 || scene > 999) return { ok: false, message: "Plan inconnu" };
+  const { error } = await supabaseAdmin().rpc("save_plan_note", { p_video: videoId, p_scene: scene, p_note: tidy(note).slice(0, 600) });
+  return error ? { ok: false, message: missing0038(error.message) } : { ok: true, message: "Consigne enregistrée" };
+}
+
+/** Prise validée (true), refusée (false : sa consigne se rouvre) ou de nouveau à écouter (null). */
+export async function keepTake(videoId: string, scene: number, keep: boolean | null): Promise<ActionResult> {
+  if (!UUID.test(videoId) || !Number.isInteger(scene) || scene < 0 || scene > 999) return { ok: false, message: "Plan inconnu" };
+  const { error } = await supabaseAdmin().rpc("keep_take", { p_video: videoId, p_scene: scene, p_keep: keep });
+  if (error) return { ok: false, message: missing0038(error.message) };
+  revalidatePath(`/library/${videoId}/retouche`);
+  return { ok: true, message: keep === true ? "Prise validée" : keep === false ? "Prise refusée : donne une nouvelle consigne" : "Prise à réécouter" };
+}
+
+/** Nouvelles prises de voix de tous les plans qui ont une consigne (et des prises refusées), en un seul lot ; la vidéo
+ * ne change pas tant que les prises ne sont pas validées. */
+export async function retakeVoices(videoId: string): Promise<ActionResult> {
+  if (!UUID.test(videoId)) return { ok: false, message: "Vidéo inconnue" };
+  const { error } = await supabaseAdmin().rpc("retake_voices", { p_video: videoId });
+  if (error) return { ok: false, message: missing0038(error.message) };
+  revalidatePath(`/library/${videoId}/retouche`);
+  return { ok: true, message: "Prises de voix en file : chaque réplique est redite puis réécoutée, ≈ 1 min par plan" };
+}
+
+/** La voix que le modèle vidéo a donnée au plan dans son clip brut, reprise comme une prise à écouter puis valider
+ * (worker/takes.py : clip_takes) ; la vidéo ne change pas tant que la prise n'est pas posée. */
+export async function takeClipVoice(videoId: string, scene: number): Promise<ActionResult> {
+  if (!UUID.test(videoId) || !Number.isInteger(scene) || scene < 0 || scene > 999) return { ok: false, message: "Plan inconnu" };
+  const db = supabaseAdmin();
+  const { data: v, error } = await db.from("videos").select("production_id, final_asset_id, archived_at").eq("id", videoId).maybeSingle();
+  if (error || !v) return { ok: false, message: error?.message ?? "Vidéo introuvable" };
+  if (v.archived_at) return { ok: false, message: "Ancienne version déjà remplacée : reprends la voix sur la vidéo refaite" };
+  if (!v.production_id || !v.final_asset_id) return { ok: false, message: "Vidéo pas encore montée" };
+  const busy = await db
+    .from("jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("video_id", videoId)
+    .in("status", ["queued", "running"])
+    .in("type", ["generate_clip", "tts", "assemble", "qa", "upload"]);
+  if (busy.count) return { ok: false, message: "Une voix, un clip, un montage ou un envoi est déjà en cours pour cette vidéo" };
+  const { error: insertError } = await db.from("jobs").insert({
+    type: "tts",
+    video_id: videoId,
+    production_id: v.production_id,
+    priority: 20,
+    max_attempts: 2,
+    payload: { clip_takes: [scene], retouch: true },
+  });
+  if (insertError) return { ok: false, message: insertError.message };
+  revalidatePath(`/library/${videoId}/retouche`);
+  return { ok: true, message: "Voix du clip en préparation : elle arrive comme une prise à écouter (≈ 1 min, suivi dans Tâches)" };
+}
+
+/** Rendu complet avec toutes les prises validées : piste des répliques, un montage calé sur les lèvres, le contrôle. */
+export async function applyTakes(videoId: string): Promise<ActionResult> {
+  if (!UUID.test(videoId)) return { ok: false, message: "Vidéo inconnue" };
+  const { error } = await supabaseAdmin().rpc("apply_takes", { p_video: videoId });
+  if (error) return { ok: false, message: missing0038(error.message) };
+  revalidatePath("/library");
+  revalidatePath(`/library/${videoId}/retouche`);
+  return { ok: true, message: "Prises validées posées, puis montage et contrôle : quelques minutes" };
+}
+
+/** Coupe le son du clip des plans choisis (Retoucher → Plans, docs/49 §13) — ni ambiance ni bruitage, la réplique d'un
+ * plan parlé restant, isolée par Demucs —, rend le son aux autres, puis refait la vidéo (SQL retouch_video, sans voix).
+ * `scenes` : index des plans à couper, la liste complète voulue. */
+export async function muteClips(videoId: string, scenes: number[]): Promise<ActionResult> {
+  if (!UUID.test(videoId)) return { ok: false, message: "Vidéo inconnue" };
+  const parsed = z.array(z.number().int().min(0).max(999)).max(200).safeParse(scenes);
+  if (!parsed.success) return { ok: false, message: "Plans invalides" };
+  const db = supabaseAdmin();
+  const { data: v, error } = await db.from("videos").select("retouch").eq("id", videoId).maybeSingle();
+  if (error || !v) return { ok: false, message: error?.message ?? "Vidéo introuvable" };
+  const muted = [...new Set(parsed.data)].sort((a, b) => a - b);
+  const retouch: RetouchData = { ...((v.retouch ?? {}) as RetouchData) };
+  if (muted.length) retouch.muted = muted;
+  else delete retouch.muted;
+  const { error: rpcError } = await db.rpc("retouch_video", { p_video: videoId, p_retouch: retouch, p_voice: null });
+  if (rpcError) return { ok: false, message: rpcError.message };
+  revalidatePath("/library");
+  revalidatePath(`/library/${videoId}/retouche`);
+  return {
+    ok: true,
+    message: muted.length
+      ? `Son coupé sur ${muted.length} plan${muted.length > 1 ? "s" : ""}, puis montage et contrôle : une à deux minutes (voix isolée sur les plans parlés)`
+      : "Son des clips rendu à tous les plans, puis montage et contrôle : une minute environ",
+  };
 }
 
 // ---- Nombres en chiffres : la fonction du worker (worker/numbers.py), dans son environnement Python --------------------

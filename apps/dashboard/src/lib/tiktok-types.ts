@@ -24,9 +24,20 @@ export interface TikTokSettings {
   allow_stitch: boolean;
   /** Étiquette « contenu généré par IA » de TikTok : coupée par défaut (choix de Luca le 29/09). */
   ai_label: boolean;
+  /** Musique de TikTok à la publication (docs/58 §4) : recettes dont les vidéos sans voix la prennent à la place de la nôtre. */
+  platform_music: { recipes: string[]; volume: number; country: string };
 }
 
-export const DEFAULT_TIKTOK: TikTokSettings = { channels: {}, allow_comment: true, allow_duet: true, allow_stitch: true, ai_label: false };
+export const DEFAULT_PLATFORM_MUSIC: TikTokSettings["platform_music"] = { recipes: ["quote"], volume: 60, country: "FR" };
+
+export const DEFAULT_TIKTOK: TikTokSettings = {
+  channels: {},
+  allow_comment: true,
+  allow_duet: true,
+  allow_stitch: true,
+  ai_label: false,
+  platform_music: DEFAULT_PLATFORM_MUSIC,
+};
 
 export interface TikTokAccount {
   id: string;
@@ -131,6 +142,17 @@ export function parseTikTokSettings(raw: unknown): TikTokSettings {
     allow_duet: bool(v.allow_duet, DEFAULT_TIKTOK.allow_duet),
     allow_stitch: bool(v.allow_stitch, DEFAULT_TIKTOK.allow_stitch),
     ai_label: bool(v.ai_label, DEFAULT_TIKTOK.ai_label),
+    platform_music: parsePlatformMusic(v.platform_music),
+  };
+}
+
+function parsePlatformMusic(raw: unknown): TikTokSettings["platform_music"] {
+  if (!raw || typeof raw !== "object") return DEFAULT_PLATFORM_MUSIC;
+  const m = raw as Record<string, unknown>;
+  return {
+    recipes: Array.isArray(m.recipes) ? m.recipes.map(String) : DEFAULT_PLATFORM_MUSIC.recipes,
+    volume: typeof m.volume === "number" ? m.volume : DEFAULT_PLATFORM_MUSIC.volume,
+    country: str(m.country) ?? DEFAULT_PLATFORM_MUSIC.country,
   };
 }
 

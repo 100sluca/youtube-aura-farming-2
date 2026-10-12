@@ -15,6 +15,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from ..arcs import part_title
 from ..drama import speaker_line
 from ..lessons import lessons_text
 from ..models import ScriptV1, SeoPack
@@ -37,8 +38,8 @@ class SeoStep(Step):
         vid = ctx.job.video_id
         v = ctx.db.fetch_one(
             """select v.id, v.lang, v.seo, v.channel_id, c.slug, c.name as channel_name, p.script,
-                      co.title as concept_title, co.hook, co.category, co.premise, co.sources,
-                      s.name as series_name, s.brief as series_brief, coalesce(s.recipe, 'story') as recipe
+                      co.title as concept_title, co.hook, co.category, co.premise, co.sources, co.facts,
+                      s.name as series_name, s.brief as series_brief, coalesce(s.recipe, 'story') as recipe, p.arc_part
                from videos v join channels c on c.id = v.channel_id
                join productions p on p.id = v.production_id
                left join concepts co on co.id = p.concept_id
@@ -98,8 +99,14 @@ class SeoStep(Step):
         system = prompt_text(ctx.db, "seo", DEFAULT_PROMPT)  # version active (onglet Agents, worker/prompts.py)
         pack = get_llm(ctx.settings, ctx.db).complete_json(system, user, SeoPack)
         title, description, tags = finalize(
-            pack, sources=v.get("sources") or [], lang=lang, ai_note=visual, map_credit=any(s.is_map for s in script.scenes)
+            pack,
+            sources=v.get("sources") or [],
+            lang=lang,
+            ai_note=visual,
+            map_credit=any(s.is_map for s in script.scenes),
+            work=quote_work(v.get("sources") or [], v.get("facts") or []),
         )
+        title = part_title(title, v.get("arc_part"))  # mini-série : « Partie 2 : … » (docs/52)
         ctx.db.execute(
             "update videos set title = %s, description = %s, tags = %s, seo = %s where id = %s",
             (title, description, tags, Jsonb(pack.model_dump()), vid),
@@ -172,8 +179,21 @@ def truncate_bytes(s: str, max_bytes: int) -> str:
     return b[:max_bytes].decode("utf-8", errors="ignore").rstrip()
 
 
-def attribution(sources: list[dict[str, Any]], lang: str) -> str:
-    """Mention des pages Wikipédia utilisées (textes sous CC BY-SA 4.0), ajoutée en fin de description."""
+def quote_work(sources: list[dict[str, Any]], facts: list[dict[str, Any]]) -> str:
+    """Œuvre d'une citation d'auteur (wikiquote.Quote.facts : [citation, source]) ; vide sinon."""
+    if sources and (sources[0] or {}).get("kind") == "wikiquote" and len(facts) > 1:
+        return str(facts[1].get("claim") or "")[:160]
+    return ""
+
+
+def attribution(sources: list[dict[str, Any]], lang: str, work: str = "") -> str:
+    """Mention des pages Wikipédia utilisées (textes sous CC BY-SA 4.0), ajoutée en fin de description. Citation
+    d'auteur (Wikiquote, docs/70) : l'auteur, l'œuvre (`work`, concepts.facts[1]) et la page Wikiquote."""
+    quoted = [s for s in sources if s.get("kind") == "wikiquote" and s.get("url")]
+    if quoted:
+        s = quoted[0]
+        label = "Citation" if lang == "fr" else "Quote"
+        return f"{label} : {s.get('title')}" + (f", {work}" if work else "") + f"\nWikiquote (CC BY-SA 4.0) — {s.get('url')}"
     label = "Sources (Wikipédia, CC BY-SA 4.0) :" if lang == "fr" else "Sources (Wikipedia, CC BY-SA 4.0):"
     lines = [f"- {s.get('title')} — {s.get('url')}" for s in sources[:6] if s.get("url")]
     return label + "\n" + "\n".join(lines) if lines else ""
@@ -196,6 +216,7 @@ def finalize(
     lang: str = "fr",
     ai_note: bool = False,
     map_credit: bool = False,
+    work: str = "",
 ) -> tuple[str, str, list[str]]:
     title = pick_title(pack)
     hashtags = normalize_hashtags(pack.hashtags)
@@ -203,7 +224,7 @@ def finalize(
     missing = [h for h in hashtags if h.lower() not in description.lower()]
     if missing:
         description = f"{description}\n\n{' '.join(missing)}"
-    credit = attribution(sources or [], lang)
+    credit = attribution(sources or [], lang, work)
     if credit:
         description = f"{description}\n\n{credit}"
     if ai_note:  # formats visuels photoréalistes : jamais pris pour une vraie annonce ou un vrai chantier (docs/15 §6)

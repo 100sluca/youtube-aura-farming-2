@@ -14,7 +14,7 @@ SceneRole = Literal["hook", "setup", "reveal", "escalation", "payoff", "loop"]
 # Recette de fabrication (series.recipe, worker/recipes.py) : story = récit narré (défaut) ; timelapse = chantier
 # en accéléré (images clés retouchées en chaîne, première → dernière image) ; tour = visite de maison de luxe ;
 # drama = histoire en dialogues (personnages constants d'après leur fiche, répliques dites par le modèle vidéo, docs/35).
-Recipe = Literal["story", "timelapse", "tour", "drama"]
+Recipe = Literal["story", "timelapse", "tour", "drama", "quote"]
 # Animation d'une scène : i2v = depuis son image clé ; flf = de son image clé à celle de la scène suivante
 # (première + dernière image, Wan 2.2 14B), l'étape du chantier se construit sous les yeux.
 ClipMode = Literal["i2v", "flf"]
@@ -45,6 +45,13 @@ JobType = Literal[
     "sync_tiktok",  # statistiques TikTok par Zernio (migration 0025, docs/39)
     "instagram_publish",  # Reels Instagram par Zernio (migration 0035, docs/48)
     "paf_publish",  # « Paf, j'achète » : la vidéo du vendredi (migration 0038, docs/50)
+    "rewrite",  # récit ou accroche réécrits depuis Retoucher → Récit (migration 0043, docs/53)
+    "sync_instagram",  # statistiques Instagram par Zernio, deux comptes (migration 0051, docs/62)
+    "research",  # page Recherche : relevé des niches, Gemini regarde, reproduire, stratège (migration 0049, docs/60)
+    # vidéos longues narrées par Luca (migration 0053, docs/63) : écriture et publication, fabrication, prise vérifiée
+    "long_write",
+    "long_make",
+    "long_take",
 ]
 
 
@@ -134,11 +141,22 @@ def _keys(value: Any) -> Any:
 CastKeys = Annotated[list[str], BeforeValidator(_keys)]
 
 
+class ImageText(BaseModel):
+    """Texte écrit DANS l'image par le générateur (docs/57 §5, règle de Luca du 02/10) : seulement quand il porte
+    l'enjeu et que l'image ne se comprend pas sans lui (« PRIX : 1 € » sur la grille, « 100 MILLIARDS » au-dessus d'une
+    tête). Vérifié lettre à lettre à l'image puis au clip (worker/image_text.py) ; le texte du montage, lui, reste
+    on_screen_text."""
+
+    text: str  # TOUT ce qui est écrit sur le support (plusieurs lignes possibles), langue de la vidéo, chiffres, 4 mots au plus
+    on: str = ""  # le support, en anglais (« a weathered wooden sign hanging on the iron gate »)
+
+
 class ScriptScene(BaseModel):
     index: int
     role: SceneRole | None = None  # rôle narratif de la scène, vérifié par lint_script()
-    # 1 s au moins : une étape de chantier en accéléré ne dure qu'une seconde et demie (docs/15 §10)
-    duration_s: float = Field(ge=1, le=8)
+    # 1 s au moins : une étape de chantier en accéléré ne dure qu'une seconde et demie (docs/15 §10) ; 15 s au plus : la
+    # scène unique d'une citation (docs/58), les autres recettes bornent leurs scènes elles-mêmes (RecipeSpec.scene_s)
+    duration_s: float = Field(ge=1, le=15)
     # True : le clip part de la dernière image du clip précédent (même lieu, action qui continue) ;
     # False : coupe, le clip part de sa propre image de storyboard. Voir CLIP_CONTINUITY (config.py).
     continues_previous: bool = False
@@ -165,12 +183,18 @@ class ScriptScene(BaseModel):
     # Passage d'une pièce à la suivante, inséré par le code (recipes.normalize_script) : pas d'image clé, le clip part
     # de l'image où s'arrête la pièce précédente et finit sur l'image clé de la suivante (première + dernière image)
     passage: bool = False
+    # Chantier « lieu insolite » (docs/51) : plan large d'une étape (« wide », dehors ou dedans selon interior) ou gros
+    # plan des mains au travail (« insert », image générée hors de la chaîne des retouches). Absent : chantier d'une
+    # seule vue (pièce ou bâtiment, avant le 01/10)
+    shot: Literal["wide", "insert"] | None = None
     # Récits : scène carte (lieu réel situé depuis l'espace), rendue par le code au lieu de l'image et du clip d'IA
     map: MapSpec | None = None
     # Drame (docs/35) : personnages à l'image (clés du cast, 3 au plus : leurs fiches servent de références à l'image) et
     # la réplique du plan (celle qu'un seul personnage dit, le modèle vidéo la fait parler)
     characters: CastKeys = Field(default_factory=list)
     lines: list[DialogueLine] = Field(default_factory=list)
+    # Texte écrit dans l'image par le générateur (plan sans réplique, 2 par vidéo au plus) ; absent = aucun texte écrit
+    image_text: ImageText | None = None
 
     @property
     def is_map(self) -> bool:
@@ -221,6 +245,7 @@ class Shot(BaseModel):
     on_screen_text: LangText = Field(default_factory=dict)
     continues_previous: bool = False
     map: MapSpec | None = None
+    image_text: ImageText | None = None  # texte écrit dans l'image, s'il le faut (docs/57 §5)
     # La narration de la scène dans les AUTRES langues demandées (traduction) ; celle de la langue du récit est reprise
     # telle quelle par le code
     narration: LangText = Field(default_factory=dict)
@@ -246,8 +271,10 @@ class ShotList(BaseModel):
 
 class ScriptV1(BaseModel):
     version: Literal[1] = 1
-    # 24 au plus : une visite de 9 pièces compte aussi ses 8 passages (recipes.normalize_script)
-    scenes: list[ScriptScene] = Field(min_length=4, max_length=24)
+    # 30 au plus : une visite de 9 pièces compte aussi ses 8 passages (recipes.normalize_script), un chantier de lieu
+    # insolite 20 à 26 plans (docs/51) ; 1 au moins : une citation n'a qu'une scène (docs/58), chaque recette vérifie
+    # son nombre de scènes (lint_recipe_script, lint_script)
+    scenes: list[ScriptScene] = Field(min_length=1, max_length=30)
     loop_note: str | None = None
     metadata: dict[Lang, LangMetadata]
     # Ambiance musicale choisie par l'agent script : nom d'un sous-dossier de DATA_DIR/music
@@ -298,6 +325,7 @@ class SceneDraft(BaseModel):
     map: MapSpec | None = None  # récit : scène carte, s'il n'y en a pas d'autre
     characters: CastKeys = Field(default_factory=list)  # drame : personnages à l'image
     lines: list[DialogueLine] = Field(default_factory=list)  # drame : la réplique du plan
+    image_text: ImageText | None = None  # texte écrit dans l'image, s'il le faut (docs/57 §5)
 
 
 class SceneRewrite(BaseModel):

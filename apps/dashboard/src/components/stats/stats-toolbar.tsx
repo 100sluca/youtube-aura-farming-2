@@ -2,10 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { CircleCheck, CircleX, RefreshCw } from "lucide-react";
 
-import { refreshStats, refreshTikTokStats } from "@/app/dashboard/actions";
+import { refreshInstagramStats, refreshStats, refreshTikTokStats } from "@/app/dashboard/actions";
 import type { ActionResult } from "@/app/production/actions";
 import { dashboardHref, type StatsPlatform } from "@/components/stats/platform-tabs";
 import { Button } from "@/components/ui/button";
@@ -24,6 +23,7 @@ export function StatsToolbar({
   connected,
   platform = "youtube",
   account = null,
+  channel = null,
 }: {
   period: StatsPeriod;
   syncActive: boolean;
@@ -32,10 +32,11 @@ export function StatsToolbar({
   lastError: string | null;
   connected: boolean;
   platform?: StatsPlatform;
-  /** Onglet TikTok : compte choisi (?compte=). */
+  /** Onglets TikTok et Instagram : compte choisi (?compte=). */
   account?: string | null;
+  /** Onglet YouTube : chaîne choisie dans le haut du Dashboard (?chaine=, docs/62). */
+  channel?: string | null;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [notice, setNotice] = React.useState<ActionResult | null>(null);
   const busy = pending || syncActive;
@@ -55,7 +56,7 @@ export function StatsToolbar({
           {STATS_PERIODS.map((p) => (
             <Link
               key={p.id}
-              href={dashboardHref(platform, p.id, { compte: account })}
+              href={dashboardHref(platform, p.id, { compte: account, chaine: channel })}
               scroll={false}
               aria-current={period === p.id ? "page" : undefined}
               className={cn(
@@ -73,9 +74,8 @@ export function StatsToolbar({
           disabled={busy || !connected}
           onClick={() =>
             startTransition(async () => {
-              const res = platform === "tiktok" ? await refreshTikTokStats() : await refreshStats();
+              const res = platform === "tiktok" ? await refreshTikTokStats() : platform === "instagram" ? await refreshInstagramStats() : await refreshStats();
               setNotice(res);
-              router.refresh();
             })
           }
         >
@@ -87,7 +87,9 @@ export function StatsToolbar({
         {!connected
           ? platform === "tiktok"
             ? "Aucun compte TikTok relié"
-            : "Aucune chaîne connectée à YouTube"
+            : platform === "instagram"
+              ? "Aucun compte Instagram relevé"
+              : "Aucune chaîne connectée à YouTube"
           : countersAt
             ? `Compteurs relevés ${formatRelative(countersAt)} · automatiquement chaque heure`
             : "Compteurs jamais relevés : clique « Actualiser »"}

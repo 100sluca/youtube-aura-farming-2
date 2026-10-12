@@ -78,7 +78,7 @@ def tick(db: Any, settings: Any = None) -> str:
                    or exists (select 1 from jobs j where j.status in ('queued', 'running')
                               and (j.production_id = p.id
                                    or j.video_id in (select v.id from videos v where v.production_id = p.id)))) as busy
-           from productions p where p.autopilot and p.created_at >= %s""",
+           from productions p where p.autopilot and coalesce(p.arc_part, 1) = 1 and p.created_at >= %s""",
         (since,),
     )
     ready = [r for r in rows if r["status"] == "ready"]

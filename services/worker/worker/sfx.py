@@ -92,6 +92,41 @@ TAGS: dict[str, SfxTag] = {
     "curtains": _hit("motorized curtains sliding open", "rideaux qui s'ouvrent", 0.6, 4.0),
     "glass_clink": _hit("two champagne glasses clinking", "verres", 0.6, 2.0),
     "splash": _hit("person diving into a swimming pool, big splash", "plongeon", 0.6, 3.0),
+    # Drames (docs/49 §10) : sous les plans sans réplique, et discrets sous les répliques
+    "cafeteria": _bed(
+        "busy school cafeteria ambience, children chatting indistinctly, cutlery and plates clinking, trays", "cantine", 0.45
+    ),
+    "whispers": _bed(
+        "several children whispering and murmuring indistinctly with a mocking tone, small giggles, close",
+        "chuchotements, moqueries",
+        0.45,
+    ),
+    "classroom": _bed(
+        "quiet classroom ambience, chairs creaking, pencils writing, pages turning, faint murmurs", "salle de classe", 0.35, 20.0
+    ),
+    "school_hallway": _bed(
+        "busy school hallway, footsteps, lockers closing, distant teenage voices unintelligible", "couloir d'école", 0.35, 20.0
+    ),
+    "cutlery": _bed("forks and knives scraping on plates, people eating, close", "couverts, assiettes", 0.4, 8.0),
+    "crowd_murmur": _bed("small crowd murmuring in shock indoors, indistinct voices", "murmure de foule", 0.4),
+    "laughter": _hit("group of teenagers laughing mockingly, short burst", "rires moqueurs", 0.55, 3.0),
+    "gasp": _hit("several people gasping in shock at the same time", "stupeur (souffle coupé)", 0.55, 2.0),
+    "school_bell": _hit("school bell ringing in a hallway", "sonnerie d'école", 0.45, 3.0),
+    "bag_rummage": _hit(
+        "backpack zipper opening and hands rummaging inside a school bag, close foley",
+        "sac qu'on ouvre, qu'on fouille",
+        0.75,
+        3.0,
+    ),
+    "cloth_rustle": _hit(
+        "clothes rustling, sleeve brushing, discreet movement, close foley", "frottement de vêtements", 0.6, 2.0
+    ),
+    "small_metal": _hit(
+        "small metal object handled, wristwatch clasp clicking, keys", "petit objet en métal (montre, clés)", 0.6, 2.0
+    ),
+    "door_slam": _hit("door slamming shut in a school corridor", "porte qui claque", 0.65, 2.0),
+    "running": _hit("child running footsteps on a tiled floor", "pas de course", 0.55, 3.0),
+    "heartbeat": _hit("slow tense heartbeat, cinematic, low", "cœur qui bat (tension)", 0.5, 4.0),
 }
 ALIASES = {
     "digger": "excavator",
@@ -109,6 +144,16 @@ ALIASES = {
     "door": "door_open",
     "boom": "impact",
     "sparkle": "shimmer",
+    "canteen": "cafeteria",
+    "whisper": "whispers",
+    "laugh": "laughter",
+    "laughing": "laughter",
+    "zipper": "bag_rummage",
+    "bag": "bag_rummage",
+    "rustle": "cloth_rustle",
+    "watch": "small_metal",
+    "hallway": "school_hallway",
+    "bell": "school_bell",
     "swoosh": "whoosh",
     "transition": "whoosh",
 }
@@ -157,6 +202,7 @@ class SfxCue:
     volume: float
     loop: bool  # bouclé pour couvrir la durée (fond)
     fade: float = FADE_S
+    offset: float = 0.0  # départ dans le fichier (son d'un clip dont le début est coupé par le calage, docs/49 §10)
 
 
 def plan_cues(

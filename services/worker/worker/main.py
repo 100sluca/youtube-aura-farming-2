@@ -113,9 +113,10 @@ def preview_lane(
             busy.clear()
 
 
-# « Actualiser » et « Analyser maintenant » du Dashboard (docs/25), « Actualiser » de l'onglet TikTok (docs/39) : pris dans
-# la seconde par leur propre fil (la voie io les prend aussi ; claim_jobs ne donne un job qu'une fois)
-STATS_TYPES = ("sync_metrics", "analyze", "sync_tiktok")
+# « Actualiser » et « Analyser maintenant » du Dashboard (docs/25), « Actualiser » de l'onglet TikTok (docs/39), boutons de
+# la page Recherche (docs/60) : pris dans la seconde par leur propre fil (la voie io les prend aussi ; claim_jobs ne donne
+# un job qu'une fois)
+STATS_TYPES = ("sync_metrics", "analyze", "sync_tiktok", "sync_instagram", "research")
 
 RESTART_CODE = 3  # sortie de l'enfant quand son code a changé : le superviseur le relance
 CODE_CHECK_S = 30.0  # intervalle de vérification du code source

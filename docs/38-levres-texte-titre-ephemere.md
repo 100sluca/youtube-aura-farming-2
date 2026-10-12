@@ -84,6 +84,10 @@ La voix finissait souvent avant que la bouche ne s'ouvre, et H3 parle plus lente
 
 ## 2. Aucun texte écrit par les générateurs
 
+> **Assoupli le 02/10 (docs/57 §6)** : un texte écrit par le générateur est permis quand il porte l'enjeu et qu'il est
+> réalisé de bout en bout (2 plans sans réplique au plus, mots exacts relus lettre à lettre à l'image puis au clip,
+> plan fixe de secours). Partout ailleurs, la règle ci-dessous reste : aucun texte.
+
 ### Ce qui n'allait pas
 
 Sur « Mamie Pomme », H3 a écrit la réplique à l'image, comme un sous-titre, en plus des nôtres : « Mais… je suis ta

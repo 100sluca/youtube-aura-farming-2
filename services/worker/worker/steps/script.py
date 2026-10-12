@@ -30,6 +30,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
+from .. import arcs, quotes, scenario
 from ..dag import enqueue_render_dag
 from ..drama import character_voices, voices_brief
 from ..lessons import lessons_text
@@ -40,7 +41,16 @@ from ..prompts import active_prompt, prompt_text
 from ..providers.llm import LLM, FallbackLLM, get_llm
 from ..providers.tts import tts_catalog
 from ..providers.video import WorkflowError, get_video_provider
-from ..recipes import HOOK_RULES, SCRIPT_PROMPTS, has_prompt, lint_recipe_script, montage_format, normalize_script, script_context
+from ..recipes import (
+    HOOK_RULES,
+    SCRIPT_PROMPTS,
+    has_prompt,
+    lint_recipe_script,
+    montage_format,
+    normalize_script,
+    prompt_key,
+    script_context,
+)
 from ..series import Series, series_of_concept
 from ..settings_store import load_generation_config
 from ..sources.wikipedia import source_dossier
@@ -91,8 +101,10 @@ class ScriptStep(Step):
     def run(self, ctx: Context) -> dict[str, Any]:
         pid = ctx.job.production_id
         assert pid, "script: production_id requis"
+        # to_jsonb : colonne scenario absente sans la migration 0048 (null, rien ne change)
         prod = ctx.db.fetch_one(
-            """select p.*, c.title, c.hook, c.premise, c.visual_beats, c.category, c.angle, c.facts, c.sources
+            """select p.*, c.title, c.hook, c.premise, c.visual_beats, c.category, c.angle, c.facts, c.sources,
+                      to_jsonb(c) -> 'scenario' as scenario
                from productions p left join concepts c on c.id = p.concept_id where p.id = %s""",
             (pid,),
         )
@@ -136,6 +148,8 @@ class ScriptStep(Step):
     def _write(self, ctx: Context, prod: dict[str, Any], langs: list[str]) -> tuple[ScriptV1, list[str], UUID | None]:
         """Prompts système et consignes : versions actives en base (onglet Agents du dashboard, worker/prompts.py)."""
         series = series_of_concept(ctx.db, prod["concept_id"]) if prod.get("concept_id") else None
+        if prod.get("scenario"):  # un scénario de Luca (docs/59) : son équipe le met en forme, puis tout suit le drame
+            return self._write_scenario(ctx, prod, langs, series)
         if series and has_prompt(series.recipe):  # formats visuels et drame : leur propre scénariste
             return self._write_recipe(ctx, prod, langs, series)
         return self._write_story(ctx, prod, langs, series)
@@ -395,13 +409,19 @@ class ScriptStep(Step):
         voices = (
             voices_brief(character_voices(tts_catalog(ctx.settings), langs[0] if langs else "fr")) if recipe == "drama" else ""
         )
+        # Drame : une mini-série en plusieurs parties (docs/52) ; le plan de l'histoire entière, écrit avant la partie 1
+        arc = self._arc(ctx, prod, series) if recipe == "drama" else None
+        part = int(prod.get("arc_part") or 1)
+        previous = arcs.previous_scripts(ctx.db, arc[0], part) if arc else []
         user = "\n\n".join(
             part
             for part in (
                 f"SÉRIE : {series.name}\nBrief : {series.brief}",
+                arcs.part_brief(arc[1], part, previous) if arc else "",
                 self._music_brief(ctx, montage_format(recipe), series),  # un drame a les musiques des récits
                 f"CONCEPT : {prod['title']}\nAccroche : {prod['hook']}\nAngle : {prod.get('angle') or '—'}\n"
                 f"Prémisse : {prod['premise']}\nCatégorie : {prod['category']}\nTemps visuels : {prod['visual_beats']}",
+                quotes.author_brief(prod) if recipe == quotes.RECIPE else "",
                 f"Durée cible : {target} s · Style visuel : {prod['style_preset']} · Langues (hook_title, on_screen_text, "
                 f"metadata{', répliques' if recipe == 'drama' else ''}) : {langs}",
                 voices,
@@ -414,7 +434,8 @@ class ScriptStep(Step):
             )
             if part
         )
-        system, tpl_id = active_prompt(ctx.db, f"script_{recipe}", SCRIPT_PROMPTS[recipe])
+        key = prompt_key(recipe, series.variant)  # chantier de lieu insolite : son propre scénariste (docs/51)
+        system, tpl_id = active_prompt(ctx.db, f"script_{key}", SCRIPT_PROMPTS[key])
         llm = get_llm(ctx.settings, ctx.db, writer=True)
         ctx.progress(20, f"Appel LLM · recette {recipe}")
         script = normalize_script(llm.complete_json(system, user, ScriptV1), recipe)
@@ -431,9 +452,151 @@ class ScriptStep(Step):
             retry_issues = lint_recipe_script(retry, recipe, langs, target)
             if len(retry_issues) <= len(issues):
                 script, issues = retry, retry_issues
+        quote = quotes.author_quote(prod) if recipe == quotes.RECIPE else None
+        if quote:  # citation d'auteur (docs/70) : le texte exact de Wikiquote, signé, quoi qu'ait écrit le scénariste
+            script = quotes.keep_author_quote(script, quote, langs[0] if langs else "fr")
+            issues = lint_recipe_script(script, recipe, langs, target)
         if issues:
             ctx.log("script.problemes_restants", level="warn", recipe=recipe, issues=issues)
+        if arc:  # mêmes personnages (fiches, voix) que la partie 1, « Partie N : » et « Partie N+1 bientôt »
+            script = normalize_script(arcs.finish_part(arcs.keep_cast(script, previous), part, len(arc[1].parts)), recipe)
         return script, issues, tpl_id
+
+    def _write_scenario(
+        self, ctx: Context, prod: dict[str, Any], langs: list[str], series: Series | None
+    ) -> tuple[ScriptV1, list[str], UUID | None]:
+        """Scénario de Luca (docs/59, worker/scenario.py) : le metteur en scène le met en forme (gardée dans
+        concepts.scenario.plan, style et durée posés sur la production), le scénariste écrit les plans d'un drame, le
+        correcteur et le relecteur de fidélité les font reprendre deux fois au plus (la première reprise est relue).
+        Jamais de mini-série : le scénario de Luca est une histoire entière."""
+        brief = scenario.ScenarioBrief.model_validate(prod["scenario"])
+        lang = langs[0] if langs else "fr"
+        llm = get_llm(ctx.settings, ctx.db, writer=True)
+        ask = self._asker(ctx, strong_writers(llm), llm)
+        hook_rules = prompt_text(ctx.db, "rules_hook_title", HOOK_RULES)
+        ctx.progress(10, "Le metteur en scène lit ton scénario")
+        adapt_user = "\n\n".join((scenario.brief_text(brief), scenario.styles_text(), f"Langue de la vidéo : {lang}", hook_rules))
+        plan = scenario.settle(
+            ask(prompt_text(ctx.db, "scenario_adapt", scenario.ADAPT_PROMPT), adapt_user, scenario.ScenarioPlan), brief
+        )
+        ctx.log(
+            "script.mise_en_scene",
+            titre=plan.title,
+            style=plan.style,
+            paroles=plan.speech,
+            duree=plan.duration_s,
+            temps=len(plan.beats),
+            personnages=[m.name for m in plan.cast],
+            choix=plan.choices,
+        )
+        # ce que l'équipe a compris, visible dans Création ; style et durée de la production : ceux de la mise en scène
+        ctx.db.execute(
+            """update concepts set title = %s, hook = coalesce(nullif(%s, ''), hook),
+                      scenario = coalesce(scenario, '{}'::jsonb) || %s where id = %s""",
+            (plan.title, plan.hook_title, Jsonb({"plan": scenario.plan_summary(plan)}), prod["concept_id"]),
+        )
+        ctx.db.execute(
+            "update productions set style_preset = %s, target_duration_s = %s where id = %s",
+            (plan.style, plan.duration_s, prod["id"]),
+        )
+        voices = voices_brief(character_voices(tts_catalog(ctx.settings), lang)) if plan.speech != "muet" else ""
+        user = "\n\n".join(
+            part
+            for part in (
+                scenario.brief_text(brief),
+                scenario.plan_text(plan),
+                self._music_brief(ctx, montage_format(series.recipe if series else "drama"), series),
+                f"Durée cible : {plan.duration_s} s · Style visuel : {plan.style} · Langues (hook_title, metadata, "
+                f"répliques) : {langs}",
+                voices,
+                script_context("drama", hook_rules),
+            )
+            if part
+        )
+        system, tpl_id = active_prompt(ctx.db, "script_scenario", scenario.SCRIPT_PROMPT)
+        ctx.progress(25, "Le scénariste écrit les plans")
+        script = scenario.normalize(ask(system, user, ScriptV1), plan)
+        issues = scenario.lint(script, langs, plan.duration_s, plan.speech)
+        ctx.progress(40, "Relecture : fidélité à ton scénario")
+        problems = self._review_scenario(ctx, ask, brief, plan, script, lang)
+        for attempt in (1, 2):
+            if not issues and not problems:
+                break
+            ctx.log("script.reprise", tour=attempt, issues=issues, relecture=problems)
+            ctx.progress(40 + 15 * attempt, f"Réécriture des plans ({attempt})")
+            retry = scenario.normalize(
+                ask(
+                    system,
+                    f"{user}\n\n{scenario.rewrite_request(issues, problems)}\n\nScript précédent :\n{script.model_dump_json()}",
+                    ScriptV1,
+                ),
+                plan,
+            )
+            retry_issues = scenario.lint(retry, langs, plan.duration_s, plan.speech)
+            # une remarque du relecteur porte sur le fond : la réécriture est gardée ; sinon seulement si elle corrige
+            if not problems and len(retry_issues) > len(issues):
+                break
+            script, issues = retry, retry_issues
+            problems = self._review_scenario(ctx, ask, brief, plan, script, lang) if attempt == 1 else []
+        if issues:
+            ctx.log("script.problemes_restants", level="warn", recipe="scenario", issues=issues)
+        used = [*getattr(llm, "used", [])]
+        ctx.log("script.modeles", modeles=used)
+        return script, issues, tpl_id
+
+    @staticmethod
+    def _review_scenario(
+        ctx: Context,
+        ask: Callable[[str, str, type[Any]], Any],
+        brief: scenario.ScenarioBrief,
+        plan: scenario.ScenarioPlan,
+        script: ScriptV1,
+        lang: str,
+    ) -> list[str]:
+        """Le relecteur de fidélité (prompt scenario_review) : le script comparé au texte de Luca. Renvoie les problèmes à
+        corriger, [] s'il laisse partir le script ; un échec de la relecture ne bloque rien."""
+        user = "\n\n".join(
+            (
+                scenario.brief_text(brief),
+                scenario.plan_text(plan),
+                f"SCRIPT À RELIRE (langue {lang}) :\n{scenario.script_listing(script)}",
+            )
+        )
+        try:
+            review = ask(prompt_text(ctx.db, "scenario_review", scenario.REVIEW_PROMPT), user, ScriptReview)
+        except Postpone:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            ctx.log("script.relecture_indisponible", level="warn", erreur=str(exc)[:300])
+            return []
+        problems = scenario.review_problems(review.ok, review.problems)
+        ctx.log("script.relecture", ok=review.ok, problemes=problems)
+        return problems
+
+    @staticmethod
+    def _arc(ctx: Context, prod: dict[str, Any], series: Series) -> tuple[UUID, arcs.ArcOutline] | None:
+        """La mini-série de la production (docs/52) : celle de sa partie, sinon une nouvelle, écrite par le showrunner
+        (prompt arc_outline) avant la partie 1. None si le plan ne s'écrit pas : la vidéo se fait seule, comme avant."""
+        if prod.get("arc_id"):
+            row = arcs.get_arc(ctx.db, prod["arc_id"])
+            return (row["id"], arcs.ArcOutline.model_validate(row["outline"])) if row else None
+        parts = int(arcs.load(ctx.db).get("parts") or arcs.PARTS_MAX)
+        if parts < 2:
+            return None
+        ctx.progress(10, "Plan de la mini-série")
+        try:
+            outline = get_llm(ctx.settings, ctx.db, writer=True).complete_json(
+                prompt_text(ctx.db, "arc_outline", arcs.ARC_PROMPT),
+                arcs.outline_request(series.name, series.brief, prod, min(parts, arcs.PARTS_MAX)),
+                arcs.ArcOutline,
+            )
+        except Exception as exc:  # noqa: BLE001 - le plan est un plus : sans lui, la partie 1 s'écrit comme avant
+            ctx.log("script.arc_rate", level="warn", error=str(exc)[:300])
+            return None
+        outline.parts = sorted(outline.parts, key=lambda p: p.n)[: arcs.PARTS_MAX]
+        for k, p in enumerate(outline.parts):
+            p.n = k + 1
+        return arcs.create_arc(ctx.db, prod, outline), outline
 
     @staticmethod
     def _music_brief(ctx: Context, recipe: str, series: Series | None) -> str:

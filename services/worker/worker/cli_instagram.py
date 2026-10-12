@@ -10,6 +10,8 @@ yt2 instagram status                   réglages, chaînes reliées, derniers Re
 yt2 instagram post <vidéo> [--now] [--here]
                                        publie une vidéo : au créneau YouTube s'il est à venir, sinon tout de suite
                                        (--now : tout de suite ; --here : dans ce terminal au lieu du worker)
+yt2 instagram stats [--here]           relève les statistiques des comptes Instagram des deux comptes Zernio
+                                       (@arzakparker et « Paf, j'achète », docs/62)
 """
 
 from __future__ import annotations
@@ -124,6 +126,44 @@ def instagram_post(args: argparse.Namespace) -> None:
     print(f"Instagram : {t.get('status')} {t.get('url') or t.get('scheduled_for') or ''} {t.get('error') or ''}")
 
 
+def instagram_stats(args: argparse.Namespace) -> None:
+    from .main import run_job
+    from .models import Job
+
+    settings, db = _ctx()
+    row = db.fetch_one(
+        """insert into jobs (type, priority, payload, run_after)
+           values ('sync_instagram', 10, '{"source": "cli"}', now() + case when %s then interval '1 day' else interval '0' end)
+           returning id""",
+        (args.here,),
+    )
+    if not args.here:
+        print(f"Relevé en file (job {row['id']}) : le worker s'en charge")
+        return
+    job = db.fetch_one(
+        """update jobs set status = 'running', locked_by = 'cli', locked_at = now(), run_after = now(), attempts = attempts + 1
+           where id = %s and status = 'queued' returning *""",
+        (row["id"],),
+    )
+    run_job(Job.model_validate(job), db, settings)
+    after = db.fetch_one("select status::text as status, error, result from jobs where id = %s", (row["id"],))
+    print(f"Job : {after['status']} {after['error'] or ''}")
+    for a in db.fetch_all("select * from instagram_accounts order by username"):
+        print(f"@{a['username']}  {a['followers']} abonnés · {a['views_28d']} vues sur 28 j · Zernio {dict(a['zernio_ids'])}")
+    for p in db.fetch_all(
+        """select p.views, p.likes, p.comments, p.shares, p.skip_rate_pct, p.sync_status, a.username,
+                  coalesce(v.title, case when p.paf_friday is not null then 'Paf, j''achète ' || p.paf_friday end,
+                           left(p.caption, 50)) as title
+           from instagram_posts p join instagram_accounts a on a.id = p.account_id left join videos v on v.id = p.video_id
+           order by p.published_at desc nulls last limit 15"""
+    ):
+        skip = f" · {p['skip_rate_pct']} % partis avant 3 s" if p["skip_rate_pct"] is not None else ""
+        views = "?" if p["sync_status"] == "live" else p["views"]
+        print(
+            f"  @{p['username']} {views:>7} vues {p['likes']:>5} j'aime {p['comments']:>4} comm.{skip}  {(p['title'] or '')[:50]}"
+        )
+
+
 def register(sub: Any) -> None:
     ig = sub.add_parser("instagram", help="Reels Instagram par Zernio (docs/48)").add_subparsers(dest="cmd", required=True)
     ig.add_parser("accounts", help="comptes Instagram connectés à Zernio").set_defaults(fn=instagram_accounts)
@@ -138,3 +178,6 @@ def register(sub: Any) -> None:
     po.add_argument("--now", action="store_true", help="tout de suite, sans attendre le créneau YouTube")
     po.add_argument("--here", action="store_true", help="dans ce terminal, sans passer par le worker")
     po.set_defaults(fn=instagram_post)
+    st = ig.add_parser("stats", help="relève les statistiques Instagram (docs/62)")
+    st.add_argument("--here", action="store_true", help="dans ce terminal, sans passer par le worker")
+    st.set_defaults(fn=instagram_stats)

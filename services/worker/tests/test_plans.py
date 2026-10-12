@@ -79,8 +79,8 @@ def test_the_clip_prompt_says_who_speaks_where_and_who_stays_silent():
     assert "Characters in this shot: Monsieur Ananas is the richest man in town" in p  # celui qui parle d'abord
     assert "a white tuxedo with a black bow tie, on the left, kneeling down; Mamie Pomme is a poor 70-year-old" in p
     assert (
-        'Monsieur Ananas says in French, in a deep powerful male voice in his sixties, whispering: "C\'est vous… la couturière ?"'
-        in p
+        "Right at the start of the shot, Monsieur Ananas says in French, in a deep powerful male voice in his sixties, "
+        'whispering, at a brisk, natural pace, without pausing: "C\'est vous, la couturière ?"' in p  # « … » dit sans silence
     )
     assert "Only Monsieur Ananas speaks, lips moving with the words. Mamie Pomme keeps their mouth closed and only listens." in p
     assert p.endswith("no subtitles, no captions.")

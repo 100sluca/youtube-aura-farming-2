@@ -11,6 +11,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +25,22 @@ def run(cmd: list[str], cwd: Path | None = None, timeout: int = 1800) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
     if r.returncode != 0:
         raise RuntimeError(f"{cmd[0]} a échoué : {r.stderr[-2000:]}")
+
+
+def replace_file(src: Path, dst: Path, tries: int = 10, wait_s: float = 0.5) -> None:
+    """`src.replace(dst)` qui tient sous Windows : un fichier ouvert ailleurs (vidéo lue dans le dashboard, un lecteur,
+    l'aperçu de l'Explorateur) ne peut pas être remplacé (« Accès refusé », 01/10 : remontage d'une retouche en échec).
+    On réessaie quelques secondes, puis on recopie par-dessus, ce que permet un fichier ouvert en partage d'écriture
+    (ffmpeg y écrit bien) ; si même la copie est refusée, l'erreur remonte."""
+    for attempt in range(tries):
+        try:
+            src.replace(dst)
+            return
+        except PermissionError:
+            if attempt < tries - 1:
+                time.sleep(wait_s)
+    shutil.copyfile(src, dst)
+    src.unlink(missing_ok=True)
 
 
 def _nvenc_works() -> bool:

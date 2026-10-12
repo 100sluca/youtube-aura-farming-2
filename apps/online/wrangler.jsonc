@@ -1,0 +1,24 @@
+// Site en ligne de YouTube 2.0 (docs/65-site-en-ligne.md) : un Worker Cloudflare qui garde le dernier instantané envoyé
+// par le dashboard du PC (KV) et le sert derrière un mot de passe. Secrets (jamais dans le dépôt, public) :
+//   npx wrangler secret put PASSWORD        mot de passe du site
+//   npx wrangler secret put INGEST_TOKEN    jeton d'envoi, même valeur que ONLINE_INGEST_TOKEN du dashboard
+//   npx wrangler secret put SESSION_SECRET  clé des cookies de session (aléatoire)
+// En local (npx wrangler dev) : les mêmes lignes dans .dev.vars (ignoré par git). La page (web/) est construite par Vite
+// dans dist/ avant chaque `wrangler dev` ou `wrangler deploy` (build.command).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aura-stats",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "build": { "command": "npm run build" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [{ "binding": "DATA" }],
+  "observability": { "enabled": true }
+}

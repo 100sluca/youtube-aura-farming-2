@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import autopilot
+from . import arcs, autopilot
 from .config import Settings
 from .db import Db
 from .instagram.config import load_instagram_config
+from .longform import flow as long_flow
 from .notify import flush_pending_alerts
-from .paf import plan_paf
+from .paf import paf_key, plan_paf
 from .series import active_series, create_production, next_concepts
+from .slots import fill_free_slots
 from .tiktok.backlog import LEAD_MAX, backlog_slot, slot_times
 from .tiktok.config import load_tiktok_config, zernio_key
 
@@ -23,8 +26,10 @@ MIN_SCHEDULED_BUFFER = 6  # vidéos programmées par chaîne (≈ 2 jours)
 
 
 def plan_uploads(db: Db, settings: Settings) -> None:
-    """Attribue un créneau à chaque vidéo `ready` et crée le job upload (si créneau < 72 h)."""
+    """Attribue un créneau à chaque vidéo `ready` et crée le job upload (si créneau < 72 h). Un créneau libéré passe
+    d'abord aux vidéos déjà prêtes qui attendent plus loin (docs/55, slots.fill_free_slots)."""
     db.requeue_stale_jobs()
+    fill_free_slots(db)
     videos = db.fetch_all(
         """select v.id, v.channel_id from videos v
            where v.status = 'ready' and v.scheduled_at is null
@@ -39,7 +44,7 @@ def plan_uploads(db: Db, settings: Settings) -> None:
         slot = db.fetch_one("select next_free_slot(%s) as at", (v["channel_id"],))
         if not slot or not slot["at"]:
             continue
-        db.execute("update videos set scheduled_at = %s where id = %s", (slot["at"], v["id"]))
+        db.execute("update videos set scheduled_at = %s, slot_pinned = false where id = %s", (slot["at"], v["id"]))
         db.enqueue(
             "upload",
             video_id=v["id"],
@@ -61,7 +66,9 @@ def plan_tiktok(db: Db, settings: Settings) -> None:
     for channel_id, ch in channels:
         rows = db.fetch_all(
             """select v.id from videos v
-               where v.channel_id = %s and v.origin = 'app' and v.tiktok is null
+               where v.channel_id = %s and v.origin = 'app'
+                 -- retirée puis reprogrammée dans YouTube Studio (docs/55) : republiée
+                 and (v.tiktok is null or v.tiktok ? 'withdrawn')
                  and v.status in ('scheduled', 'published') and v.youtube_video_id is not null
                  and v.scheduled_at > now() - interval '24 hours'
                  and (%s::timestamptz is null or v.scheduled_at >= %s::timestamptz)
@@ -86,7 +93,7 @@ def plan_instagram(db: Db, settings: Settings) -> None:
     for channel_id, ch in channels:
         rows = db.fetch_all(
             """select v.id from videos v
-               where v.channel_id = %s and v.origin = 'app' and v.instagram is null
+               where v.channel_id = %s and v.origin = 'app' and (v.instagram is null or v.instagram ? 'withdrawn')
                  and v.status in ('scheduled', 'published') and v.youtube_video_id is not null
                  and v.scheduled_at > now() - interval '24 hours'
                  and (%s::timestamptz is null or v.scheduled_at >= %s::timestamptz)
@@ -163,6 +170,16 @@ def tiktok_counters(db: Db, settings: Settings) -> None:
     if db.fetch_one("select 1 from jobs where type = 'sync_tiktok' and status in ('queued', 'running') limit 1"):
         return
     db.enqueue("sync_tiktok", payload={"source": "horaire"}, priority=86)
+
+
+def instagram_counters(db: Db, settings: Settings) -> None:
+    """Toutes les heures : statistiques Instagram des deux comptes Zernio (@arzakparker et « Paf, j'achète », docs/62),
+    sauf si un relevé attend déjà."""
+    if not zernio_key(settings, db) and not paf_key(settings, db):
+        return
+    if db.fetch_one("select 1 from jobs where type = 'sync_instagram' and status in ('queued', 'running') limit 1"):
+        return
+    db.enqueue("sync_instagram", payload={"source": "horaire"}, priority=86)
 
 
 def top_up_ideas(db: Db, settings: Settings) -> None:
@@ -270,6 +287,65 @@ def weekly_analysis(db: Db, settings: Settings) -> None:
             db.enqueue("analyze", channel_id=c["id"], payload={"source": "hebdomadaire"}, priority=140)
 
 
+def daily_research(db: Db, settings: Settings) -> None:
+    """Chaque jour à 10 h (le compteur de recherches YouTube repart à 9 h, minuit heure du Pacifique) : relevé des niches
+    de la page Recherche (docs/60) ; le lundi, il demande aussi les recommandations du stratège."""
+    if not connected_channels(db):
+        return
+    if db.fetch_one(
+        "select 1 from jobs where type = 'research' and status in ('queued', 'running') and payload->>'action' = 'scan'"
+    ):
+        return
+    db.enqueue("research", payload={"action": "scan", "source": "quotidien"}, priority=125, max_attempts=2)
+
+
+def daily_discover(db: Db, settings: Settings) -> None:
+    """Recherche → Découverte (docs/63 §9) : avant le relevé de 10 h, qui prend ce qui reste des 100 recherches du jour."""
+    if not connected_channels(db):
+        return
+    if db.fetch_one(
+        "select 1 from jobs where type = 'research' and status in ('queued', 'running') and payload->>'action' = 'discover'"
+    ):
+        return
+    db.enqueue("research", payload={"action": "discover", "source": "quotidien"}, priority=124, max_attempts=2)
+
+
+def daily_discover_shorts(db: Db, settings: Settings) -> None:
+    """Recherche → Découverte → Shorts (docs/64 §2) : les niches hors des nôtres, mesurées une fois par mois chacune."""
+    if not connected_channels(db):
+        return
+    if db.fetch_one(
+        "select 1 from jobs where type = 'research' and status in ('queued', 'running') and payload->>'action' = 'discover_shorts'"
+    ):
+        return
+    db.enqueue("research", payload={"action": "discover_shorts", "source": "quotidien"}, priority=124, max_attempts=2)
+
+
+# Tâches quotidiennes de la page Recherche, rattrapées si le worker ne tournait pas à l'heure dite (le 04/10, ni la
+# découverte de 9 h 30 ni le relevé de 10 h n'étaient partis) : (heure, minute, action, fonction).
+RESEARCH_DAILY = (
+    (9, 30, "discover", daily_discover),
+    (9, 45, "discover_shorts", daily_discover_shorts),
+    (10, 0, "scan", daily_research),
+)
+
+
+def catch_up_research(db: Db, settings: Settings) -> None:
+    """Toutes les 15 min : chaque tâche quotidienne de Recherche dont l'heure est passée et qui n'a pas été mise en file
+    depuis 9 h (le compteur de recherches YouTube repart à 9 h, minuit heure du Pacifique) part maintenant, dans l'ordre."""
+    now = datetime.now(ZoneInfo("Europe/Paris"))
+    since = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    if now < since:
+        return
+    for hour, minute, action, fn in RESEARCH_DAILY:
+        if (now.hour, now.minute) < (hour, minute):
+            continue
+        if not db.fetch_one(
+            "select 1 from jobs where type = 'research' and payload->>'action' = %s and created_at >= %s", (action, since)
+        ):
+            fn(db, settings)
+
+
 def weekly_improve(db: Db, settings: Settings) -> None:
     db.enqueue("improve", payload={"window_days": 14}, priority=150)
 
@@ -288,14 +364,21 @@ def start_scheduler(db: Db, settings: Settings) -> BackgroundScheduler:
     s.add_job(plan_paf, "interval", minutes=5, args=[db, settings], id="plan_paf")  # docs/50
     s.add_job(plan_tiktok_backlog, "interval", minutes=5, args=[db, settings], id="plan_tiktok_backlog")  # docs/39
     s.add_job(tiktok_counters, "cron", minute=10, args=[db, settings], id="tiktok_counters")  # docs/39
+    s.add_job(instagram_counters, "cron", minute=14, args=[db, settings], id="instagram_counters")  # docs/62
     s.add_job(top_up_ideas, "interval", hours=1, args=[db, settings], id="top_up_ideas")
     s.add_job(start_productions, "interval", minutes=15, args=[db, settings], id="start_productions")
     s.add_job(autopilot.tick, "interval", minutes=2, args=[db, settings], id="autopilot")  # docs/46
+    s.add_job(arcs.tick, "interval", minutes=2, args=[db, settings], id="arcs")  # mini-séries, docs/52
     s.add_job(flush_pending_alerts, "interval", seconds=20, args=[db, settings], id="alerts")  # mails, docs/32
     s.add_job(check_buffers, "cron", hour=6, args=[db, settings], id="check_buffers")
     s.add_job(hourly_counters, "cron", minute=5, args=[db, settings], id="hourly_counters")
     s.add_job(nightly_sync, "cron", hour=3, minute=20, args=[db, settings], id="nightly_sync")
     s.add_job(analytics_sync, "cron", hour="9,15,21", minute=20, args=[db, settings], id="analytics_sync")
+    s.add_job(daily_discover, "cron", hour=9, minute=30, args=[db, settings], id="discover")  # docs/63 §9
+    s.add_job(daily_discover_shorts, "cron", hour=9, minute=45, args=[db, settings], id="discover_shorts")  # docs/64
+    s.add_job(daily_research, "cron", hour=10, minute=0, args=[db, settings], id="research")  # docs/60
+    s.add_job(catch_up_research, "interval", minutes=15, args=[db, settings], id="catch_up_research")  # docs/64 §6
+    s.add_job(long_flow.daily_digest, "cron", hour=9, minute=0, args=[db, settings], id="long_digest")  # docs/63
     s.add_job(weekly_improve, "cron", day_of_week="sun", hour=4, args=[db, settings], id="improve")
     s.add_job(weekly_strategy, "cron", day_of_week="sun", hour=4, minute=30, args=[db, settings], id="strategy")
     s.add_job(weekly_analysis, "cron", day_of_week="sun", hour=5, args=[db, settings], id="analysis")

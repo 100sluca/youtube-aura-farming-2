@@ -1,15 +1,15 @@
 "use server";
 
 /**
- * Gestes de la fenêtre « Machine » (barre latérale, docs/28-sante-machine.md) : lire l'état du PC, voir ce qui prend la
- * mémoire, redémarrer ComfyUI, le worker ou le dashboard. Ces gestes arrêtent des programmes du PC : refusés si la page
- * n'est pas ouverte sur le PC lui-même (localhost).
+ * Gestes de la fenêtre « Machine » (barre latérale, docs/28-sante-machine.md) : redémarrer ComfyUI, le worker ou le
+ * dashboard. L'état du PC et ce qui prend la mémoire se lisent par /api/system/status et /api/system/memory (docs/56).
+ * Ces gestes arrêtent des programmes du PC : refusés si la page n'est pas ouverte sur le PC lui-même (localhost).
  */
 import { headers } from "next/headers";
 
 import type { ActionResult } from "@/app/production/actions";
-import { forceWorkerRestart, getSystemStatus, launchRestart, memoryHogs, requestWorkerRestart } from "@/lib/system";
-import type { MemoryHog, RestartTarget, SystemStatus } from "@/lib/system-types";
+import { forceWorkerRestart, getSystemStatus, launchRestart, requestWorkerRestart } from "@/lib/system";
+import type { RestartTarget } from "@/lib/system-types";
 
 function fail(error: unknown): ActionResult {
   return { ok: false, message: error instanceof Error ? error.message : String(error) };
@@ -21,14 +21,6 @@ async function fromThisPc(): Promise<boolean> {
 }
 
 const NOT_LOCAL: ActionResult = { ok: false, message: "Redémarrage possible seulement depuis le PC lui-même (http://localhost:3000)" };
-
-export async function fetchSystemStatus(): Promise<SystemStatus> {
-  return getSystemStatus();
-}
-
-export async function fetchMemoryHogs(): Promise<MemoryHog[]> {
-  return memoryHogs();
-}
 
 export async function restartService(target: RestartTarget, force = false): Promise<ActionResult> {
   if (!(await fromThisPc())) return NOT_LOCAL;
