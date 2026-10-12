@@ -2,12 +2,16 @@
 l'environnement d'évaluation du banc des voix (<YT2_HOME>/tts/eval/venv : faster-whisper, install_tts.ps1 -Engine eval),
 jamais dans celui du worker : Whisper large-v3-turbo sur le processeur (int8, ≈ 1,6 Go de RAM).
 
-Entrée : request.json {"files": [clips .mp4 ou .wav], "lang": "fr", "out": chemin du résultat, "model"?, "threads"?}.
-Sortie : {"results": [{"file", "text", "words": [{"w", "start", "end", "p"}], "speech": [[début, fin], …]}]} ;
+Entrée : request.json {"files": [clips .mp4 ou .wav], "lang": "fr" (null : langue reconnue par Whisper), "out": chemin du
+résultat, "model"?, "threads"?}.
+Sortie : {"results": [{"file", "text", "words": [{"w", "start", "end", "p"}], "speech": [[début, fin], …], "lang",
+"lang_p"}]} ;
 « PROGRESS <fait> <total> » sur la sortie standard. Les fichiers vidéo sont lus directement (PyAV, inclus dans
 faster-whisper). `speech` : les passages parlés d'après le détecteur de voix Silero livré avec faster-whisper, plus
 justes que les mots de Whisper au début d'une phrase (le premier mot part souvent de 0 s) ; ils calent la voix des
-personnages sur la bouche des clips (worker/lipsync.py).
+personnages sur la bouche des clips (worker/lipsync.py). `lang` / `lang_p` : la langue que Whisper reconnaît dans les
+passages parlés et sa probabilité (None sans parole) : forcé en français, Whisper « traduisait » une réplique dite en
+anglais par H3 et elle passait le contrôle (docs/70 §6).
 """
 
 from __future__ import annotations
@@ -33,6 +37,15 @@ def main() -> None:
     files = list(req["files"])
     results = []
     for i, path in enumerate(files):
+        try:
+            audio = decode_audio(path, sampling_rate=SR)
+            speech = [[round(r["start"] / SR, 3), round(r["end"] / SR, 3)] for r in get_speech_timestamps(audio, vad)]
+        except Exception:  # noqa: BLE001  un clip sans son : aucun passage parlé
+            audio, speech = None, []
+        lang = lang_p = None
+        if audio is not None and speech:
+            lang, lang_p, _all = model.detect_language(audio, vad_filter=True)
+            lang_p = round(float(lang_p), 3)
         segments, _info = model.transcribe(
             path,
             language=req.get("lang", "fr"),
@@ -52,12 +65,16 @@ def main() -> None:
             for w in (seg.words or [])
             if w.word.strip()
         ]
-        try:
-            audio = decode_audio(path, sampling_rate=SR)
-            speech = [[round(r["start"] / SR, 3), round(r["end"] / SR, 3)] for r in get_speech_timestamps(audio, vad)]
-        except Exception:  # noqa: BLE001  un clip sans son : aucun passage parlé
-            speech = []
-        results.append({"file": path, "text": " ".join(w["w"] for w in words).strip(), "words": words, "speech": speech})
+        results.append(
+            {
+                "file": path,
+                "text": " ".join(w["w"] for w in words).strip(),
+                "words": words,
+                "speech": speech,
+                "lang": lang,
+                "lang_p": lang_p,
+            }
+        )
         print(f"PROGRESS {i + 1} {len(files)}", flush=True)
     Path(req["out"]).write_text(json.dumps({"results": results}, ensure_ascii=False), encoding="utf-8")
 

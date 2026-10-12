@@ -61,7 +61,14 @@ SCENES_RANGE = (14, 30)
 DIALOGUE_SHARE_MIN = 0.75  # part des plans qui ont une réplique
 LOOK_WORDS_MIN = 12
 HEARD_MIN = 0.45  # ressemblance minimale entre la réplique écrite et ce que Whisper entend dans le clip
-DIALOGUE_RETRIES = 1  # nouvel essai d'un clip dont la réplique n'est pas dite
+DIALOGUE_RETRIES = 2  # nouveaux essais d'un clip dont la réplique n'est pas dite, ou pas en français (docs/70 §6)
+FOREIGN_P = 0.5  # Whisper reconnaît une autre langue que celle de la vidéo avec au moins cette probabilité
+# Plan muet : des rires, des souffles ou une exclamation passent ; des mots, non (H3 inventait « Hey you little
+# muscle » ou « Yeah, starry man » dans 8 plans muets sur 19, 12/10)
+INTERJECTIONS = {
+    "ha", "haha", "hahaha", "hah", "hé", "he", "hey", "hein", "hm", "hmm", "hmmm", "mm", "mmm", "oh", "ooh", "ah", "aah",
+    "eh", "euh", "uh", "huh", "pff", "pfff", "tss", "ouf", "aïe", "ohé", "wow", "ouah",
+}  # fmt: skip
 TAIL_S = 0.3  # après le dernier mot, avant la coupe
 LINE_IN_S = 0.35  # voix des clips : le plan commence ce temps avant la réplique quand des mots en trop la précèdent
 # voix des clips : H3 ouvre la bouche 0,5 à 1,7 s après le début du clip (docs/38) ; ce silence est coupé, le plan
@@ -357,7 +364,8 @@ def clip_prompt(
         # H3 écrivait parfois la réplique à l'image, comme un sous-titre (« Mamie Pomme », 29/09) : elle s'entend, c'est tout
         parts.append("The words are only heard, never written on screen: no subtitles, no captions.")
     else:
-        parts.append("Nobody speaks: only ambient sound.")
+        # H3 inventait des répliques en anglais dans les plans muets (docs/70 §6)
+        parts.append("Nobody speaks: no voice, no words, no dialogue, every mouth stays closed; only ambient sound.")
     if note:
         parts.append(note)
     return " ".join(p for p in parts if p)
@@ -497,6 +505,29 @@ def assign_voices(cast: Sequence[CastMember], available: Sequence[str]) -> dict[
 def _norm(word: str) -> str:
     t = unicodedata.normalize("NFKD", word.lower()).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]", "", t)
+
+
+def foreign(dialogue: dict[str, Any] | None, lang: str) -> bool:
+    """Le clip parle une autre langue que la vidéo (Whisper : `lang` et sa probabilité, tts_runners/whisper_words.py)."""
+    d = dialogue or {}
+    return bool(d.get("lang")) and d["lang"] != lang and float(d.get("lang_p") or 0) >= FOREIGN_P
+
+
+def line_said(dialogue: dict[str, Any] | None, lang: str) -> bool:
+    """La réplique est dite, dans la langue de la vidéo ; sans transcription (None), on ne peut pas savoir : oui."""
+    if dialogue is None:
+        return True
+    return float(dialogue.get("ratio") or 0) >= HEARD_MIN and not foreign(dialogue, lang)
+
+
+def invented_words(heard: Sequence[dict[str, Any]]) -> list[str]:
+    """Mots entendus dans un plan muet, hors rires et exclamations : des paroles que le modèle vidéo a inventées."""
+    out = []
+    for h in heard:
+        w = re.sub(r"[^\w'’-]+", "", str(h.get("w", "")).lower()).strip("'’-")
+        if w and w not in INTERJECTIONS and not re.fullmatch(r"(ha|ah|he|hi|ho|hu)+", w):
+            out.append(w)
+    return out
 
 
 def heard_ratio(expected: str, heard: str) -> float:
@@ -681,9 +712,11 @@ def whisper_python(settings: Any) -> Path:
     return Path(settings.yt2_home) / "tts" / "eval" / "venv" / "Scripts" / "python.exe"
 
 
-def transcribe(settings: Any, clips: Sequence[Path], lang: str, timeout_s: int = 900) -> list[dict[str, Any]] | None:
+def transcribe(settings: Any, clips: Sequence[Path], lang: str | None, timeout_s: int = 900) -> list[dict[str, Any]] | None:
     """Mots entendus dans chaque clip (Whisper large-v3-turbo sur le processeur, en sous-processus) :
-    [{"text", "words": [{"w", "start", "end", "p"}]}] ; None si l'environnement d'évaluation n'est pas installé."""
+    [{"text", "words": [{"w", "start", "end", "p"}], "speech", "lang", "lang_p"}] ; `lang` None : Whisper reconnaît la
+    langue (plan muet : des paroles en anglais ne sont pas « traduites ») ; None si l'environnement d'évaluation n'est
+    pas installé."""
     python = whisper_python(settings)
     runner = Path(__file__).resolve().parents[1] / "tts_runners" / "whisper_words.py"
     if not python.exists() or not runner.exists():
@@ -767,6 +800,7 @@ def build_dialogue_track(
     heads: Sequence[float] = (),
     mute: Collection[int] = (),
     pace: float = 1.0,
+    whole: Collection[int] = (),
 ) -> Path:
     """Piste de voix d'un drame : le son de chaque clip, coupé à la durée de sa scène (silence si le clip n'a pas de son),
     mis bout à bout (48 kHz, mono). Le montage la traite comme une narration : la musique baisse sous les répliques.
@@ -775,7 +809,9 @@ def build_dialogue_track(
     le début de la prise (voix convertie du clip entier, dont le début est coupé). `heads` : début coupé de chaque clip
     (dialogue_heads). `mute` (positions) : plans muets, sauf une prise de `replace` (voix seule du clip). `pace` : vitesse
     de lecture des clips (PACE) ; le son d'un clip (et sa voix convertie ou isolée) la suit, une prise de synthèse garde
-    son débit. `durations` : durées sur la vidéo."""
+    son débit. `durations` : durées sur la vidéo. `whole` (positions) : le remplacement est le son du clip entier
+    (voix au timbre fixe du personnage, ambiance seule d'un plan muet : worker/clip_voices.py), coupé et accéléré comme
+    le clip."""
     from .media import run
 
     tempo = f",atempo={pace:.4f}" if abs(pace - 1.0) > 1e-3 else ""
@@ -787,11 +823,11 @@ def build_dialogue_track(
         if take is not None:
             inputs += ["-i", str(take[0])]
             at = take[1]
-            place = (
-                f"adelay=delays={round(at * 1000)}:all=1,atrim=0:{d:.3f}"
-                if at >= 0
-                else f"atrim={-at:.3f}:{d * pace - at:.3f},asetpts=PTS-STARTPTS{tempo}"
-            )
+            if k in whole or at < 0:  # son du clip entier : son début coupé, à la vitesse du clip
+                start = head if k in whole else -at
+                place = f"atrim={start:.3f}:{start + d * pace:.3f},asetpts=PTS-STARTPTS{tempo}"
+            else:
+                place = f"adelay=delays={round(at * 1000)}:all=1,atrim=0:{d:.3f}"
             parts.append(
                 f"[{k}:a]aresample=48000,aformat=channel_layouts=mono,{place},asetpts=PTS-STARTPTS,apad=whole_dur={d:.3f}[a{k}]"
             )

@@ -152,3 +152,97 @@ laisser en attente jusqu'aux drames rythmés.
   d'auteurs, fiche du scénariste des drames).
 - Base : `supabase/migrations/0057_citations_auteurs.sql`, appliquée à la main et inscrite dans
   `supabase_migrations.schema_migrations`.
+
+## 6. Drames : les voix des clips (suite du 12/10)
+
+Retour de Luca sur l'essai : le rythme resserré est bien. En revanche, certains dialogues sont en anglais, certains
+plans n'ont pas de dialogue et c'est étrange, et la voix d'un personnage change d'un clip à l'autre. Les voix faites
+par H3 avec la vidéo restent : voix, bruitages et ambiance y sont cohérents.
+
+### Mesure
+
+| Défaut | Ce qu'on a trouvé |
+|---|---|
+| **Anglais** | Dans les **plans sans réplique** : sur les 10 drames publiés, 8 plans muets sur 19 contiennent des paroles inventées par H3, presque toujours en anglais (« Hey you little muscle » dans La fille du gardien, « Yeah, starry man » dans Cahier volé). Rien ne les écoutait. |
+| **Langue des répliques** | Whisper était forcé en français : une réplique dite en anglais en ressortait « traduite » et passait le contrôle. Sur les deux drames de l'essai, toutes les répliques prévues sont bien en français. |
+| **Voix qui change** | Empreinte de voix (WeSpeaker, banc docs/49 §12), voix séparées de l'ambiance : les répliques d'un même personnage se ressemblent à 0,66, à peine plus qu'elles ne ressemblent à celles des autres (0,48 à 0,56). |
+
+### Ce qui change
+
+1. **Whisper reconnaît la langue** de chaque clip (`tts_runners/whisper_words.py` : `lang`, `lang_p`).
+   - Une réplique est dite si elle ressemble à la réplique écrite **et** qu'elle est en français (`drama.line_said`).
+   - Sinon le clip est refait : 2 fois au plus, au lieu d'une.
+2. **Les plans muets sont écoutés**, sans langue imposée.
+   - Des mots entendus, hors rires et exclamations (`drama.invented_words`), font refaire le clip.
+   - La consigne de H3 devient « no voice, no words, no dialogue, every mouth stays closed ».
+3. **Au montage** (`worker/clip_voices.py`, réglage `DRAMA_FIX_VOICES`, actif par défaut) :
+   - la voix de chaque clip parlé est séparée de son ambiance (Demucs), une fois pour toutes, à côté du clip :
+     `scene_03.voix.wav`, `scene_03.ambiance.wav` ;
+   - un plan muet où H3 a parlé ne garde que son ambiance, y compris dans les drames d'avant le 12/10 (écoutés au
+     montage) ;
+   - chaque personnage qui a au moins deux répliques reçoit une **référence** : ses répliques bien dites, mises bout à
+     bout (15 s au plus), des plus typiques aux moins typiques ;
+   - **toutes ses répliques prennent ce timbre** (Chatterbox VC). Le jeu de H3, le rythme, les lèvres et l'ambiance
+     du clip sont gardés ;
+   - fichiers rangés à côté du clip (`scene_05.timbre_<clé>.wav`), refaits seulement quand un clip change ;
+   - posés dans la piste de voix comme le son du clip entier, coupés et accélérés comme lui
+     (`drama.build_dialogue_track`, `whole`) ;
+   - une prise validée dans Retoucher, ou un plan au son coupé, passe avant.
+4. **Processeur par défaut** (`DRAMA_VOICE_DEVICE=cpu`) : environ 20 s par réplique, chargement compris (3 répliques
+   en 70 s). Pendant un montage, ComfyUI peut charger H3 sur la carte graphique. `auto` prend la carte quand elle a
+   3 Go libres : les essais du 12/10 y ont pris 56 s et 112 s.
+
+### Choisir la référence
+
+Banc sur La fille du gardien :
+
+| Méthode | Même personnage | Autres personnages | Écart |
+|---|---|---|---|
+| Voix H3 d'origine | 0,66 | 0,52 | 0,14 |
+| Une réplique en référence, seulement les répliques éloignées converties | 0,64 → 0,67 (moyenne par personnage) | non mesuré | faible |
+| **Référence longue, toutes les répliques converties** (retenue) | 0,68 | 0,47 | **0,21** |
+
+Résultat final, mesuré sur les vidéos de l'essai :
+
+| Drame | Écart avant | Écart après | Répliques moins comprises |
+|---|---|---|---|
+| Cahier volé | 0,11 | **0,28** (Junior : 0,66 → 0,75) | 0 |
+| La fille du gardien | 0,17 | **0,23** | 0 |
+
+Essai : **Bibliothèque → Démos et essais**, « Drames : rythme resserré et voix fixe par personnage ».
+- 1 et 4 : la vidéo publiée ;
+- 2 et 5 : le rythme ;
+- 3 et 6 : le rythme et les voix.
+
+**Ce que la mesure ne dit pas.** L'empreinte de voix est un indice, pas l'oreille de Luca. Le verdict se fait à
+l'écoute de 3 et 6. Si la conversion abîme une voix, `DRAMA_FIX_VOICES=false` revient au son des clips.
+
+## 7. Citations : les exemples de Luca (12/10)
+
+Luca ne voyait pas l'auteur sur les idées de Création, et cite des citations qui marchent. Vérification sur Wikiquote,
+en français et en anglais : **aucune n'est sur la page de son auteur**.
+- « Une erreur répétée plusieurs fois est une décision » (prêtée à Paulo Coelho) circule sans source.
+- « Avant de guérir quelqu'un, demandez-lui s'il est prêt à abandonner ce qui le rend malade » (Hippocrate) et
+  « L'ignorant affirme, le savant doute, le sage réfléchit » (Aristote) sont des attributions connues pour être
+  fausses.
+- « On ne peut rien gagner sans perdre, même le paradis exige la mort » (Einstein) est introuvable.
+
+Ce qui les fait marcher, c'est leur forme : courtes, en balancier, avec une chute. Changements :
+- **Création** : l'auteur et le lien « source Wikiquote » s'affichent sous la citation de chaque idée.
+- **Citations plus courtes** : 5 à 28 mots, les plus courtes proposées d'abord.
+- **Aphoristes en priorité** : la moitié des auteurs de chaque lot vient de la liste des aphoristes (Nietzsche,
+  Coelho, Einstein, Aristote, Hippocrate, Marc Aurèle, Sénèque, Épictète, Confucius, Lao Tseu, Wilde, La
+  Rochefoucauld, Hugo, Camus…) ; 9 auteurs ajoutés (Hippocrate, Héraclite, Diogène, Spinoza, Kant, La Bruyère,
+  Goethe, Bouddha, le dalaï-lama).
+- **La forme comme modèle** : le guide montre les quatre exemples de Luca, en précisant qu'ils sont sans source et
+  ne se proposent jamais.
+
+Nouveau lot du 12/10 :
+- Héraclite : « On ne peut pas descendre deux fois dans le même fleuve » ;
+- Romain Gary : « S'il y a une chose impardonnable, c'est de ne pas pardonner » ;
+- Épictète, La Bruyère, Schopenhauer.
+
+Une idée a été écartée : l'agent avait réécrit sa citation. Commit `259d28e`.
+
+**À décider par Luca** : s'il veut aussi les citations virales non sourcées, la seule façon honnête de les signer est
+« — attribué à Aristote ». Pas fait sans son accord.

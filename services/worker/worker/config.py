@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     clip_qc_retries: int = 1  # un clip refusé est refait au plus N fois (≈ 4 min 30 chacun sur la RTX 3070)
     # Drame en voix constantes : la voix de chaque personnage calée sur la bouche de son clip (worker/lipsync.py, docs/38)
     drama_lipsync: bool = True
+    # Drame en voix des clips : une voix fixe par personnage et des plans muets sans paroles inventées, au montage
+    # (worker/clip_voices.py, docs/70 §6). Sur le processeur par défaut (≈ 20 s par réplique, mesuré le 12/10) : pendant un montage,
+    # ComfyUI peut charger H3 sur la carte graphique ; « auto » la prend si elle a 3 Go libres, « cuda » toujours
+    drama_fix_voices: bool = True
+    drama_voice_device: str = "cpu"
     storyboard_candidates: int = 2  # images générées par scène
     comfy_image_workflow: str = "flux1_schnell_gguf"
 

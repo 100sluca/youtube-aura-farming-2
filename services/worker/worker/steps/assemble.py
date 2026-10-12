@@ -27,6 +27,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from .. import quotes
+from ..clip_voices import fix_voices
 from ..drama import PACE, build_dialogue_track, dialogue_heads, dialogue_timeline, is_drama, isolate_voices, line_text
 from ..drama import _has_audio as has_audio
 from ..hooktitle import build_png, fade_filter, overlay_filter, shown_for
@@ -721,14 +722,24 @@ def prepare_video(db: Any, settings: Any, vid: Any, pid: Any, *, sync_lips: bool
             voices, kept = muted_voices(settings, script, clips, muted - set(takes), heads)
             if kept:  # voix seule impossible : le plan garde son son plutôt que de perdre sa réplique
                 sound["voix_seule_impossible"] = sorted(script.scenes[k].index for k in kept)
+            # voix fixe par personnage, plans muets sans paroles inventées (worker/clip_voices.py, docs/70 §6) : au
+            # montage seulement (l'essai du son de l'onglet Montage ne recalcule rien) ; une prise validée ou un plan au
+            # son coupé dans Retoucher passe avant
+            fixed: dict[int, Path] = {}
+            if sync_lips and settings.drama_fix_voices:
+                fixed, report = fix_voices(settings, script, [dict(c) for c in clips], v["lang"])
+                if report:
+                    sound["voix_des_clips"] = report
+            auto = {k: (p, 0.0) for k, p in fixed.items() if k not in takes and k not in muted}
             build_dialogue_track(
                 [Path(c["local_path"]) for c in clips],
                 [s.duration for s in timeline.scenes],
                 dialogue_track,
-                {**takes, **voices},
+                {**auto, **takes, **voices},
                 heads,
                 mute=muted - kept,
                 pace=speed,
+                whole=set(auto),
             )
         db.execute("update videos set timeline = %s where id = %s", (Jsonb(timeline.model_dump()), vid))
     else:

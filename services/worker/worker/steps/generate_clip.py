@@ -30,10 +30,11 @@ from .. import quotes
 from ..drama import (
     CLIP_STYLE,
     DIALOGUE_RETRIES,
-    HEARD_MIN,
     clip_prompt,
     heard_ratio,
+    invented_words,
     is_drama,
+    line_said,
     line_text,
     transcribe,
     video_lang,
@@ -254,22 +255,25 @@ class GenerateClipStep(Step):
                 ctx.log("clip.texte_plan_fixe", level="warn", scene=idx, texte=it.text)
                 dur, w, h = still_clip(image, out, scene.duration_s)
                 info, still = ClipInfo(dur, w, h), True
-        # Drame : ce que dit le clip (Whisper : mots et passages parlés) ; une réplique qui n'est pas dite fait refaire le
-        # clip (DIALOGUE_RETRIES). Voix des clips (format B) : sous-titres et piste de voix ; voix constantes (format A) :
-        # la voix du personnage est calée sur la bouche du clip au montage (worker/lipsync.py, 29/09).
-        clip_voice = is_drama(recipe) and bool(scene.lines) and not ctx.settings.dry_run
-        dialogue = self._dialogue(ctx, out, scene, script) if clip_voice else None
+        # Drame : ce que dit le clip (Whisper : mots, passages parlés, langue) ; une réplique qui n'est pas dite, ou pas
+        # dans la langue de la vidéo, fait refaire le clip (DIALOGUE_RETRIES) ; un plan muet où le modèle invente des
+        # paroles aussi (docs/70 §6). Voix des clips (format B) : sous-titres et piste de voix ; voix constantes
+        # (format A) : la voix du personnage est calée sur la bouche du clip au montage (worker/lipsync.py, 29/09).
+        lang = video_lang(script)
+        listen = is_drama(recipe) and not ctx.settings.dry_run
+        dialogue = self._dialogue(ctx, out, scene, script) if listen else None
         for retry in range(DIALOGUE_RETRIES):
-            if dialogue is None or dialogue["ratio"] >= HEARD_MIN:
+            if dialogue is None or (line_said(dialogue, lang) if scene.lines else not dialogue.get("invented")):
                 break
             ctx.log(
-                "clip.replique_absente",
+                "clip.replique_absente" if scene.lines else "clip.paroles_inventees",
                 level="warn",
                 scene=idx,
                 essai=retry + 1,
                 attendu=dialogue["expected"],
                 entendu=dialogue["heard"],
                 ressemblance=dialogue["ratio"],
+                langue=dialogue.get("lang"),
             )
             info = render()
             if qc and image is not None and verdict is not None:  # le nouvel essai repasse le contrôle (texte écrit…)
@@ -351,11 +355,12 @@ class GenerateClipStep(Step):
 
     @staticmethod
     def _dialogue(ctx: Context, clip: Path, scene: ScriptScene, script: ScriptV1) -> dict[str, Any] | None:
-        """Ce que Whisper entend dans le clip d'un drame (mots horodatés, pour les sous-titres) et sa ressemblance avec la
-        réplique écrite. None si la transcription n'est pas possible (environnement d'évaluation absent, échec) : le
-        montage répartit alors la réplique sur le plan."""
+        """Ce que Whisper entend dans le clip d'un drame (mots horodatés, pour les sous-titres), sa langue et sa
+        ressemblance avec la réplique écrite ; un plan muet est écouté sans langue imposée, et `invented` donne les mots
+        qu'il ne devrait pas dire. None si la transcription n'est pas possible (environnement d'évaluation absent,
+        échec) : le montage répartit alors la réplique sur le plan."""
         try:
-            heard = transcribe(ctx.settings, [clip], video_lang(script))
+            heard = transcribe(ctx.settings, [clip], video_lang(script) if scene.lines else None)
         except Exception as exc:  # noqa: BLE001  la transcription est un filet, jamais une étape bloquante
             ctx.log("clip.transcription_indisponible", level="warn", scene=scene.index, erreur=str(exc)[:300])
             return None
@@ -368,13 +373,18 @@ class GenerateClipStep(Step):
             )
             return None
         expected = line_text(scene)
-        return {
+        out = {
             "expected": expected,
             "heard": heard[0]["text"],
             "words": heard[0]["words"],
             "speech": heard[0].get("speech") or [],
-            "ratio": heard_ratio(expected, heard[0]["text"]),
+            "ratio": heard_ratio(expected, heard[0]["text"]) if expected else 1.0,
+            "lang": heard[0].get("lang"),
+            "lang_p": heard[0].get("lang_p"),
         }
+        if not expected:
+            out["invented"] = invented_words(heard[0]["words"])
+        return out
 
     @staticmethod
     def _quote_zoom(ctx: Context, pid: Any, scene: ScriptScene) -> dict[str, Any]:
