@@ -185,6 +185,8 @@ function mapJob(r: Row): Job {
 }
 
 export function mapConcept(r: Row): Concept {
+  // citation d'auteur : la source est la page Wikiquote de l'auteur (worker/sources/wikiquote.py, docs/70)
+  const quote = ((r.sources as Row[] | null) ?? []).find((s) => s?.kind === "wikiquote");
   return {
     id: r.id,
     title: r.title,
@@ -202,6 +204,8 @@ export function mapConcept(r: Row): Concept {
     facts_count: n0(r.facts_count),
     production_id: r.production_id ?? null,
     channel_id: r.channel_id ?? null,
+    quote_author: quote?.title ?? null,
+    quote_url: quote?.url ?? null,
   };
 }
 

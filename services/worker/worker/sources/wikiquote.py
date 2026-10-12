@@ -54,17 +54,37 @@ AUTHORS = (
     "Pierre Corneille", "Jean Racine", "Sun Zi", "Cicéron", "Ovide", "Fernando Pessoa", "Ernest Hemingway",
     "Gabriel García Márquez", "Paulo Coelho", "Steve Jobs", "Épicure", "Nicolas Machiavel", "Arthur Schopenhauer",
     "Søren Kierkegaard", "Emil Cioran", "Christian Bobin", "Joseph Joubert", "Jules Renard", "Sacha Guitry",
+    "Hippocrate", "Héraclite d'Éphèse", "Diogène de Sinope", "Baruch Spinoza", "Emmanuel Kant", "Jean de La Bruyère",
+    "Johann Wolfgang von Goethe", "Siddhartha Gautama", "Tenzin Gyatso",
+)  # fmt: skip
+# Les aphoristes que Luca voit marcher (12/10 : Nietzsche, Coelho, Einstein, Aristote, Hippocrate) et leurs pareils :
+# la moitié des auteurs de chaque lot vient d'ici
+PRIORITY = (
+    "Friedrich Nietzsche", "Paulo Coelho", "Albert Einstein", "Aristote", "Hippocrate", "Marc Aurèle", "Sénèque",
+    "Épictète", "Confucius", "Lao Tseu", "Oscar Wilde", "François de La Rochefoucauld", "Victor Hugo", "Albert Camus",
+    "Antoine de Saint-Exupéry", "Emil Cioran", "Arthur Schopenhauer", "Blaise Pascal", "Michel de Montaigne",
+    "Socrate", "Siddhartha Gautama", "Johann Wolfgang von Goethe", "Jean de La Bruyère",
 )  # fmt: skip
 # Nom affiché sous la citation quand le titre de la page est un nom d'état civil
-DISPLAY = {"Mohandas Karamchand Gandhi": "Gandhi", "Gibran Khalil Gibran": "Khalil Gibran", "Sun Zi": "Sun Tzu"}
+DISPLAY = {
+    "Mohandas Karamchand Gandhi": "Gandhi",
+    "Gibran Khalil Gibran": "Khalil Gibran",
+    "Sun Zi": "Sun Tzu",
+    "Héraclite d'Éphèse": "Héraclite",
+    "Diogène de Sinope": "Diogène",
+    "Johann Wolfgang von Goethe": "Goethe",
+    "Siddhartha Gautama": "Bouddha",
+    "Tenzin Gyatso": "Le dalaï-lama",
+}
 # Sections écartées : citations non sourcées par l'auteur lui-même, ou qui parlent de lui, et l'appareil de la page
 EXCLUDED = re.compile(
     r"rapport|attribu|apocryph|douteu|\bsur\b|au sujet|à propos|concernant|voir aussi|liens|notes|références|"
     r"bibliographie|articles connexes|sources",
     re.I,
 )
-WORDS = (6, 40)  # une citation lisible en 6 à 13 s sur une image (quotes.QUOTE_WORDS : 5 à 45)
-CHARS_MAX = 230
+# Celles qui marchent sont courtes (« L'ignorant affirme, le savant doute, le sage réfléchit », 7 mots) : 5 à 28 mots
+WORDS = (5, 28)
+CHARS_MAX = 180
 CACHE_DAYS = 30
 _HEADING = re.compile(r'<div class="mw-heading mw-heading([2-4])">(.*?)</div>', re.S)
 _CITATION = re.compile(r'<div class="citation">(.*?)</div>', re.S)
@@ -215,13 +235,23 @@ def candidates(
     n_authors: int = 10,
     per_author: int = 5,
     seed: str | None = None,
+    priority: Sequence[str] = PRIORITY,
 ) -> list[Quote]:
-    """Citations proposées à l'agent idées : `n_authors` auteurs tirés au hasard (ceux des dernières vidéos en dernier),
-    `per_author` citations utilisables et jamais faites (`used` : Quote.key) chacun."""
+    """Citations proposées à l'agent idées : `n_authors` auteurs tirés au hasard, la moitié parmi `priority` (les
+    aphoristes qui marchent), ceux des dernières vidéos en dernier ; `per_author` citations utilisables et jamais faites
+    (`used` : Quote.key) chacun, les plus courtes d'abord."""
     rng = random.Random(seed)
-    order = list(authors)
-    rng.shuffle(order)
-    order.sort(key=lambda a: a in recent_authors)  # tri stable : le hasard reste, les auteurs récents passent après
+
+    def shuffled(names: Sequence[str]) -> list[str]:
+        out = list(names)
+        rng.shuffle(out)
+        out.sort(key=lambda a: a in recent_authors)  # tri stable : le hasard reste, les auteurs récents passent après
+        return out
+
+    first = shuffled([a for a in priority if a in authors])
+    rest = shuffled([a for a in authors if a not in first])
+    half = (n_authors + 1) // 2
+    order = first[:half] + rest + first[half:]  # si un auteur prioritaire n'a plus rien, les autres prennent sa place
     out: list[Quote] = []
     taken = 0
     for page in order:
@@ -231,6 +261,7 @@ def candidates(
         if not fresh:
             continue
         rng.shuffle(fresh)
+        fresh.sort(key=lambda q: len(q.text.split()) > 16)  # les plus courtes d'abord, au hasard entre elles
         out += fresh[:per_author]
         taken += 1
     return out

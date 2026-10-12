@@ -44,6 +44,8 @@ export function dataRootOf(path: string): string | null {
 
 /** Dossier de données du worker (celui qui contient « videos » et « productions »), d'après un asset en base. */
 export async function dataRoot(): Promise<string | null> {
+  // sans base (CI, mode démo) : pas d'asset à lire ; la page Montage se construisait en échec (12/10)
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const { data } = await supabaseAdmin()
     .from("assets")
     .select("local_path")

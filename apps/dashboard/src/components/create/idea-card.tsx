@@ -45,7 +45,18 @@ export function IdeaCard({
         </span>
         <div className="flex min-w-0 flex-col gap-1">
           <h3 className="leading-snug font-semibold">{concept.title}</h3>
-          {concept.hook ? <p className="text-muted-foreground text-sm italic">« {concept.hook} »</p> : null}
+          {concept.quote_author ? (
+            <p className="text-sm font-medium">
+              — {concept.quote_author}
+              {concept.quote_url ? (
+                <a href={concept.quote_url} target="_blank" rel="noreferrer" className="text-muted-foreground ml-2 text-xs font-normal underline-offset-2 hover:underline">
+                  source Wikiquote
+                </a>
+              ) : null}
+            </p>
+          ) : concept.hook ? (
+            <p className="text-muted-foreground text-sm italic">« {concept.hook} »</p>
+          ) : null}
         </div>
       </div>
 
@@ -74,7 +85,7 @@ export function IdeaCard({
 
       <div className="flex flex-wrap items-center gap-1.5">
         {showSeries && concept.series_name ? <Badge variant="secondary">{concept.series_name}</Badge> : null}
-        {concept.facts_count ? (
+        {concept.facts_count && !concept.quote_author ? (
           <Badge variant="outline" className="gap-1">
             <BookOpen className="size-3" />
             {concept.facts_count} faits sourcés

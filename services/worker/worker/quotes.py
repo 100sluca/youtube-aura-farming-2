@@ -147,7 +147,13 @@ CITATIONS SOURCÉES numérotées [n] (Wikiquote : l'œuvre et la page sont connu
 - score = sa force pour un public de 16 à 35 ans : 90 et plus seulement si on a envie de l'envoyer à quelqu'un.
 Une citation qui marche : elle parle de la vie de chacun (amour, manque, regret, temps qui passe, courage, solitude,
 confiance, échec, liberté, bonheur), elle se comprend seule, sans le contexte du livre, à la première lecture ; un
-nom que tout le monde connaît. À écarter : une phrase savante ou technique, une citation qui demande de connaître
+nom que tout le monde connaît ; COURTE (15 mots ou moins, c'est le mieux) et frappée comme un proverbe : un balancier
+ou une gradation (« L'ignorant affirme, le savant doute, le sage réfléchit »), un retournement (« Une erreur répétée
+plusieurs fois est une décision »), un conseil qui pique (« Avant de guérir quelqu'un, demande-lui s'il est prêt à
+abandonner ce qui le rend malade »), un paradoxe (« On ne peut rien gagner sans perdre »). Ces quatre exemples sont des
+citations virales SANS source (on les prête à Aristote, Coelho, Hippocrate, Einstein) : c'est leur forme qui marche, ne
+les propose jamais ; cherche cette forme dans la liste. Une longue phrase littéraire ne passe que si elle est
+bouleversante. À écarter : une phrase savante ou technique, une citation qui demande de connaître
 l'œuvre, la politique, la religion, une phrase datée ou blessante aujourd'hui, un vers coupé au milieu, la réplique
 d'un personnage de roman qui ne vaut que dans son histoire. UN auteur différent par idée ; varie les thèmes ; jamais deux
 citations qui disent la même chose."""

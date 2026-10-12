@@ -148,6 +148,9 @@ export interface Concept {
   facts_count?: number;
   production_id?: string | null;
   channel_id?: string | null; // chaîne pour laquelle l'idée a été demandée (migration 0008)
+  /** Citation d'auteur (thème Citations d'auteurs, docs/70) : son auteur et sa page Wikiquote (concepts.sources[0]). */
+  quote_author?: string | null;
+  quote_url?: string | null;
 }
 
 /** Script produit par l'agent script (productions.script, version 1). */
